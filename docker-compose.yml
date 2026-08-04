@@ -65,13 +65,15 @@ services:
     restart: unless-stopped
     depends_on: [db]
     environment:
+      APP_NAME: realtime
+      ERLANG_COOKIE: musecookie
       PORT: 4000
       DB_HOST: db
       DB_PORT: 5432
       DB_USER: supabase_admin
       DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       DB_NAME: postgres
-      DB_AFTER_CONNECT_QUERY: SET search_path TO _realtime
+      DB_AFTER_CONNECT_QUERY: SET search_path TO realtime
       DB_ENC_KEY: supabaserealtime
       API_JWT_SECRET: ${JWT_SECRET:-replace-this-with-a-32-character-minimum-secret}
       SECRET_KEY_BASE: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
@@ -116,17 +118,6 @@ services:
       SUPABASE_PUBLIC_URL: http://localhost:8000
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
-  functions:
-    image: supabase/edge-runtime:v1.58.2
-    restart: unless-stopped
-    depends_on: [kong]
-    environment:
-      SUPABASE_URL: http://kong:8000
-      SUPABASE_ANON_KEY: ${ANON_KEY}
-      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-      SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres
-    volumes: ["./supabase/functions:/home/deno/functions:ro"]
-    command: start --main-service /home/deno/functions/main/index.ts
   qdrant:
     image: qdrant/qdrant:latest
     restart: unless-stopped

@@ -7,3 +7,4 @@ supabase/.temp
 server/uploads/
 *.md
 !README.md
+!TROUBLESHOOTING.md
