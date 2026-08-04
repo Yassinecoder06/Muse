@@ -23,7 +23,7 @@ The API returns note saves immediately. A background processor generates missing
 
 ## Prerequisites
 
-- **Node.js 20 or newer (22 LTS recommended).** The API will not start on Node 18: `@supabase/supabase-js` v2.49+ requires native WebSocket support, which only exists in Node 22+. Node 18 is end-of-life and insecure. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#api-exits-immediately-node-18-detected-without-native-websocket-support).
+- **Node.js 20 or newer (22 LTS recommended).** The API will not start on Node 18: `@supabase/supabase-js` v2.49+ requires native WebSocket support, which only exists in Node 22+. Node 18 is end-of-life and insecure.
 - **Docker + Docker Compose** for the local Supabase stack and Qdrant.
 - npm 9+.
 
@@ -200,8 +200,7 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Nginx (127.0.0.1:80
 
    **Pitfalls caught in production:** the `User=` must be an account that
    actually exists, and `ExecStart` must not resolve to a Node 18 binary --
-   both caused the unit to crash-loop instantly. See
-   [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#muse-service-crash-loops).
+   both caused the unit to crash-loop instantly.
 
 6. Configure a private Nginx site. Replace `/home/ideaserver/Muse` with the
    directory that contains this repository:
@@ -307,10 +306,3 @@ An empty `TOKEN` means signup failed; check the GoTrue container:
 ```bash
 docker compose logs auth --tail 20
 ```
-
-## Troubleshooting
-
-See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for the problems seen in
-real deployments (Node 18 crashes, `systemd` unit mistakes, container
-crash-loops, Nginx port conflicts, and Qdrant dimension mismatches) and how to
-fix each one.
