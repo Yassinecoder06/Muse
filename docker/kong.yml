@@ -23,3 +23,17 @@ consumers:
     keyauth_credentials: [{ key: $ANON_KEY }]
   - username: service_role
     keyauth_credentials: [{ key: $SERVICE_ROLE_KEY }]
+plugins:
+  - name: cors
+    config:
+      origins:
+        - http://localhost:5173
+        - http://127.0.0.1:5173
+      methods: [GET, HEAD, PUT, PATCH, POST, DELETE, OPTIONS]
+      # Supabase Auth JS sends x-supabase-api-version in addition to the
+      # standard client headers. Missing it makes browsers block signup at
+      # the CORS preflight stage before GoTrue receives the request.
+      headers: [apikey, authorization, content-type, x-client-info, x-supabase-api-version, x-retry-count]
+      exposed_headers: [content-range]
+      credentials: true
+      max_age: 3600

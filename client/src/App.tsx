@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom'
 import { Moon, Settings, Sun, X } from 'lucide-react'
 import { api } from './services/api'
-import type { NoteInput } from './types'
+import type { Note, NoteInput } from './types'
 import { Dashboard } from './pages/Dashboard'
 import { Editor } from './components/Editor'
 import { CommandPalette } from './components/CommandPalette'
@@ -24,6 +24,8 @@ function MuseApp() {
   const [settings, setSettings] = useState(false)
   const [toast, setToast] = useState('')
   const [authenticated, setAuthenticated] = useState<boolean | undefined>(undefined)
+  const [userEmail, setUserEmail] = useState('')
+  const [userName, setUserName] = useState('')
   const notesQuery = useQuery({ queryKey: ['notes', scope], queryFn: () => api.listNotes(scope), enabled: authenticated === true })
   const allQuery = useQuery({ queryKey: ['notes', 'all'], queryFn: () => api.listNotes('all'), enabled: authenticated === true })
   const favoritesQuery = useQuery({ queryKey: ['notes', 'favorites'], queryFn: () => api.listNotes('favorites'), enabled: authenticated === true })
@@ -36,7 +38,20 @@ function MuseApp() {
   })
 
   useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; localStorage.setItem('muse-theme', dark ? 'dark' : 'light') }, [dark])
-  useEffect(() => { void supabase.auth.getSession().then(({ data }) => setAuthenticated(!!data.session)); const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { setAuthenticated(!!session); queryClient.clear() }); return () => listener.subscription.unsubscribe() }, [queryClient])
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data }) => {
+      setAuthenticated(!!data.session)
+      setUserEmail(data.session?.user.email || '')
+      setUserName(typeof data.session?.user.user_metadata?.full_name === 'string' ? data.session.user.user_metadata.full_name : '')
+    })
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthenticated(!!session)
+      setUserEmail(session?.user.email || '')
+      setUserName(typeof session?.user.user_metadata?.full_name === 'string' ? session.user.user_metadata.full_name : '')
+      queryClient.clear()
+    })
+    return () => listener.subscription.unsubscribe()
+  }, [queryClient])
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true) }
@@ -49,7 +64,7 @@ function MuseApp() {
 
   const counts = { all: allQuery.data?.length || 0, favorites: favoritesQuery.data?.length || 0, archive: archiveQuery.data?.length || 0, trash: trashQuery.data?.length || 0 }
   const tags = [...new Set((allQuery.data || []).flatMap(note => note.tags))].sort()
-  const dashboard = <Dashboard notes={notesQuery.data || []} counts={counts} scope={scope} setScope={setScope} query={query} setQuery={setQuery} create={() => create.mutate()} open={note => navigate(`/note/${note.id}`)} dark={dark} toggleTheme={() => setDark(!dark)} ask={() => setAsk(true)} collections={() => setCollections(true)} settings={() => setSettings(true)}/>
+  const dashboard = <Dashboard notes={notesQuery.data || []} counts={counts} scope={scope} setScope={setScope} query={query} setQuery={setQuery} create={() => create.mutate()} open={note => navigate(`/note/${note.id}`)} dark={dark} toggleTheme={() => setDark(!dark)} ask={() => setAsk(true)} collections={() => setCollections(true)} settings={() => setSettings(true)} userEmail={userEmail} userName={userName}/>
   if (authenticated === undefined) return <div className="app-loading"><div className="loader"/>Loading your space</div>
   if (!authenticated) return <AuthPage/>
   return <>
@@ -67,7 +82,7 @@ function NoteRoute({ toast }: { toast: (message: string) => void }) {
   const queryClient = useQueryClient()
   const noteQuery = useQuery({ queryKey: ['note', id], queryFn: () => api.getNote(id!), enabled: !!id, refetchInterval: query => query.state.data?.aiStatus === 'processing' ? 2500 : false })
   const update = useMutation({ mutationFn: (input: NoteInput) => api.updateNote(id!, input), onSuccess: note => { queryClient.setQueryData(['note', id], note); queryClient.invalidateQueries({ queryKey: ['notes'] }) }, onError: () => toast('Unable to save changes.') })
-  async function refresh() { const note = await api.getNote(id!); queryClient.setQueryData(['note', id], note); queryClient.invalidateQueries({ queryKey: ['notes'] }) }
+  async function refresh(): Promise<Note> { const note = await api.getNote(id!); queryClient.setQueryData(['note', id], note); queryClient.invalidateQueries({ queryKey: ['notes'] }); return note }
   async function complete(input: NoteInput) { await update.mutateAsync(input); return api.organizeNote(id!) }
   async function trash() { await api.deleteNote(id!); queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate('/') }
   async function restore() { await api.restoreNote(id!); queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate('/') }
