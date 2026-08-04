@@ -1,0 +1,25 @@
+_format_version: '1.1'
+services:
+  - name: auth-v1
+    url: http://auth:9999/
+    routes: [{ name: auth-v1-all, strip_path: true, paths: [/auth/v1/] }]
+  - name: auth-v1-open
+    url: http://auth:9999/verify
+    routes: [{ name: auth-v1-open, strip_path: true, paths: [/auth/v1/verify] }]
+  - name: auth-v1-open-callback
+    url: http://auth:9999/callback
+    routes: [{ name: auth-v1-open-callback, strip_path: true, paths: [/auth/v1/callback] }]
+  - name: rest-v1
+    url: http://rest:3000/
+    routes: [{ name: rest-v1-all, strip_path: true, paths: [/rest/v1/] }]
+  - name: storage-v1
+    url: http://storage:5000/
+    routes: [{ name: storage-v1-all, strip_path: true, paths: [/storage/v1/] }]
+  - name: realtime-v1
+    url: http://realtime:4000/socket/
+    routes: [{ name: realtime-v1-ws, strip_path: true, paths: [/realtime/v1/] }]
+consumers:
+  - username: anon
+    keyauth_credentials: [{ key: $ANON_KEY }]
+  - username: service_role
+    keyauth_credentials: [{ key: $SERVICE_ROLE_KEY }]
