@@ -31,7 +31,19 @@ function plainText(html: string) {
   return container.textContent || ''
 }
 
-export function Editor({ note, onBack, save, refresh, complete, trash, restore, permanentlyDelete, onToast }: { note: Note; onBack: () => void; save: (input: NoteInput) => Promise<unknown>; refresh: () => Promise<void>; complete: (input: NoteInput) => Promise<AiJob>; trash: () => Promise<void>; restore: () => Promise<void>; permanentlyDelete: () => Promise<void>; onToast: (message: string) => void }) {
+function completionMessage(job: AiJob) {
+  if (job.type === 'summary') return 'Muse added a summary.'
+  if (job.type === 'tasks') {
+    const count = typeof job.result?.count === 'number' ? job.result.count : 0
+    return count ? `Muse found ${count} task${count === 1 ? '' : 's'}.` : 'Muse found no actionable tasks in this note.'
+  }
+  if (job.type === 'title') return 'Muse updated the title.'
+  if (job.type === 'tags') return 'Muse updated the tags.'
+  if (job.type === 'rewrite') return 'Muse rewrote the note.'
+  return 'Muse finished your request.'
+}
+
+export function Editor({ note, onBack, save, refresh, complete, trash, restore, permanentlyDelete, onToast }: { note: Note; onBack: () => void; save: (input: NoteInput) => Promise<unknown>; refresh: () => Promise<Note>; complete: (input: NoteInput) => Promise<AiJob>; trash: () => Promise<void>; restore: () => Promise<void>; permanentlyDelete: () => Promise<void>; onToast: (message: string) => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const timer = useRef<number | undefined>(undefined)
   const imageInput = useRef<HTMLInputElement>(null)
@@ -57,7 +69,16 @@ export function Editor({ note, onBack, save, refresh, complete, trash, restore, 
         const job = await api.getAiJob(jobId)
         if (cancelled || (job.status !== 'complete' && job.status !== 'failed')) return
         setJobId(null); setWorking(false)
-        if (job.status === 'complete') { await refresh(); onToast('Muse finished your request.') }
+        if (job.status === 'complete') {
+          const updated = await refresh()
+          const updatedContent = sanitizeHtml(updated.content)
+          // Title and content are controlled locally to support autosave. They
+          // must be explicitly synchronized after an AI job changes the note.
+          setTitle(updated.title)
+          setContent(updatedContent)
+          if (ref.current) ref.current.innerHTML = updatedContent
+          onToast(completionMessage(job))
+        }
         else onToast(`${job.error || 'Muse could not complete this request.'} Retry when you are ready.`)
       } catch { if (!cancelled) { setJobId(null); setWorking(false); onToast('Unable to check Muse’s request status.') } }
     }
