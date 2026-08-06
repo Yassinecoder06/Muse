@@ -56,6 +56,9 @@ export const notes = {
   },
   async trash(userId: string, id: string) { const { error } = await supabase.from('notes').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('user_id', userId); if (error) throw error },
   async restore(userId: string, id: string) { const { error } = await supabase.from('notes').update({ deleted_at: null }).eq('id', id).eq('user_id', userId); if (error) throw error; return this.get(userId, id) },
+  async trashIds(userId: string) { const { data, error } = await supabase.from('notes').select('id').eq('user_id', userId).not('deleted_at', 'is', null); if (error) throw error; return (data || []).map((row: any) => row.id as string) },
+  async deleteMany(userId: string, ids: string[]) { if (!ids.length) return; const { error } = await supabase.from('notes').delete().eq('user_id', userId).in('id', ids); if (error) throw error },
+  async restoreMany(userId: string, ids: string[]) { if (!ids.length) return; const { error } = await supabase.from('notes').update({ deleted_at: null }).eq('user_id', userId).in('id', ids); if (error) throw error },
   async deletePermanently(userId: string, id: string) { const { error } = await supabase.from('notes').delete().eq('id', id).eq('user_id', userId); if (error) throw error },
   async replaceTasks(userId: string, noteId: string, values: string[]) {
     const { error: removeError } = await supabase.from('tasks').delete().eq('note_id', noteId).eq('user_id', userId)

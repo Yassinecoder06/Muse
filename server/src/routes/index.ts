@@ -4,6 +4,8 @@ import * as ai from '../controllers/ai.controller.js'
 import { requireAuth } from '../middleware/auth.js'
 export const router = Router()
 router.use(requireAuth)
+router.delete('/notes/bulk', notes.bulkDeleteNotes).post('/notes/bulk-restore', notes.bulkRestoreNotes)
+router.delete('/notes/trash', notes.emptyTrash)
 router.get('/notes', notes.listNotes).post('/notes', notes.createNote)
 router.get('/notes/:id', notes.getNote).put('/notes/:id', notes.updateNote).delete('/notes/:id', notes.deleteNote)
 router.post('/notes/:id/restore', notes.restoreNote).delete('/notes/:id/permanent', notes.deleteNotePermanently)

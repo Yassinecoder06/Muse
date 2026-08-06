@@ -6,6 +6,7 @@ import { vectors } from '../services/vector.service.js'
 
 const noteSchema = z.object({ title: z.string().max(300).optional(), content: z.string().max(100000).optional(), favorite: z.boolean().optional(), archived: z.boolean().optional(), tags: z.array(z.string().max(50)).max(6).optional() })
 const id = (value: unknown) => z.string().uuid().parse(value)
+const noteIds = (value: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(100) }).parse(value).ids
 const user = (req: Request) => req.userId!
 export async function listNotes(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.list(user(req), z.enum(['all', 'favorites', 'archive', 'trash']).catch('all').parse(req.query.scope))) } catch (error) { next(error) } }
 export async function getNote(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.get(user(req), id(req.params.id))) } catch (error) { next(error) } }
@@ -13,6 +14,9 @@ export async function createNote(req: Request, res: Response, next: NextFunction
 export async function updateNote(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.update(user(req), id(req.params.id), noteSchema.parse(req.body))) } catch (error) { next(error) } }
 export async function organizeNote(req: Request, res: Response, next: NextFunction) { try { const job = await jobs.enqueue(user(req), id(req.params.id), 'organize'); res.status(202).json(job) } catch (error) { next(error) } }
 export async function deleteNote(req: Request, res: Response, next: NextFunction) { try { await notes.trash(user(req), id(req.params.id)); res.status(204).end() } catch (error) { next(error) } }
+export async function emptyTrash(req: Request, res: Response, next: NextFunction) { try { const userId = user(req); const ids = await notes.trashIds(userId); await notes.deleteMany(userId, ids); void vectors.deleteVectors(ids); res.status(204).end() } catch (error) { next(error) } }
+export async function bulkDeleteNotes(req: Request, res: Response, next: NextFunction) { try { const selectIds = noteIds(req.body); await notes.deleteMany(user(req), selectIds); void vectors.deleteVectors(selectIds); res.status(204).end() } catch (error) { next(error) } }
+export async function bulkRestoreNotes(req: Request, res: Response, next: NextFunction) { try { await notes.restoreMany(user(req), noteIds(req.body)); res.status(204).end() } catch (error) { next(error) } }
 export async function restoreNote(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.restore(user(req), id(req.params.id))) } catch (error) { next(error) } }
 export async function deleteNotePermanently(req: Request, res: Response, next: NextFunction) { try { const noteId = id(req.params.id); await notes.deletePermanently(user(req), noteId); void vectors.deleteVector(noteId); res.status(204).end() } catch (error) { next(error) } }
 export async function clearSummary(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.setGenerated(user(req), id(req.params.id), { summary: null })) } catch (error) { next(error) } }

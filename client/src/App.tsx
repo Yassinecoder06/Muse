@@ -36,6 +36,9 @@ function MuseApp() {
     onSuccess: note => { queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate(`/note/${note.id}`) },
     onError: () => setToast('Could not create a note. Is the API running?')
   })
+  const emptyTrash = useMutation({ mutationFn: () => api.emptyTrash(), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['notes'] }); setToast('Trash emptied.') }, onError: () => setToast('Could not empty the trash.') })
+  const deleteSelected = useMutation({ mutationFn: (ids: string[]) => api.deleteNotes(ids), onSuccess: (_value, ids) => { queryClient.invalidateQueries({ queryKey: ['notes'] }); setToast(`${ids.length} note${ids.length === 1 ? '' : 's'} deleted permanently.`) }, onError: () => setToast('Could not delete the selected notes.') })
+  const restoreSelected = useMutation({ mutationFn: (ids: string[]) => api.restoreNotes(ids), onSuccess: (_value, ids) => { queryClient.invalidateQueries({ queryKey: ['notes'] }); setToast(`${ids.length} note${ids.length === 1 ? '' : 's'} restored.`) }, onError: () => setToast('Could not restore the selected notes.') })
 
   useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light'; localStorage.setItem('muse-theme', dark ? 'dark' : 'light') }, [dark])
   useEffect(() => {
@@ -64,7 +67,7 @@ function MuseApp() {
 
   const counts = { all: allQuery.data?.length || 0, favorites: favoritesQuery.data?.length || 0, archive: archiveQuery.data?.length || 0, trash: trashQuery.data?.length || 0 }
   const tags = [...new Set((allQuery.data || []).flatMap(note => note.tags))].sort()
-  const dashboard = <Dashboard notes={notesQuery.data || []} counts={counts} scope={scope} setScope={setScope} query={query} setQuery={setQuery} create={() => create.mutate()} open={note => navigate(`/note/${note.id}`)} dark={dark} toggleTheme={() => setDark(!dark)} ask={() => setAsk(true)} collections={() => setCollections(true)} settings={() => setSettings(true)} userEmail={userEmail} userName={userName}/>
+  const dashboard = <Dashboard notes={notesQuery.data || []} counts={counts} scope={scope} setScope={setScope} query={query} setQuery={setQuery} create={() => create.mutate()} open={note => navigate(`/note/${note.id}`)} dark={dark} toggleTheme={() => setDark(!dark)} ask={() => setAsk(true)} collections={() => setCollections(true)} settings={() => setSettings(true)} userEmail={userEmail} userName={userName} emptyTrash={() => emptyTrash.mutate()} deleteSelected={ids => deleteSelected.mutate(ids)} restoreSelected={ids => restoreSelected.mutate(ids)} />
   if (authenticated === undefined) return <div className="app-loading"><div className="loader"/>Loading your space</div>
   if (!authenticated) return <AuthPage/>
   return <>

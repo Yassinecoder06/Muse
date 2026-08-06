@@ -118,6 +118,11 @@ services:
       SUPABASE_PUBLIC_URL: http://localhost:8000
       SUPABASE_ANON_KEY: ${ANON_KEY}
       SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://$(hostname -i):3000/api/profile').then(r => { if (r.status !== 200) throw new Error(r.status) }).catch(() => process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 3
   qdrant:
     image: qdrant/qdrant:latest
     restart: unless-stopped

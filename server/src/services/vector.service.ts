@@ -9,6 +9,7 @@ export const vectors = {
     await qdrant.upsert(COLLECTION, { wait: true, points: [{ id: pointId(note.id), vector, payload: { userId: note.user_id, noteId: note.id, title: note.title, summary: note.summary || '', tags: note.tags } }] })
   },
   async deleteVector(noteId: string) { await qdrant.delete(COLLECTION, { wait: true, points: [pointId(noteId)] }) },
+  async deleteVectors(noteIds: string[]) { if (!noteIds.length) return; await qdrant.delete(COLLECTION, { wait: true, points: noteIds.map(pointId) }) },
   async searchSimilarNotes(userId: string, question: string, limit = 8) {
     const vector = await ai.generateEmbedding(question)
     const result = await qdrant.search(COLLECTION, { vector, limit, with_payload: true, filter: { must: [{ key: 'userId', match: { value: userId } }] } })
