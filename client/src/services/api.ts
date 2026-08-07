@@ -2,6 +2,12 @@ import { supabase } from './supabase'
 import type { AiJob, Note, NoteInput, Task } from '../types'
 
 const root = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+function apiOrigin() { return /^https?:\/\//.test(root) ? new URL(root).origin : window.location.origin }
+export function resolveApiImageSrc(src: string) { return src.startsWith('/api/images/') ? `${apiOrigin()}${src}` : src }
+export function relativizeApiImageSrc(src: string) {
+  const origin = apiOrigin()
+  return src.startsWith(`${origin}/api/images/`) ? src.slice(origin.length) : src
+}
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession()
   const response = await fetch(`${root}${path}`, { headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}), ...(options?.headers || {}) }, ...options })
@@ -14,6 +20,6 @@ export const api = {
   setTask: (id: string, completed: boolean) => request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ completed }) }),
   deleteNotes: (ids: string[]) => request<void>('/notes/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }), restoreNotes: (ids: string[]) => request<void>('/notes/bulk-restore', { method: 'POST', body: JSON.stringify({ ids }) }), emptyTrash: () => request<void>('/notes/trash', { method: 'DELETE' }),
   createAiJob: (noteId: string, type: AiJob['type'], mode?: string) => request<AiJob>('/ai/jobs', { method: 'POST', body: JSON.stringify({ noteId, type, mode }) }), getAiJob: (id: string) => request<AiJob>(`/ai/jobs/${id}`),
-  async uploadImage(file: File) { const { data: { session } } = await supabase.auth.getSession(); const response = await fetch(`${root}/uploads`, { method: 'POST', headers: { 'Content-Type': file.type, ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) }, body: file }); if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Image upload failed') } return response.json() as Promise<{ url: string }> },
+  async uploadImage(file: File, noteId?: string) { const { data: { session } } = await supabase.auth.getSession(); const response = await fetch(`${root}/uploads${noteId ? `?noteId=${noteId}` : ''}`, { method: 'POST', headers: { 'Content-Type': file.type, ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) }, body: file }); if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Image upload failed') } return response.json() as Promise<{ url: string }> },
   askNote: (noteId: string, question: string, history?: { role: 'user' | 'assistant'; text: string }[]) => request<AiJob>('/chat/note', { method: 'POST', body: JSON.stringify({ noteId, question, history }) }), askNotes: (question: string, history?: { role: 'user' | 'assistant'; text: string }[]) => request<AiJob>('/chat/search', { method: 'POST', body: JSON.stringify({ question, history }) })
 }

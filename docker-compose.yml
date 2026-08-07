@@ -15,6 +15,7 @@ services:
       # application migration must run afterward because it grants privileges
       # to those roles.
       - ./supabase/migrations/001_initial.sql:/docker-entrypoint-initdb.d/zz_001_initial.sql:ro
+      - ./supabase/migrations/002_images.sql:/docker-entrypoint-initdb.d/zz_002_images.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s

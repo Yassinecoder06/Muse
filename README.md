@@ -83,6 +83,12 @@ The API returns note saves immediately. A background processor generates missing
 docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/001_initial.sql
 ```
 
+`002_images.sql` adds the `images` table (base64-encoded binaries) behind `POST /api/uploads` / `GET /api/images/:id`. Apply it to an existing database the same way:
+
+```bash
+docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/002_images.sql
+```
+
 ## AI configuration
 
 Run Ollama locally, sign in with `ollama signin`, and set both `OLLAMA_BASE_URL` and `OLLAMA_EMBEDDING_BASE_URL` to `http://localhost:11434`. The chat model is `gemma4:31b-cloud`; local Ollama transparently routes that model through your Ollama account. Semantic search uses local `nomic-embed-text:latest`, which produces 768-dimensional vectors matching the Qdrant collection. `OLLAMA_API_KEY` is needed only when the application calls `https://ollama.com` directly, so it is not needed in this configuration.
