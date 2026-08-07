@@ -1,6 +1,6 @@
 import { ArrowLeft, Bold, Check, Code2, FileText, Heading1, Heading2, Image, Italic, List, ListChecks, MoreHorizontal, Quote, Sparkles, Star, WandSparkles, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { api } from '../services/api'
+import { api, resolveApiImageSrc, relativizeApiImageSrc } from '../services/api'
 import type { AiJob, Note, NoteInput } from '../types'
 import { ChatPanel } from './ChatPanel'
 
@@ -10,18 +10,18 @@ const allowedTags = new Set(['B', 'BR', 'BLOCKQUOTE', 'CODE', 'DIV', 'EM', 'H1',
 function sanitizeHtml(value: string) {
   const container = document.createElement('div')
   container.innerHTML = value
-  for (const element of [...container.querySelectorAll('*')]) {
-    if (!allowedTags.has(element.tagName)) {
-      element.replaceWith(...Array.from(element.childNodes))
-      continue
+    for (const element of [...container.querySelectorAll('*')]) {
+      if (!allowedTags.has(element.tagName)) {
+        element.replaceWith(...Array.from(element.childNodes))
+        continue
+      }
+      const source = element.tagName === 'IMG' ? (element.getAttribute('src') || '') : ''
+      for (const attribute of [...element.attributes]) element.removeAttribute(attribute.name)
+      if (element.tagName === 'IMG') {
+        if (!/^(https?:\/\/|\/api\/images\/)/i.test(source)) element.remove()
+        else element.setAttribute('src', source)
+      }
     }
-    for (const attribute of [...element.attributes]) element.removeAttribute(attribute.name)
-    if (element.tagName === 'IMG') {
-      const source = (element as HTMLImageElement).src
-      if (!/^https?:\/\//i.test(source)) element.remove()
-      else element.setAttribute('src', source)
-    }
-  }
   return container.innerHTML
 }
 
@@ -31,6 +31,28 @@ function plainText(html: string) {
   return container.textContent || ''
 }
 
+function withImageUrls(html: string) {
+  const container = document.createElement('div')
+  container.innerHTML = html
+  for (const image of [...container.querySelectorAll('img')]) {
+    const src = image.getAttribute('src')
+    if (src) image.setAttribute('src', resolveApiImageSrc(src))
+  }
+  return container.innerHTML
+}
+
+function toStoredHtml(html: string) {
+  const container = document.createElement('div')
+  container.innerHTML = html
+  for (const image of [...container.querySelectorAll('img')]) {
+    const src = image.getAttribute('src')
+    if (src) image.setAttribute('src', relativizeApiImageSrc(src))
+  }
+  return container.innerHTML
+}
+
+function imageCount(html: string) { return (html.match(/<img\b/gi) || []).length }
+
 function completionMessage(job: AiJob) {
   if (job.type === 'summary') return 'Muse added a summary.'
   if (job.type === 'tasks') {
@@ -39,7 +61,10 @@ function completionMessage(job: AiJob) {
   }
   if (job.type === 'title') return 'Muse updated the title.'
   if (job.type === 'tags') return 'Muse updated the tags.'
-  if (job.type === 'rewrite') return 'Muse rewrote the note.'
+  if (job.type === 'rewrite') {
+    const images = typeof job.result?.images === 'number' ? job.result.images : 0
+    return images ? `Muse rewrote the note. ${images} image${images === 1 ? '' : 's'} moved to the end of the note.` : 'Muse rewrote the note.'
+  }
   return 'Muse finished your request.'
 }
 
@@ -61,7 +86,7 @@ export function Editor({ note, onBack, save, refresh, complete, trash, restore, 
     const cleaned = sanitizeHtml(note.content)
     setContent(cleaned)
     setTitle(note.title)
-    if (ref.current) ref.current.innerHTML = cleaned
+    if (ref.current) ref.current.innerHTML = withImageUrls(cleaned)
   }, [note.id])
   useEffect(() => {
     if (!jobId) return
@@ -78,7 +103,7 @@ export function Editor({ note, onBack, save, refresh, complete, trash, restore, 
           // must be explicitly synchronized after an AI job changes the note.
           setTitle(updated.title)
           setContent(updatedContent)
-          if (ref.current) ref.current.innerHTML = updatedContent
+          if (ref.current) ref.current.innerHTML = withImageUrls(updatedContent)
           onToast(completionMessage(job))
         }
         else onToast(`${job.error || 'Muse could not complete this request.'} Retry when you are ready.`)
@@ -95,7 +120,8 @@ export function Editor({ note, onBack, save, refresh, complete, trash, restore, 
   }
 
   function edit(html: string) {
-    const cleaned = sanitizeHtml(html)
+    const stored = toStoredHtml(html)
+    const cleaned = sanitizeHtml(stored)
     setContent(cleaned)
     queue({ content: cleaned })
   }
@@ -143,7 +169,7 @@ export function Editor({ note, onBack, save, refresh, complete, trash, restore, 
     if (file.size > 5 * 1024 * 1024) return onToast('Choose an image smaller than 5 MB.')
     setWorking(true)
     try {
-      const { url } = await api.uploadImage(file)
+      const { url } = await api.uploadImage(file, note.id)
       ref.current?.focus()
       command('insertImage', url)
       onToast('Image added.')
@@ -170,10 +196,19 @@ export function Editor({ note, onBack, save, refresh, complete, trash, restore, 
   async function assist(action: string) {
     const text = plainText(content).trim()
     if (!text) return onToast('Add some text first.')
+    const type = (rewriteModes.includes(action) ? 'rewrite' : action) as AiJob['type']
+    if (type === 'rewrite') {
+      const images = imageCount(content)
+      if (images) {
+        const proceed = window.confirm(`This note contains ${images} image${images === 1 ? '' : 's'}. During the rewrite they will be moved to the end of the note — you can reposition them afterwards. Continue?`)
+        if (!proceed) return
+      }
+    }
     setAiOpen(false)
     setWorking(true)
+    window.clearTimeout(timer.current)
     try {
-      const type = (rewriteModes.includes(action) ? 'rewrite' : action) as AiJob['type']
+      await save({ title, content })
       const job = await api.createAiJob(note.id, type, rewriteModes.includes(action) ? action : undefined)
       setJobId(job.id)
       onToast(job.queuePosition && job.queuePosition > 1 ? `Muse is busy. Your request is number ${job.queuePosition} in the queue.` : 'Muse is working on your request.')
@@ -235,7 +270,7 @@ export function Editor({ note, onBack, save, refresh, complete, trash, restore, 
       <div ref={ref} className="rich-editor" contentEditable suppressContentEditableWarning onInput={e => edit(e.currentTarget.innerHTML)} onPaste={pasteImage} onKeyUp={updateActive} onMouseUp={updateActive} onClick={updateActive}/>
       {note.summary && <section className="summary-card"><div><span><Sparkles size={16}/><strong>Muse summary</strong></span><button className="generated-remove" title="Remove summary" onClick={() => void clearSummary()}><X size={15}/></button></div><p>{note.summary}</p></section>}
       {!!note.tasks?.length && <section className="task-list"><div className="task-list-heading"><strong>Tasks</strong><button className="generated-remove" onClick={() => void clearTasks()}>Clear</button></div>{note.tasks.map(task => <label key={task.id}><input type="checkbox" checked={task.completed} onChange={e => { void toggleTask(task.id, e.target.checked) }}/><span>{task.text}</span></label>)}</section>}
-      <footer className="editor-footer"><div className="ai-menu-wrap"><button className="ai-trigger" onClick={() => setAiOpen(!aiOpen)}><WandSparkles size={16}/> AI assist</button>{aiOpen && <div className="ai-menu"><button onClick={() => assist('summary')}><Sparkles size={16}/> Summarize</button><button onClick={() => assist('tasks')}><ListChecks size={16}/> Extract tasks</button><button onClick={() => assist('title')}><FileText size={16}/> Smart title</button><button onClick={() => assist('tags')}><Sparkles size={16}/> Auto tags</button><small>REWRITE</small>{rewriteModes.map(mode => <button key={mode} onClick={() => assist(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}</div>}</div><button className="ask-note" onClick={() => setChat(true)}><Sparkles size={15}/> Ask this note</button><span>{wordCount} words</span></footer>
+      <footer className="editor-footer"><div className="ai-menu-wrap"><button className="ai-trigger" onClick={() => setAiOpen(!aiOpen)}><WandSparkles size={16}/> AI assist</button>{aiOpen && <div className="ai-menu"><button onClick={() => assist('summary')}><Sparkles size={16}/> Summarize</button><button onClick={() => assist('tasks')}><ListChecks size={16}/> Extract tasks</button><button onClick={() => assist('title')}><FileText size={16}/> Smart title</button><button onClick={() => assist('tags')}><Sparkles size={16}/> Auto tags</button><small>REWRITE</small>{rewriteModes.map(mode => <button key={mode} onClick={() => assist(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}{imageCount(content) > 0 && <small className="ai-warning"><Image size={13}/> Images will be moved to the end of the note on rewrite.</small>}</div>}</div><button className="ask-note" onClick={() => setChat(true)}><Sparkles size={15}/> Ask this note</button><span>{wordCount} words</span></footer>
     </div>
     {chat && <ChatPanel note={note} mode="note" onClose={() => setChat(false)}/>}
   </div>
