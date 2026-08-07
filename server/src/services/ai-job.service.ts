@@ -46,10 +46,13 @@ else if (job.type === 'rewrite') {
     const mode = job.payload?.mode; if (!mode) throw new Error('Rewrite mode is missing.')
     const current = await notes.get(job.user_id, note!.id)
     const { text, images } = extractImageTags(current.content)
+    if (debugRewrite()) console.log('[rewrite-debug] worker read content:', JSON.stringify(current.content.slice(0, 250)))
     const rewritten = await ai.rewrite(text, mode)
+    if (debugRewrite()) console.log('[rewrite-debug] model output:', rewritten.slice(0, 300))
     const latest = await notes.get(job.user_id, note!.id)
     const lateImages = extractImageTags(latest.content).images.filter(src => !images.includes(src))
     const content = restoreImages(rewritten, [...images, ...lateImages])
+    if (debugRewrite()) console.log('[rewrite-debug] final content img count:', (content.match(/<img\b/gi) || []).length)
     await notes.update(job.user_id, note!.id, { content })
     result = { content, images: images.length }
   }
@@ -66,6 +69,7 @@ else if (job.type === 'rewrite') {
   return result
 }
 
+const debugRewrite = () => (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.DEBUG_REWRITE === '1'
 let running = false
 export function startAiWorker() {
   if (running) return

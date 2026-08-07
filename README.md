@@ -89,6 +89,17 @@ docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/001
 docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/002_images.sql
 ```
 
+### Images
+
+Images live **inside Postgres** (base64 text in `images.data`) — there is no
+storage bucket and no filesystem dependency, so backups and restores carry the
+binaries automatically. The editor uploads with `?noteId=<note>` so every
+image row records its owning note. Note content stores relative URLs
+(`/api/images/<uuid>`); the client renders them absolute and sanitizes all
+HTML on every edit and load. AI rewrites replace `<img>` tags with `[IMAGE n]`
+placeholders before the model call and restore them in the original position
+afterwards — images can never be deleted by a rewrite.
+
 ## AI configuration
 
 Run Ollama locally, sign in with `ollama signin`, and set both `OLLAMA_BASE_URL` and `OLLAMA_EMBEDDING_BASE_URL` to `http://localhost:11434`. The chat model is `gemma4:31b-cloud`; local Ollama transparently routes that model through your Ollama account. Semantic search uses local `nomic-embed-text:latest`, which produces 768-dimensional vectors matching the Qdrant collection. `OLLAMA_API_KEY` is needed only when the application calls `https://ollama.com` directly, so it is not needed in this configuration.
@@ -108,9 +119,14 @@ Optional AI tuning variables in `.env`:
 
 | Area | Endpoints |
 | --- | --- |
-| Notes | `GET /api/notes`, `GET /api/notes/:id`, `POST /api/notes`, `PUT /api/notes/:id`, `DELETE /api/notes/:id` |
-| AI | `POST /api/ai/title`, `/tags`, `/summary`, `/tasks`, `/rewrite` |
+| Notes | `GET /api/notes`, `GET /api/notes/:id`, `POST /api/notes`, `PUT /api/notes/:id`, `DELETE /api/notes/:id` (soft), `DELETE /api/notes/:id/permanent`, bulk/restore/trash helpers |
+| AI jobs | `POST /api/ai/jobs` (`summary`, `tasks`, `title`, `tags`, `rewrite` + `mode`), `GET /api/ai/jobs/:id` |
 | Chat | `POST /api/chat/note`, `POST /api/chat/search` |
+| Images | `POST /api/uploads` (raw body, ≤5 MB, optional `?noteId`), `GET /api/images/:id` (public by UUID) |
+
+Muse has no synchronous AI endpoints — every AI call is a job in `ai_jobs`
+that a background worker processes, and the client polls `GET /api/ai/jobs/:id`.
+See `endpoints.md` for the full reference.
 
 ## Deploy with Nginx and Cloudflare Tunnel
 
@@ -211,7 +227,9 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Nginx (127.0.0.1:80
 
    **Pitfalls caught in production:** the `User=` must be an account that
    actually exists, and `ExecStart` must not resolve to a Node 18 binary --
-   both caused the unit to crash-loop instantly.
+   both caused the unit to crash-loop instantly. And **after every
+   `npm run build`, restart the service** (`sudo systemctl restart muse`) —
+   the running process keeps the old `server/dist` in memory until you do.
 
 6. Configure a private Nginx site. Replace `/home/ideaserver/Muse` with the
    directory that contains this repository:
