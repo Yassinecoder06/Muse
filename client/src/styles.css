@@ -75,3 +75,29 @@
 [data-theme=dark] .note-check:hover{border-color:#8a78e7}
 [data-theme=dark] .note-card-actions button:hover{background:#302f39;color:#c4b0ff}
 [data-theme=dark] .note-card-actions button.danger:hover{background:#33202a;color:#e07a88}
+
+/* Collapsible sidebar (ChatGPT-style icon rail) */
+.sidebar{transition:width .25s ease}
+.dashboard-main{transition:margin-left .25s ease,width .25s ease}
+.sidebar-toggle{margin-left:auto;display:grid;place-items:center;width:26px;height:26px;border-radius:6px;color:#9a99a3;flex:none}
+.sidebar-toggle:hover{background:#e7e7eb;color:#272630}
+.sidebar-collapse{display:grid;place-items:center;width:32px;height:32px;border-radius:7px;color:#696872;flex:none}
+.sidebar-collapse:hover{background:#efedf4;color:#5f42b5}
+.app-layout.sidebar-collapsed .sidebar{width:64px;overflow:hidden}
+.app-layout.sidebar-collapsed .dashboard-main{margin-left:64px;width:calc(100% - 64px)}
+.app-layout.sidebar-collapsed .brand{font-size:0;gap:0;justify-content:center;margin:0 0 27px}
+.app-layout.sidebar-collapsed .brand .sidebar-toggle{display:none}
+.app-layout.sidebar-collapsed nav button,.app-layout.sidebar-collapsed .sidebar-footer>button{justify-content:center;padding:9px 0}
+.app-layout.sidebar-collapsed nav button span,.app-layout.sidebar-collapsed nav em,.app-layout.sidebar-collapsed .sidebar-footer>button span{display:none}
+.app-layout.sidebar-collapsed .new-note{justify-content:center;padding:10px 6px;font-size:0}
+.app-layout.sidebar-collapsed .new-note kbd{display:none}
+.app-layout.sidebar-collapsed .user{justify-content:center;padding:16px 0 2px}
+.app-layout.sidebar-collapsed .user span{display:none}
+[data-theme=dark] .sidebar-toggle{color:#a5a2ad}
+[data-theme=dark] .sidebar-toggle:hover,[data-theme=dark] .sidebar-collapse:hover{background:#29282f;color:#fff}
+[data-theme=dark] .sidebar-collapse{color:#a5a2ad}
+
+/* Editor formatting: active toolbar buttons and headings */
+.toolbar button.active{background:#e9e2ff;color:#5f42b5}
+[data-theme=dark] .toolbar button.active{background:#3a3550;color:#c6b8ff}
+.rich-editor h1{font-size:30px;margin:.3em 0}

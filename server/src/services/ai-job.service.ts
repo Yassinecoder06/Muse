@@ -1,5 +1,5 @@
 import { supabase } from '../supabase/client.js'
-import { ai } from './ai.service.js'
+import { ai, contextBudgetChars, type HistoryItem } from './ai.service.js'
 import { notes } from './note.repository.js'
 import { vectors } from './vector.service.js'
 import type { AiJob, AiJobType } from '../types/index.js'
@@ -7,7 +7,7 @@ import type { AiJob, AiJobType } from '../types/index.js'
 export class AiQueueLimitError extends Error {}
 
 export const jobs = {
-  async enqueue(userId: string, noteId: string | null, type: AiJobType, payload: { mode?: string; question?: string } = {}) {
+  async enqueue(userId: string, noteId: string | null, type: AiJobType, payload: { mode?: string; question?: string; history?: HistoryItem[] } = {}) {
     if (noteId) await notes.get(userId, noteId)
     const { data: active, error: activeError } = await supabase.from('ai_jobs').select('id').eq('user_id', userId).in('status', ['queued', 'processing']).limit(1)
     if (activeError) throw activeError
@@ -42,8 +42,15 @@ async function process(job: AiJob) {
   else if (job.type === 'title') { const title = await ai.generateTitle(note!.content); await notes.setGenerated(job.user_id, note!.id, { title }); result = { title } }
   else if (job.type === 'tags') { const tags = await ai.generateTags(note!.content); await notes.setGenerated(job.user_id, note!.id, { tags }); result = { tags } }
   else if (job.type === 'rewrite') { const mode = job.payload?.mode; if (!mode) throw new Error('Rewrite mode is missing.'); const content = await ai.rewrite(note!.content, mode); await notes.update(job.user_id, note!.id, { content }); result = { content } }
-  else if (job.type === 'ask_note') result = { answer: await ai.askCurrentNote(job.payload.question!, `${note!.title}\n${note!.content}`), sources: [{ id: note!.id, title: note!.title }] }
-  else if (job.type === 'ask_search') { const ids = await vectors.searchSimilarNotes(job.user_id, job.payload.question || '', 8); const found = (await Promise.all(ids.map(id => notes.get(job.user_id, id).catch(() => null)))).filter(Boolean); const context = found.map(item => `# ${(item as any).title}\n${(item as any).content}`).join('\n\n'); result = { answer: await ai.askMyNotes(job.payload.question || '', context), sources: found.map(item => ({ id: (item as any).id, title: (item as any).title })) } }
+  else if (job.type === 'ask_note') result = { answer: await ai.askCurrentNote(job.payload.question!, `${note!.title}\n${note!.content}`, job.payload?.history), sources: [{ id: note!.id, title: note!.title }] }
+  else if (job.type === 'ask_search') {
+    const ids = await vectors.searchSimilarNotes(job.user_id, job.payload.question || '')
+    const found = (await Promise.all(ids.map(id => notes.get(job.user_id, id).catch(() => null)))).filter(Boolean)
+    const budget = contextBudgetChars()
+    const perNote = Math.max(1500, Math.floor(budget / Math.max(found.length, 1)))
+    const context = found.map((item: any) => `# ${item.title}\n${item.content.slice(0, perNote)}`).join('\n\n')
+    result = { answer: await ai.askMyNotes(job.payload.question || '', context, job.payload.history), sources: found.map((item: any) => ({ id: item.id, title: item.title })) }
+  }
   if (note) await vectors.upsertVector(await notes.get(job.user_id, note.id))
   return result
 }
