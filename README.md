@@ -93,6 +93,11 @@ The Qdrant `notes` collection is created at API startup with cosine distance and
 curl -X DELETE http://localhost:6333/collections/notes
 ```
 
+Optional AI tuning variables in `.env`:
+
+- `OLLAMA_NUM_CTX` — the context window in tokens passed to the chat model (default `32768`). It also sets the character budget used to assemble retrieved context for "Ask my notes", so longer windows allow more notes per answer.
+- `RAG_TOP_K` — how many Qdrant matches "Ask my notes" retrieves per question (default `10`).
+
 ## REST API
 
 | Area | Endpoints |

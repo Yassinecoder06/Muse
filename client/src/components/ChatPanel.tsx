@@ -12,11 +12,12 @@ export function ChatPanel({ note, mode, onClose }: { note?: Note; mode: 'note' |
   async function send() {
     if (!question.trim() || loading) return
     const questionValue = question
+    const history = messages.slice(-6).map(({ role, text }) => ({ role, text }))
     setQuestion('')
     setMessages(items => [...items, { role: 'user', text: questionValue }])
     setLoading(true)
     try {
-      let job = mode === 'note' && note ? await api.askNote(note.id, questionValue) : await api.askNotes(questionValue)
+      let job = mode === 'note' && note ? await api.askNote(note.id, questionValue, history) : await api.askNotes(questionValue, history)
       while (job.status === 'queued' || job.status === 'processing') {
         await new Promise(resolve => window.setTimeout(resolve, 1500))
         job = await api.getAiJob(job.id)

@@ -4,4 +4,4 @@ export type NoteInput = { title?: string; content?: string; favorite?: boolean; 
 export type AiStatus = 'idle' | 'processing' | 'complete' | 'error'
 export type AiJobType = 'organize' | 'summary' | 'tasks' | 'title' | 'tags' | 'rewrite' | 'ask_note' | 'ask_search'
 export type AiJobStatus = 'queued' | 'processing' | 'complete' | 'failed'
-export type AiJob = { id: string; user_id: string; note_id: string | null; type: AiJobType; payload: { mode?: string; question?: string }; status: AiJobStatus; attempts: number; error: string | null; result: Record<string, unknown> | null; created_at: string; started_at: string | null; finished_at: string | null }
+export type AiJob = { id: string; user_id: string; note_id: string | null; type: AiJobType; payload: { mode?: string; question?: string; history?: { role: 'user' | 'assistant'; text: string }[] }; status: AiJobStatus; attempts: number; error: string | null; result: Record<string, unknown> | null; created_at: string; started_at: string | null; finished_at: string | null }
