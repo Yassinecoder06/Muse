@@ -205,7 +205,7 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Nginx (127.0.0.1:80
    ```
 
 5. Run Express and the AI worker as a `systemd` service. Replace
-   `ideaserver` and `/home/ideaserver/Muse` with the Linux user that owns the
+   `<user>` and `/home/<user>/Muse` with the Linux user that owns the
    repo and the project directory. Point `ExecStart` at the Node 20+ runtime
    (run `command -v node` to find it; if installed via nvm, use the full path
    under `~/.nvm/versions/node/...`):
@@ -219,10 +219,10 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Nginx (127.0.0.1:80
 
    [Service]
    Type=simple
-   User=ideaserver
-   WorkingDirectory=/home/ideaserver/Muse
+   User=<user>
+   WorkingDirectory=/home/<user>/Muse
    Environment=NODE_ENV=production
-   ExecStart=/home/ideaserver/.nvm/versions/node/v22.23.2/bin/node server/dist/index.js
+   ExecStart=/home/<user>/.nvm/versions/node/<node-version>/bin/node server/dist/index.js
    Restart=always
    RestartSec=5
 
@@ -244,7 +244,7 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Nginx (127.0.0.1:80
    `npm run build`, restart the service** (`sudo systemctl restart muse`) —
    the running process keeps the old `server/dist` in memory until you do.
 
-6. Configure a private Nginx site. Replace `/home/ideaserver/Muse` with the
+6. Configure a private Nginx site. Replace `/home/<user>/Muse` with the
    directory that contains this repository:
 
    ```bash
@@ -260,7 +260,7 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Nginx (127.0.0.1:80
    server {
        listen 127.0.0.1:8080;
        server_name _;
-       root /home/ideaserver/Muse/client/dist;
+       root /home/<user>/Muse/client/dist;
        index index.html;
        client_max_body_size 6m;
 
