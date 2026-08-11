@@ -53,7 +53,7 @@ app.get('/api/images/:id', async (req, res, next) => {
 })
 app.use('/uploads', express.static(uploadsDirectory))
 app.use('/api', router)
-app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => { console.error(error); if (error instanceof ZodError) return res.status(400).json({ error: 'Invalid request', details: error.flatten() }); res.status(500).json({ error: error instanceof Error ? error.message : 'Unexpected server error' }) })
+app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => { console.error(error); if (error instanceof ZodError) return res.status(400).json({ error: 'Invalid request', details: error.flatten() }); const status = typeof (error as any)?.statusCode === 'number' ? (error as any).statusCode : 500; res.status(status).json({ error: error instanceof Error ? error.message : 'Unexpected server error' }) })
 ensureCollection().catch(error => console.error('Qdrant connection unavailable at startup', error))
 startAiWorker()
 app.listen(env.PORT, () => console.log(`Muse API listening on http://localhost:${env.PORT}`))
