@@ -10,6 +10,12 @@ services:
       JWT_EXP: 3600
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      # pgsodium root key MUST be pinned: the image generates a random one on
+      # every container (re)create and the vault ciphertexts become
+      # undecryptable when it changes. This file persists the root key across
+      # container recreations. Never delete it — vault data is unrecoverable
+      # without it.
+      - ./docker/pgsodium_root.key:/etc/postgresql-custom/pgsodium_root.key:ro
       - ./docker/roles.sql:/docker-entrypoint-initdb.d/z0_roles.sql:ro
       # The Supabase image's migrate.sh creates its database roles first.  This
       # application migration must run afterward because it grants privileges

@@ -40,10 +40,18 @@ returns text
 language plpgsql security definer set search_path = public, vault as $$
 declare result text;
 begin
-  select decrypted_secret into result
-  from vault.decrypted_secrets
-  where name = 'ollama:' || p_user_id::text
-  limit 1;
+  begin
+    select decrypted_secret into result
+    from vault.decrypted_secrets
+    where name = 'ollama:' || p_user_id::text
+    limit 1;
+  exception
+    when others then
+      -- Undecryptable row (e.g. the pgsodium root key was regenerated because
+      -- the keyfile in the container filesystem was lost): treat as no key so
+      -- the app asks the user to re-enter it instead of failing every request.
+      return null;
+  end;
   return result;
 end $$;
 
