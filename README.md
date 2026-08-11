@@ -102,7 +102,17 @@ afterwards — images can never be deleted by a rewrite.
 
 ## AI configuration
 
-Run Ollama locally, sign in with `ollama signin`, and set both `OLLAMA_BASE_URL` and `OLLAMA_EMBEDDING_BASE_URL` to `http://localhost:11434`. The chat model is `gemma4:31b-cloud`; local Ollama transparently routes that model through your Ollama account. Semantic search uses local `nomic-embed-text:latest`, which produces 768-dimensional vectors matching the Qdrant collection. `OLLAMA_API_KEY` is needed only when the application calls `https://ollama.com` directly, so it is not needed in this configuration.
+AI is **cloud-only and per-user**: every feature (chat, research, organize, rewrite, …) calls `https://ollama.com` directly with **the signed-in user's own Ollama API key** — no local Ollama, no sign-in queue. Each user adds their key once in the app (Settings → Ollama API key; create it at `https://ollama.com/settings/keys`). The key is validated before it is stored, encrypted at rest in the database via the Supabase **Vault** (`vault.create_secret` / pgsodium, root key seeded by `003_api_keys.sql`), is only ever decrypted server-side for the AI call, and is never returned by any endpoint (`GET /api/settings` returns just `{ "hasApiKey": true }`). A missing or revoked key is reported per request ("Add your Ollama API key in Settings…"); the server never logs it.
+
+The available models are a curated set (Settings → Chat model):
+
+- `gpt-oss:120b-cloud`
+- `nemotron-3-super:cloud`
+- `gemma4:31b-cloud` (default)
+
+The `-cloud`/`:cloud` naming is display-only — the server strips it when calling Ollama Cloud, which expects the plain name (`gpt-oss:120b`, `nemotron-3-super`, `gemma4:31b`). The picker choice is stored per-browser and sent with every AI job. The **embedding** model stays local (`OLLAMA_EMBEDDING_BASE_URL`, default `http://localhost:11434`) so vector search never burns cloud quota — it must remain `nomic-embed-text:latest` (768-dim) or the Qdrant collection breaks.
+
+**Usage dashboard**: Settings → Ollama Cloud usage shows your plan and the session (5-hour) and weekly (7-day) limits from `GET https://ollama.com/api/usage`, with per-model request counts.
 
 The Qdrant `notes` collection is created at API startup with cosine distance and a 768-dimension vector size. If your Ollama embedding provider emits another size, drop the collection so the API recreates it (or create it yourself with that model's dimension) before starting the API:
 
@@ -112,20 +122,23 @@ curl -X DELETE http://localhost:6333/collections/notes
 
 Optional AI tuning variables in `.env`:
 
+- `OLLAMA_CHAT_MODEL` — the default chat model used when the app does not send one (default `gemma4:31b-cloud`).
 - `OLLAMA_NUM_CTX` — the context window in tokens passed to the chat model (default `32768`). It also sets the character budget used to assemble retrieved context for "Ask my notes", so longer windows allow more notes per answer.
 - `RAG_TOP_K` — how many Qdrant matches "Ask my notes" retrieves per question (default `10`).
+- `OLLAMA_EMBEDDING_BASE_URL` / `OLLAMA_EMBEDDING_MODEL` — the local Ollama used for embeddings only.
 
 ## REST API
 
 | Area | Endpoints |
 | --- | --- |
 | Notes | `GET /api/notes`, `GET /api/notes/:id`, `POST /api/notes`, `PUT /api/notes/:id`, `DELETE /api/notes/:id` (soft), `DELETE /api/notes/:id/permanent`, bulk/restore/trash helpers |
-| AI jobs | `POST /api/ai/jobs` (`summary`, `tasks`, `title`, `tags`, `rewrite` + `mode`), `GET /api/ai/jobs/:id` |
-| Chat | `POST /api/chat/note`, `POST /api/chat/search` |
+| AI jobs | `POST /api/ai/jobs` (`summary`, `tasks`, `title`, `tags`, `rewrite` + `mode`, `research` + `topic`/`depth`; optional `model` override), `GET /api/ai/jobs/:id`, `GET /api/models`, `GET /api/ai/usage` |
+| Chat | `POST /api/chat/note`, `POST /api/chat/search` (both accept optional `model`) |
 | Images | `POST /api/uploads` (raw body, ≤5 MB, optional `?noteId`), `GET /api/images/:id` (public by UUID) |
 
-Muse has no synchronous AI endpoints — every AI call is a job in `ai_jobs`
-that a background worker processes, and the client polls `GET /api/ai/jobs/:id`.
+Muse has no synchronous AI endpoints — every AI call is a job in `ai_jobs` that a background worker processes, and the client polls `GET /api/ai/jobs/:id`.
+The per-user Ollama API key lives in `user_settings` via `GET|PUT|DELETE /api/settings` (never returned), encrypted in Postgres Vault.
+
 See `endpoints.md` for the full reference.
 
 ## Deploy with Nginx and Cloudflare Tunnel

@@ -2,13 +2,15 @@ import { supabase } from '../supabase/client.js'
 import { ai, contextBudgetChars, type HistoryItem } from './ai.service.js'
 import { notes } from './note.repository.js'
 import { vectors } from './vector.service.js'
+import { research } from './research.service.js'
+import { settings } from './settings.repository.js'
 import { extractImageTags, restoreImages, stripImages } from '../utils/images.js'
 import type { AiJob, AiJobType } from '../types/index.js'
 
 export class AiQueueLimitError extends Error {}
 
 export const jobs = {
-  async enqueue(userId: string, noteId: string | null, type: AiJobType, payload: { mode?: string; question?: string; history?: HistoryItem[] } = {}) {
+  async enqueue(userId: string, noteId: string | null, type: AiJobType, payload: { mode?: string; question?: string; history?: HistoryItem[]; model?: string; topic?: string; depth?: 'concise' | 'standard' | 'in-depth' } = {}) {
     if (noteId) await notes.get(userId, noteId)
     const { data: active, error: activeError } = await supabase.from('ai_jobs').select('id').eq('user_id', userId).in('status', ['queued', 'processing']).limit(1)
     if (activeError) throw activeError
@@ -23,31 +25,38 @@ export const jobs = {
     if (error) throw error
     return data as AiJob
   },
+  async active(userId: string) {
+    const { data, error } = await supabase.from('ai_jobs').select('type').eq('user_id', userId).in('status', ['queued', 'processing']).order('created_at', { ascending: true }).limit(1)
+    if (error) throw error
+    return (data?.[0] as { type: AiJobType } | undefined) ?? null
+  },
   async complete(id: string, result: Record<string, unknown>) { const { error } = await supabase.from('ai_jobs').update({ status: 'complete', result, finished_at: new Date().toISOString(), error: null }).eq('id', id); if (error) throw error },
   async fail(id: string, error: unknown) { const message = error instanceof Error ? error.message : 'Muse could not complete this request.'; const { error: updateError } = await supabase.from('ai_jobs').update({ status: 'failed', error: message.slice(0, 500), finished_at: new Date().toISOString() }).eq('id', id); if (updateError) throw updateError },
   async cleanup() { await supabase.from('ai_jobs').delete().eq('status', 'complete').lt('finished_at', new Date(Date.now() - 60 * 60 * 1000).toISOString()); await supabase.from('ai_jobs').delete().eq('status', 'failed').lt('finished_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()) }
 }
 
 async function process(job: AiJob) {
-  if ((job.type !== 'ask_search' && !job.note_id) || ((job.type === 'ask_note') && !job.payload?.question)) throw new Error('AI job is missing its required note or question.')
+  if ((job.type !== 'ask_search' && job.type !== 'research' && !job.note_id) || ((job.type === 'ask_note') && !job.payload?.question)) throw new Error('AI job is missing its required note or question.')
+  const apiKey = await settings.getKey(job.user_id)
+  if (!apiKey) throw new Error('Add your Ollama API key in Settings to use AI features.')
   const note = job.note_id ? await notes.get(job.user_id, job.note_id) : null
+  const model = job.payload?.model || undefined
   let result: Record<string, unknown> = {}
   if (job.type === 'organize') {
-    const title = note!.title.trim() || await ai.generateTitle(note!.content)
-    const tags = await ai.generateTags(note!.content)
-    const summary = await ai.summarize(note!.content)
+    const title = note!.title.trim() || await ai.generateTitle(note!.content, model, apiKey)
+    const tags = await ai.generateTags(note!.content, model, apiKey)
+    const summary = await ai.summarize(note!.content, model, apiKey)
     await notes.setGenerated(job.user_id, note!.id, { title, tags, summary })
     result = { title, tags, summary }
-  } else if (job.type === 'summary') { const summary = await ai.summarize(note!.content); await notes.setGenerated(job.user_id, note!.id, { summary }); result = { summary } }
-  else if (job.type === 'tasks') { const tasks = await ai.extractTasks(note!.content); await notes.replaceTasks(job.user_id, note!.id, tasks); result = { count: tasks.length } }
-  else if (job.type === 'title') { const title = await ai.generateTitle(note!.content); await notes.setGenerated(job.user_id, note!.id, { title }); result = { title } }
-  else if (job.type === 'tags') { const tags = await ai.generateTags(note!.content); await notes.setGenerated(job.user_id, note!.id, { tags }); result = { tags } }
-else if (job.type === 'rewrite') {
+  } else if (job.type === 'summary') { const summary = await ai.summarize(note!.content, model, apiKey); await notes.setGenerated(job.user_id, note!.id, { summary }); result = { summary } }
+  else if (job.type === 'tasks') { const tasks = await ai.extractTasks(note!.content, model, apiKey); await notes.replaceTasks(job.user_id, note!.id, tasks); result = { count: tasks.length } }
+  else if (job.type === 'title') { const title = await ai.generateTitle(note!.content, model, apiKey); await notes.setGenerated(job.user_id, note!.id, { title }); result = { title } }
+  else if (job.type === 'tags') { const tags = await ai.generateTags(note!.content, model, apiKey); await notes.setGenerated(job.user_id, note!.id, { tags }); result = { tags } } else if (job.type === 'rewrite') {
     const mode = job.payload?.mode; if (!mode) throw new Error('Rewrite mode is missing.')
     const current = await notes.get(job.user_id, note!.id)
     const { text, images } = extractImageTags(current.content)
     if (debugRewrite()) console.log('[rewrite-debug] worker read content:', JSON.stringify(current.content.slice(0, 250)))
-    const rewritten = await ai.rewrite(text, mode)
+    const rewritten = await ai.rewrite(text, mode, model, apiKey)
     if (debugRewrite()) console.log('[rewrite-debug] model output:', rewritten.slice(0, 300))
     const latest = await notes.get(job.user_id, note!.id)
     const lateImages = extractImageTags(latest.content).images.filter(src => !images.includes(src))
@@ -56,14 +65,21 @@ else if (job.type === 'rewrite') {
     await notes.update(job.user_id, note!.id, { content })
     result = { content, images: images.length }
   }
-  else if (job.type === 'ask_note') result = { answer: await ai.askCurrentNote(job.payload.question!, `${note!.title}\n${stripImages(note!.content)}`, job.payload?.history), sources: [{ id: note!.id, title: note!.title }] }
+  else if (job.type === 'ask_note') result = { answer: await ai.askCurrentNote(job.payload.question!, `${note!.title}\n${stripImages(note!.content)}`, job.payload?.history, model, apiKey), sources: [{ id: note!.id, title: note!.title }] }
   else if (job.type === 'ask_search') {
     const ids = await vectors.searchSimilarNotes(job.user_id, job.payload.question || '')
     const found = (await Promise.all(ids.map(id => notes.get(job.user_id, id).catch(() => null)))).filter(Boolean)
     const budget = contextBudgetChars()
     const perNote = Math.max(1500, Math.floor(budget / Math.max(found.length, 1)))
     const context = found.map((item: any) => `# ${item.title}\n${stripImages(item.content).slice(0, perNote)}`).join('\n\n')
-    result = { answer: await ai.askMyNotes(job.payload.question || '', context, job.payload.history), sources: found.map((item: any) => ({ id: item.id, title: item.title })) }
+    result = { answer: await ai.askMyNotes(job.payload.question || '', context, job.payload?.history, model, apiKey), sources: found.map((item: any) => ({ id: item.id, title: item.title })) }
+  }
+  else if (job.type === 'research') {
+    const topic = job.payload?.topic?.trim(); if (!topic) throw new Error('Research topic is missing.')
+    const { title, content, sources } = await research(topic, job.payload?.depth, model, apiKey)
+    const created = await notes.create(job.user_id, { title, content })
+    await vectors.upsertVector(created)
+    result = { noteId: created.id, title, sources: sources.map(({ title: sourceTitle, url }) => ({ title: sourceTitle, url })) }
   }
   if (note) await vectors.upsertVector(await notes.get(job.user_id, note.id))
   return result

@@ -65,10 +65,11 @@ function completionMessage(job: AiJob) {
     const images = typeof job.result?.images === 'number' ? job.result.images : 0
     return images ? `Muse rewrote the note. ${images} image${images === 1 ? '' : 's'} kept in place.` : 'Muse rewrote the note.'
   }
+  if (job.type === 'organize') return 'Muse organized your note — title, tags and summary are ready.'
   return 'Muse finished your request.'
 }
 
-export function Editor({ note, onBack, save, refresh, complete, trash, restore, permanentlyDelete, onToast }: { note: Note; onBack: () => void; save: (input: NoteInput) => Promise<unknown>; refresh: () => Promise<Note>; complete: (input: NoteInput) => Promise<AiJob>; trash: () => Promise<void>; restore: () => Promise<void>; permanentlyDelete: () => Promise<void>; onToast: (message: string) => void }) {
+export function Editor({ note, onBack, save, refresh, trash, restore, permanentlyDelete, onToast }: { note: Note; onBack: () => void; save: (input: NoteInput) => Promise<unknown>; refresh: () => Promise<Note>; trash: () => Promise<void>; restore: () => Promise<void>; permanentlyDelete: () => Promise<void>; onToast: (message: string) => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const timer = useRef<number | undefined>(undefined)
   const imageInput = useRef<HTMLInputElement>(null)
@@ -188,8 +189,8 @@ export function Editor({ note, onBack, save, refresh, complete, trash, restore, 
   async function finishNote() {
     window.clearTimeout(timer.current)
     setWorking(true)
-    try { const job = await complete({ title, content }); onToast(job.queuePosition && job.queuePosition > 1 ? `Muse is busy. Your note is number ${job.queuePosition} in the queue.` : 'Muse is organizing your note.'); onBack() }
-    catch { onToast('Unable to save and organize this note.') }
+    try { await save({ title, content }); onBack() }
+    catch { onToast('Unable to save this note.') }
     finally { setWorking(false) }
   }
 
@@ -202,7 +203,7 @@ export function Editor({ note, onBack, save, refresh, complete, trash, restore, 
     window.clearTimeout(timer.current)
     try {
       await save({ title, content })
-      const job = await api.createAiJob(note.id, type, rewriteModes.includes(action) ? action : undefined)
+      const job = type === 'organize' ? await api.organizeNote(note.id) : await api.createAiJob(note.id, type, rewriteModes.includes(action) ? action : undefined)
       setJobId(job.id)
       onToast(job.queuePosition && job.queuePosition > 1 ? `Muse is busy. Your request is number ${job.queuePosition} in the queue.` : 'Muse is working on your request.')
     } catch (error) { setWorking(false); onToast(error instanceof Error ? error.message : 'Muse AI is unavailable right now.') }
@@ -263,7 +264,7 @@ export function Editor({ note, onBack, save, refresh, complete, trash, restore, 
       <div ref={ref} className="rich-editor" contentEditable suppressContentEditableWarning onInput={e => edit(e.currentTarget.innerHTML)} onPaste={pasteImage} onKeyUp={updateActive} onMouseUp={updateActive} onClick={updateActive}/>
       {note.summary && <section className="summary-card"><div><span><Sparkles size={16}/><strong>Muse summary</strong></span><button className="generated-remove" title="Remove summary" onClick={() => void clearSummary()}><X size={15}/></button></div><p>{note.summary}</p></section>}
       {!!note.tasks?.length && <section className="task-list"><div className="task-list-heading"><strong>Tasks</strong><button className="generated-remove" onClick={() => void clearTasks()}>Clear</button></div>{note.tasks.map(task => <label key={task.id}><input type="checkbox" checked={task.completed} onChange={e => { void toggleTask(task.id, e.target.checked) }}/><span>{task.text}</span></label>)}</section>}
-      <footer className="editor-footer"><div className="ai-menu-wrap"><button className="ai-trigger" onClick={() => setAiOpen(!aiOpen)}><WandSparkles size={16}/> AI assist</button>{aiOpen && <div className="ai-menu"><button onClick={() => assist('summary')}><Sparkles size={16}/> Summarize</button><button onClick={() => assist('tasks')}><ListChecks size={16}/> Extract tasks</button><button onClick={() => assist('title')}><FileText size={16}/> Smart title</button><button onClick={() => assist('tags')}><Sparkles size={16}/> Auto tags</button><small>REWRITE</small>{rewriteModes.map(mode => <button key={mode} onClick={() => assist(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}{imageCount(content) > 0 && <small className="ai-warning"><Image size={13}/> Images stay in place when the note is rewritten.</small>}</div>}</div><button className="ask-note" onClick={() => setChat(true)}><Sparkles size={15}/> Ask this note</button><span>{wordCount} words</span></footer>
+      <footer className="editor-footer"><div className="ai-menu-wrap"><button className="ai-trigger" onClick={() => setAiOpen(!aiOpen)}><WandSparkles size={16}/> AI assist</button>{aiOpen && <div className="ai-menu"><button onClick={() => assist('organize')}><WandSparkles size={16}/> Organize</button><button onClick={() => assist('summary')}><Sparkles size={16}/> Summarize</button><button onClick={() => assist('tasks')}><ListChecks size={16}/> Extract tasks</button><button onClick={() => assist('title')}><FileText size={16}/> Smart title</button><button onClick={() => assist('tags')}><Sparkles size={16}/> Auto tags</button><small>REWRITE</small>{rewriteModes.map(mode => <button key={mode} onClick={() => assist(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}{imageCount(content) > 0 && <small className="ai-warning"><Image size={13}/> Images stay in place when the note is rewritten.</small>}</div>}</div><button className="ask-note" onClick={() => setChat(true)}><Sparkles size={15}/> Ask this note</button><span>{wordCount} words</span></footer>
     </div>
     {chat && <ChatPanel note={note} mode="note" onClose={() => setChat(false)}/>}
   </div>

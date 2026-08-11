@@ -27,7 +27,7 @@ create table public.ai_jobs (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid not null references auth.users(id) on delete cascade,
   note_id uuid references public.notes(id) on delete cascade,
-  type text not null check (type in ('organize', 'summary', 'tasks', 'title', 'tags', 'rewrite', 'ask_note', 'ask_search')),
+  type text not null check (type in ('organize', 'summary', 'tasks', 'title', 'tags', 'rewrite', 'ask_note', 'ask_search', 'research')),
   payload jsonb not null default '{}'::jsonb,
   status text not null default 'queued' check (status in ('queued', 'processing', 'complete', 'failed')),
   attempts integer not null default 0,
@@ -56,7 +56,7 @@ returns integer language plpgsql security definer set search_path = public as $$
 declare recovered integer;
 begin
   update public.ai_jobs set status = 'queued', started_at = null
-  where status = 'processing' and started_at < now() - interval '10 minutes';
+  where status = 'processing' and started_at < now() - interval '15 minutes';
   get diagnostics recovered = row_count;
   return recovered;
 end;
