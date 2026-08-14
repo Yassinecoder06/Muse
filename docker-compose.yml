@@ -90,12 +90,29 @@ services:
     depends_on:
       kong: { condition: service_started }
       qdrant: { condition: service_started }
+      ollama-bridge: { condition: service_started }
     extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 6
+  ollama-bridge:
+    build:
+      context: .
+      dockerfile: docker/ollama-bridge/Dockerfile
+    # Host networking lets this small proxy reach a host Ollama daemon bound
+    # to 127.0.0.1, while it listens only on Docker's gateway address.
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      OLLAMA_BRIDGE_HOST: ${OLLAMA_BRIDGE_HOST:-172.17.0.1}
+      OLLAMA_BRIDGE_PORT: 11434
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:11434/api/tags').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 3
   auth:
     image: supabase/gotrue:v2.158.1
     restart: unless-stopped
