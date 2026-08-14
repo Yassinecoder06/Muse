@@ -23,21 +23,22 @@ const webSearchTool = [{
 
 function systemPrompt(depth: ResearchDepth, topic: string) {
   const profile = depthProfile[depth]
-  return `You are an expert research writer. Write a complete article note about the topic below.
+  return `You are an expert research writer. Write a complete editorial research report about the topic below.
 
 Requirements:
 - Use the web_search tool as needed to gather current facts (up to ${profile.maxRounds} search rounds). Search results are appended to the conversation after each call; use them to enrich the article. You may also write from your own knowledge.
 - If a search returns no results, state the gap and continue from your own knowledge.
-- Output ONLY the finished article as clean HTML, using only these tags: h1, h2, p, ul, ol, li, strong, em, blockquote, div. No links, images, markdown, or code fences.
-- Start with an <h1> containing the article title.
+- Output ONLY the finished report as clean HTML, using only these tags: h1, h2, p, ul, ol, li, strong, em, blockquote, div, a. No images, markdown, or code fences.
+- Start with an <h1> containing the report title. It is used as the editor title and removed from the report body.
+- Follow it with <h2>Executive summary</h2>, then well-named analytical sections. Include a concise <h2>Key findings</h2> section and a <h2>Conclusion</h2>.
 - Cite facts gathered from search results with [n] markers in the text, matching the source list at the end.
-- End the article with <h2>Sources</h2> followed by a numbered list of every source URL you used.
-- The article must be ${profile.target}.
+- End the report with <h2>Sources</h2> followed by a numbered list of every source URL you used. Use an <a href="https://…">link title</a> for each source.
+- The report must be ${profile.target}.
 
 STOP once the article is complete — do not keep searching after you have enough material.`
 }
 
-function escapeHtml(value: string) { return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }
+function escapeHtml(value: string) { return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') }
 
 export type ResearchResult = { title: string; content: string; sources: SearchResult[] }
 
@@ -91,9 +92,9 @@ export async function research(topic: string, depth: ResearchDepth = 'standard',
   if (!content.trim()) throw new Error('Muse could not produce a research article for this topic. Try a different model or a clearer topic.')
   const cleaned = content.replace(/```(html|HTML)?/g, '').trim()
   const title = (cleaned.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1] || topic).replace(/<[^>]+>/g, '').trim().slice(0, 300)
-  let body = cleaned
+  let body = cleaned.replace(/^\s*<h1\b[^>]*>[\s\S]*?<\/h1>\s*/i, '')
   if (!/<h2[^>]*>Sources?<\/h2>/i.test(body)) {
-    const list = sources.map((source, index) => `<li>${escapeHtml(source.title)} — ${escapeHtml(source.url)}</li>`).join('')
+    const list = sources.map(source => `<li><a href="${escapeHtml(source.url)}">${escapeHtml(source.title)}</a></li>`).join('')
     body += `\n<h2>Sources</h2>\n<ol>${list || '<li>No web sources were retrieved; based on model knowledge.</li>'}</ol>`
   }
   return { title, content: body.slice(0, 100000), sources: sources.slice(0, 20) }

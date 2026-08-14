@@ -8,13 +8,13 @@ Compose-managed Nginx, Supabase, Resend, and Express setup.
 ```text
 Browser
   └─ Docker Nginx (127.0.0.1:8080; public through Cloudflare Tunnel)
-       ├─ /api/* and /uploads/* ──> host Express API (127.0.0.1:3001)
+       ├─ /api/* and /uploads/* ──> Express + AI worker (Compose `server`)
        └─ /auth|rest|storage|realtime/v1/* ──> Kong (Compose network)
                                                     ├─ GoTrue Auth
                                                     ├─ PostgREST / Storage / Realtime
                                                     └─ PostgreSQL + Vault
 
-Express ──> Kong / PostgreSQL, Qdrant (127.0.0.1:6333), Ollama Cloud, local Ollama embeddings
+Express ──> Kong / PostgreSQL, Qdrant, Ollama Cloud, host-local Ollama embeddings
 ```
 
 During hot-reload development the browser uses Vite at `http://localhost:5173`
@@ -123,14 +123,14 @@ Junk if a message does not arrive.
 
 | Resource | Docker volume or source | Purpose |
 | --- | --- | --- |
-| PostgreSQL | `muse_postgres-data` | Auth, notes, tasks, jobs, images, and Vault data |
+| PostgreSQL | `muse_postgres-data` | Auth, notes, research-document type, tasks, jobs, images, and Vault data |
 | pgsodium root key | `muse_pgsodium-key` | Persistent root key for Vault encryption |
 | Storage | `muse_storage-data` | Supabase Storage service data |
 | Qdrant | `muse_qdrant-data` | Note embeddings and metadata |
 | Supabase roles | `docker/supabase/roles.sql` | Internal database login roles |
-| App migrations | `supabase/migrations/001_initial.sql`, `002_images.sql`, `003_api_keys.sql` | App tables, images, and encrypted API-key RPCs |
+| App migrations | `supabase/migrations/001_initial.sql`, `002_images.sql`, `003_api_keys.sql`, `004_research_documents.sql` | App tables, images, research documents, and encrypted API-key RPCs |
 
-The database initialization mounts all three migrations. For a healthy existing
+The database initialization mounts all four migrations. For a healthy existing
 database that predates a migration, apply it once with `psql`. Do not delete
 `muse_pgsodium-key` separately from `muse_postgres-data`; saved Vault secrets
 depend on both.
