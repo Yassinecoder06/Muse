@@ -36,6 +36,7 @@ services:
       - ./supabase/migrations/001_initial.sql:/docker-entrypoint-initdb.d/zz_001_initial.sql:ro
       - ./supabase/migrations/002_images.sql:/docker-entrypoint-initdb.d/zz_002_images.sql:ro
       - ./supabase/migrations/003_api_keys.sql:/docker-entrypoint-initdb.d/zz_003_api_keys.sql:ro
+      - ./supabase/migrations/004_research_documents.sql:/docker-entrypoint-initdb.d/zz_004_research_documents.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -64,16 +65,37 @@ services:
         VITE_SUPABASE_URL: ${PUBLIC_URL:-http://localhost:8080}
         VITE_SUPABASE_ANON_KEY: ${ANON_KEY}
     restart: unless-stopped
-    depends_on: [kong]
-    # Lets the container reach the Express API and AI worker that run on the
-    # host; this maps to Docker's host gateway on Linux as well as Docker Desktop.
-    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      kong: { condition: service_started }
+      server: { condition: service_healthy }
     ports: ["127.0.0.1:8080:80"]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
+  server:
+    build:
+      context: .
+      dockerfile: docker/server/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      SUPABASE_URL: http://kong:8000
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_EMBEDDING_BASE_URL: ${OLLAMA_EMBEDDING_BASE_URL_DOCKER:-http://host.docker.internal:11434}
+    depends_on:
+      kong: { condition: service_started }
+      qdrant: { condition: service_started }
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
   auth:
     image: supabase/gotrue:v2.158.1
     restart: unless-stopped

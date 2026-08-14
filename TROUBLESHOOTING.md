@@ -11,8 +11,9 @@ Run these from the repository root before changing configuration:
 
 ```bash
 docker compose ps
-docker compose logs --tail 100 db auth kong storage realtime
-curl -s http://localhost:3001/health
+docker compose logs --tail 100 server db auth kong storage realtime
+docker compose exec -T server node -e "fetch('http://127.0.0.1:3001/health').then(r => r.json()).then(console.log)"
+curl -s http://localhost:8080/health
 curl -sI http://localhost:8080/ | head -n 1
 ```
 
@@ -109,13 +110,14 @@ recovery above. The current configuration requires:
 DB_AFTER_CONNECT_QUERY: SET search_path TO realtime
 ```
 
-## Node or Express exits before port 3001 opens
+## Host-run development Express exits before port 3001 opens
 
 **Observed:** 2026-08-04; verified current 2026-08-14
 
 ### Symptoms
 
-The API exits with a native WebSocket error, or this fails:
+The host-run development API exits with a native WebSocket error, or this
+fails:
 
 ```bash
 curl -s http://localhost:3001/health
@@ -167,11 +169,10 @@ Restart Vite after changing `VITE_*` variables. Rebuild Nginx after changing
 docker compose up -d --build nginx
 ```
 
-After a server build, restart the process that runs `server/dist`:
+After a server build, rebuild and restart the Compose service:
 
 ```bash
-npm run build
-sudo systemctl restart muse
+docker compose up -d --build server nginx
 ```
 
 ## Browser signup or sign-in says `Failed to fetch`
@@ -246,7 +247,7 @@ cannot reach Express.
 
 Nginx is a Compose service—not a host `systemd` Nginx site. Its configuration
 is `docker/nginx/default.conf`; it listens only on `127.0.0.1:8080` and proxies
-`/api` and `/uploads` to host Express at port 3001.
+`/api` and `/uploads` to the internal `server` Compose service.
 
 ```bash
 docker compose up -d --build nginx
@@ -267,13 +268,15 @@ permissions, or edited `/etc/nginx/sites-*` no longer apply.
 
 **Observed:** 2026-08-10; updated 2026-08-14
 
-New databases run `001_initial.sql`, `002_images.sql`, and `003_api_keys.sql`
+New databases run `001_initial.sql`, `002_images.sql`, `003_api_keys.sql`, and
+`004_research_documents.sql`
 through the database initialization mounts. For a healthy existing database,
 apply the missing migrations once:
 
 ```bash
-docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/002_images.sql
-docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/003_api_keys.sql
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/002_images.sql
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/003_api_keys.sql
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/004_research_documents.sql
 ```
 
 `003_api_keys.sql` creates the logical pgsodium key and the service-role-only
@@ -290,7 +293,7 @@ the whole request path before changing the frontend:
 ```bash
 docker compose ps db rest kong
 docker compose logs --tail 100 db rest kong
-curl -s http://localhost:3001/health
+curl -s http://localhost:8080/health
 ```
 
 PostgREST needs the internal login roles created by
@@ -322,6 +325,83 @@ enqueuing an AI job and sanitizes approved image URLs correctly.
 
 If legacy notes still point at `/uploads/...`, keep the Express legacy static
 route and avoid deleting `server/uploads` until those notes are migrated.
+
+## Docker server cannot reach local Ollama or Qdrant indexing fails
+
+### Symptoms
+
+The server logs `Ollama embedding request failed`, `fetch failed`,
+`ENOTFOUND`, or `ECONNREFUSED` for port `11434`. Notes may still save, but
+their Qdrant embeddings are not created or updated.
+
+### Cause
+
+`localhost` inside the Compose `server` container is the container itself, not
+the host running Ollama. Muse maps `host.docker.internal` to Docker's host
+gateway and uses it as the server container's embedding endpoint. A typo such
+as `docker.host.internal` will not resolve. Host Ollama also binds to
+`127.0.0.1` by default, which rejects connections from the Docker bridge.
+
+### Resolution
+
+Keep host development and Docker settings separate in the root `.env`:
+
+```dotenv
+# Used by npm-run development on the host.
+OLLAMA_EMBEDDING_BASE_URL=http://localhost:11434
+# Used only by the Compose server container.
+OLLAMA_EMBEDDING_BASE_URL_DOCKER=http://host.docker.internal:11434
+```
+
+Confirm the exact host-gateway IP seen by the current container:
+
+```bash
+docker compose exec -T server getent hosts host.docker.internal
+```
+
+Configure the host Ollama system service to bind to that gateway IP—not
+`0.0.0.0`, which would expose Ollama to the LAN. For the usual Docker bridge
+(`172.17.0.1`), run:
+
+```bash
+sudo systemctl edit ollama
+```
+
+```ini
+[Service]
+Environment="OLLAMA_HOST=172.17.0.1:11434"
+```
+
+Then restart Ollama and recreate the Muse server so it receives the corrected
+environment:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+docker compose up -d --force-recreate server
+docker compose exec -T server node -e "fetch('http://host.docker.internal:11434/api/tags').then(r => console.log(r.status))"
+```
+
+Expect `200`, and ensure `nomic-embed-text:latest` appears in the returned
+model list. If Docker's gateway address changes, update the Ollama service
+override to the address returned by `getent`.
+
+## Research reports show `Fetch failed`
+
+### Cause
+
+Research generation and local embeddings use different Ollama connections.
+Research requires the signed-in user's **Ollama Cloud API key** in Muse
+Settings; the local embedding endpoint does not replace that key. The research
+pipeline runs only from Dashboard → **Research**, not from Ask Muse/chat.
+
+### Resolution
+
+1. Open Muse at `http://localhost:8080` and save an Ollama Cloud API key in
+   **Settings**.
+2. Create a new report through Dashboard → **Research**.
+3. Inspect `docker compose logs --tail 100 server` for the upstream request
+   error if the job fails.
 
 ## Research creates an empty note
 

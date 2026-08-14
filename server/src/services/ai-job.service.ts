@@ -77,7 +77,7 @@ async function process(job: AiJob) {
   else if (job.type === 'research') {
     const topic = job.payload?.topic?.trim(); if (!topic) throw new Error('Research topic is missing.')
     const { title, content, sources } = await research(topic, job.payload?.depth, model, apiKey)
-    const created = await notes.create(job.user_id, { title, content })
+    const created = await notes.create(job.user_id, { title, content }, 'research')
     await vectors.upsertVector(created)
     result = { noteId: created.id, title, sources: sources.map(({ title: sourceTitle, url }) => ({ title: sourceTitle, url })) }
   }

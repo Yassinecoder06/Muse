@@ -6,7 +6,7 @@ Muse is a production-oriented AI note application built around one principle: **
 
 ```text
 React + Vite  ──HTTP──>  Express API  ──> Supabase PostgreSQL (source of truth)
-                                  ├──> Ollama Cloud (Gemma 4 + nomic embeddings)
+                                  ├──> Ollama Cloud (research and chat) + local Ollama (embeddings)
                                   └──> Qdrant (note embeddings and metadata)
 ```
 
@@ -44,8 +44,9 @@ The API returns note saves immediately. A background processor generates missing
    ```
 
    This starts Postgres, Kong, GoTrue Auth, PostgREST, Realtime, Storage,
-   Meta, Studio, Qdrant, the private mail-template server, and the Docker
-   Nginx gateway. This builds the Nginx image and bundled React client. Nginx
+   Meta, Studio, Qdrant, the private mail-template server, the Express/AI
+   worker, and the Docker Nginx gateway. This builds the server image and the
+   Nginx image containing the bundled React client. Nginx
    is available at `http://localhost:8080`; Qdrant is available at
    `http://localhost:6333`; Kong/Supabase stays on `http://localhost:8000`.
    (*Edge Runtime is intentionally not included:* Muse never uses edge
@@ -80,9 +81,9 @@ The API returns note saves immediately. A background processor generates missing
 5. Sanity-check the running infrastructure:
 
    ```bash
-   curl -s http://localhost:3001/health     # {"ok":true}
+   curl -s http://localhost:8080/health     # {"ok":true}
    curl -sI http://localhost:8080/ | head -n 1
-   docker compose ps                        # db, kong, and nginx should be healthy
+   docker compose ps                        # db, server, kong, and nginx should be healthy
    ```
 
 ### Environment file
@@ -144,13 +145,13 @@ password change sends a security notice to the account's email address.
 `supabase/migrations/001_initial.sql` creates `notes`, `tags`, `note_tags`, `tasks`, and `ai_jobs`, their foreign keys, indexes, UUID defaults, RLS policies, and the automatic `updated_at` trigger. It is mounted into the local Postgres initialization path by Docker. For an existing local volume, execute it once manually:
 
 ```bash
-docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/001_initial.sql
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/001_initial.sql
 ```
 
 `002_images.sql` adds the `images` table (base64-encoded binaries) behind `POST /api/uploads` / `GET /api/images/:id`. Apply it to an existing database the same way:
 
 ```bash
-docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/002_images.sql
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/002_images.sql
 ```
 
 `003_api_keys.sql` enables the per-user Ollama key store in Supabase Vault and
@@ -158,12 +159,19 @@ creates service-role-only RPC helpers. It runs automatically for a newly
 initialized database. For an existing healthy database, apply it once:
 
 ```bash
-docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/003_api_keys.sql
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/003_api_keys.sql
 ```
 
 The Vault encryption root key is generated once in the Docker-managed
 `muse_pgsodium-key` volume. Keep that volume with `muse_postgres-data`; deleting
 either independently can make saved Vault secrets unrecoverable.
+
+`004_research_documents.sql` marks notes as standard or research documents.
+Run it once on an existing database before starting the new server container:
+
+```bash
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/004_research_documents.sql
+```
 
 ### Images
 
@@ -175,6 +183,10 @@ image row records its owning note. Note content stores relative URLs
 HTML on every edit and load. AI rewrites replace `<img>` tags with `[IMAGE n]`
 placeholders before the model call and restore them in the original position
 afterwards — images can never be deleted by a rewrite.
+
+Research reports are stored as a distinct note type and use an editorial layout
+with an executive summary, analytical sections, findings, conclusion, and
+sources.
 
 ## AI configuration
 
@@ -201,7 +213,8 @@ Optional AI tuning variables in `.env`:
 - `OLLAMA_CHAT_MODEL` — the default chat model used when the app does not send one (default `gemma4:31b-cloud`).
 - `OLLAMA_NUM_CTX` — the context window in tokens passed to the chat model (default `32768`). It also sets the character budget used to assemble retrieved context for "Ask my notes", so longer windows allow more notes per answer.
 - `RAG_TOP_K` — how many Qdrant matches "Ask my notes" retrieves per question (default `10`).
-- `OLLAMA_EMBEDDING_BASE_URL` / `OLLAMA_EMBEDDING_MODEL` — the local Ollama used for embeddings only.
+- `OLLAMA_EMBEDDING_BASE_URL` / `OLLAMA_EMBEDDING_MODEL` — the local Ollama used for host-run development and embeddings only.
+- `OLLAMA_EMBEDDING_BASE_URL_DOCKER` — optional Compose-server override; defaults to `http://host.docker.internal:11434`. Host Ollama must listen on Docker's host-gateway address (see `TROUBLESHOOTING.md`).
 
 ## REST API
 
@@ -226,19 +239,21 @@ then proxies internal paths.
 
 ```text
 Browser -> https://notes.example.com -> Cloudflare Tunnel -> Docker Nginx (127.0.0.1:8080)
-                                                                   |- /api/* -> host Express (127.0.0.1:3001)
-                                                                   |- /uploads/* -> host Express (127.0.0.1:3001)
+                                                                   |- /api/* -> Express + AI worker (Compose)
+                                                                   |- /uploads/* -> Express + AI worker (Compose)
                                                                    `- Supabase paths -> Kong (Compose network)
 ```
 
 1. Create a production `.env` with unique secrets. The values built into the
-   Nginx image uses the public domain, while the Express API keeps private
-   loopback access to Supabase and Qdrant:
+   Nginx image use the public domain. Compose gives the Express API private
+   service-name access to Supabase and Qdrant, so do not override those URLs
+   in production:
 
    ```dotenv
    PUBLIC_URL=https://notes.example.com
-   SUPABASE_URL=http://127.0.0.1:8000
-   QDRANT_URL=http://127.0.0.1:6333
+   # The Compose server defaults to host.docker.internal:11434 for local Ollama.
+   # Set only when embeddings are provided somewhere else.
+   OLLAMA_EMBEDDING_BASE_URL_DOCKER=https://embeddings.example.com
    ```
 
 2. Add `https://notes.example.com` to the CORS origins in `docker/supabase/kong.yml`
@@ -253,15 +268,13 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Docker Nginx (127.0
    docker compose up -d --force-recreate auth
    ```
 
-3. Keep host port mappings private. If Express runs on the host, it needs
-   loopback access to Kong and Qdrant:
+3. Keep host port mappings private. Express, the AI worker, Kong, and Qdrant
+   communicate on the Compose network; only Nginx needs a web port:
 
    ```yaml
    # docker-compose.yml
-   kong:
-     ports: ["127.0.0.1:8000:8000"]
-   qdrant:
-     ports: ["127.0.0.1:6333:6333"]
+   nginx:
+     ports: ["127.0.0.1:8080:80"]
    ```
 
    Do not map Studio, Postgres, Qdrant, or Kong to public interfaces. The
@@ -277,53 +290,17 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Docker Nginx (127.0
    ```
 
    The reverse-proxy configuration is committed at
-   `docker/nginx/default.conf`: `/api` and `/uploads` reach the Express process
-   on the Docker host, while `/auth/v1`, `/rest/v1`, `/storage/v1`, and
+   `docker/nginx/default.conf`: `/api` and `/uploads` reach the internal
+   Express service, while `/auth/v1`, `/rest/v1`, `/storage/v1`, and
    `/realtime/v1` reach Kong on the Compose network. The Nginx host binding is
    deliberately loopback-only (`127.0.0.1:8080:80`).
 
-5. Run Express and the AI worker as a `systemd` service. Replace
-   `<user>` and `/home/<user>/Muse` with the Linux user that owns the
-   repo and the project directory. Point `ExecStart` at the Node 20+ runtime
-   (run `command -v node` to find it; if installed via nvm, use the full path
-   under `~/.nvm/versions/node/...`):
-
-   ```ini
-   # /etc/systemd/system/muse.service
-   [Unit]
-   Description=Muse Express API and AI worker
-   After=network.target docker.service
-   Requires=docker.service
-
-   [Service]
-   Type=simple
-   User=<user>
-   WorkingDirectory=/home/<user>/Muse
-   Environment=NODE_ENV=production
-   ExecStart=/home/<user>/.nvm/versions/node/<node-version>/bin/node server/dist/index.js
-   Restart=always
-   RestartSec=5
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-
-   Create and activate it (your actual paths and internals may differ):
+5. The `server` Compose service owns both Express and the AI worker. Rebuild
+   it after server changes, or rebuild the complete application after shared
+   dependency changes:
 
    ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now muse
-   sudo systemctl status muse --no-pager
-   ```
-
-   **Pitfalls caught in production:** the `User=` must be an account that
-   actually exists, and `ExecStart` must not resolve to a Node 18 binary --
-   both caused the unit to crash-loop instantly. After server changes, run
-   `npm run build` and restart it (`sudo systemctl restart muse`). After client
-   or Nginx-config changes, rebuild just the web gateway:
-
-   ```bash
-   docker compose up -d --build nginx
+   docker compose up -d --build server nginx
    ```
 
 6. In Cloudflare, create a Tunnel and add a **Published application** route:
@@ -349,8 +326,9 @@ tunnel directly to Express.
 After the full stack is up, confirm every layer end to end:
 
 ```bash
-docker compose ps --format "table {{.Name}}\t{{.Status}}"   # db, kong & nginx healthy
-curl -s http://localhost:3001/health                        # via Express directly
+docker compose ps --format "table {{.Name}}\t{{.Status}}"   # db, server, kong & nginx healthy
+docker compose exec server node -e "fetch('http://127.0.0.1:3001/health').then(r => r.json()).then(console.log)"
+curl -s http://localhost:8080/health                         # same health check through Nginx
 curl -sI https://notes.example.com/ | head -n 1             # 200 or 30x
 ```
 

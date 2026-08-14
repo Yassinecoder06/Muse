@@ -5,7 +5,7 @@ import type { AiJob, Note, NoteInput } from '../types'
 import { ChatPanel } from './ChatPanel'
 
 const rewriteModes = ['improve', 'professional', 'friendly', 'shorter', 'longer', 'grammar']
-const allowedTags = new Set(['B', 'BR', 'BLOCKQUOTE', 'CODE', 'DIV', 'EM', 'H1', 'H2', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'STRONG', 'UL'])
+const allowedTags = new Set(['A', 'B', 'BR', 'BLOCKQUOTE', 'CODE', 'DIV', 'EM', 'H1', 'H2', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'STRONG', 'UL'])
 
 function sanitizeHtml(value: string) {
   const container = document.createElement('div')
@@ -15,11 +15,16 @@ function sanitizeHtml(value: string) {
         element.replaceWith(...Array.from(element.childNodes))
         continue
       }
-      const source = element.tagName === 'IMG' ? (element.getAttribute('src') || '') : ''
+      const source = element.getAttribute('src') || ''
+      const href = element.getAttribute('href') || ''
       for (const attribute of [...element.attributes]) element.removeAttribute(attribute.name)
       if (element.tagName === 'IMG') {
         if (!/^(https?:\/\/|\/api\/images\/)/i.test(source)) element.remove()
         else element.setAttribute('src', source)
+      }
+      if (element.tagName === 'A') {
+        if (!/^https:\/\//i.test(href)) element.replaceWith(...Array.from(element.childNodes))
+        else { element.setAttribute('href', href); element.setAttribute('target', '_blank'); element.setAttribute('rel', 'noreferrer noopener') }
       }
     }
   return container.innerHTML
@@ -245,9 +250,9 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
       <button className="header-icon" title={note.favorite ? 'Remove from favorites' : 'Add to favorites'} onClick={() => void save({ favorite: !note.favorite })}><Star size={18} fill={note.favorite ? 'currentColor' : 'none'}/></button>
       <div className="note-menu-wrap"><button className="header-icon" title="Note actions" onClick={() => setMenu(!menu)}><MoreHorizontal size={19}/></button>{menu && <div className="note-menu">{note.deleted_at ? <><button onClick={() => void manage(restore, 'Note restored.')}>Restore note</button><button className="danger" onClick={() => void manage(permanentlyDelete, 'Note permanently deleted.')}>Delete permanently</button></> : <><button onClick={() => void manage(async () => { await save({ archived: !note.archived }) }, note.archived ? 'Note unarchived.' : 'Note archived.')}>{note.archived ? 'Unarchive note' : 'Archive note'}</button><button className="danger" onClick={() => void manage(trash, 'Note moved to trash.')}>Move to trash</button></>}</div>}</div>
     </header>
-    <div className="editor-canvas">
+    <div className={`editor-canvas${note.kind === 'research' ? ' research-canvas' : ''}`}>
       <input className="editor-title" value={title} onChange={e => { setTitle(e.target.value); queue({ title: e.target.value }) }} placeholder="Untitled note"/>
-      <div className="editor-details"><span>{new Date(note.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>{note.tags.map(tag => <span className="tag" key={tag}>{tag}</span>)}{note.aiStatus === 'processing' && <span className="processing"><i/> Organizing</span>}</div>
+      <div className="editor-details">{note.kind === 'research' && <span className="research-label">Research report</span>}<span>{new Date(note.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>{note.tags.map(tag => <span className="tag" key={tag}>{tag}</span>)}{note.aiStatus === 'processing' && <span className="processing"><i/> Organizing</span>}</div>
       <div className="toolbar">
         <button className={active.h1 ? 'active' : ''} onMouseDown={keepSelection} onClick={() => toggleBlock('h1')}><Heading1 size={17}/></button>
         <button className={active.h2 ? 'active' : ''} onMouseDown={keepSelection} onClick={() => toggleBlock('h2')}><Heading2 size={17}/></button>
@@ -261,7 +266,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
         <button title="Add an image" onMouseDown={keepSelection} onClick={() => imageInput.current?.click()}><Image size={17}/></button>
       </div>
       <input ref={imageInput} type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/avif" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void insertImage(file) }}/>
-      <div ref={ref} className="rich-editor" contentEditable suppressContentEditableWarning onInput={e => edit(e.currentTarget.innerHTML)} onPaste={pasteImage} onKeyUp={updateActive} onMouseUp={updateActive} onClick={updateActive}/>
+      <div ref={ref} className={`rich-editor${note.kind === 'research' ? ' research-document' : ''}`} contentEditable suppressContentEditableWarning onInput={e => edit(e.currentTarget.innerHTML)} onPaste={pasteImage} onKeyUp={updateActive} onMouseUp={updateActive} onClick={updateActive}/>
       {note.summary && <section className="summary-card"><div><span><Sparkles size={16}/><strong>Muse summary</strong></span><button className="generated-remove" title="Remove summary" onClick={() => void clearSummary()}><X size={15}/></button></div><p>{note.summary}</p></section>}
       {!!note.tasks?.length && <section className="task-list"><div className="task-list-heading"><strong>Tasks</strong><button className="generated-remove" onClick={() => void clearTasks()}>Clear</button></div>{note.tasks.map(task => <label key={task.id}><input type="checkbox" checked={task.completed} onChange={e => { void toggleTask(task.id, e.target.checked) }}/><span>{task.text}</span></label>)}</section>}
       <footer className="editor-footer"><div className="ai-menu-wrap"><button className="ai-trigger" onClick={() => setAiOpen(!aiOpen)}><WandSparkles size={16}/> AI assist</button>{aiOpen && <div className="ai-menu"><button onClick={() => assist('organize')}><WandSparkles size={16}/> Organize</button><button onClick={() => assist('summary')}><Sparkles size={16}/> Summarize</button><button onClick={() => assist('tasks')}><ListChecks size={16}/> Extract tasks</button><button onClick={() => assist('title')}><FileText size={16}/> Smart title</button><button onClick={() => assist('tags')}><Sparkles size={16}/> Auto tags</button><small>REWRITE</small>{rewriteModes.map(mode => <button key={mode} onClick={() => assist(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}{imageCount(content) > 0 && <small className="ai-warning"><Image size={13}/> Images stay in place when the note is rewritten.</small>}</div>}</div><button className="ask-note" onClick={() => setChat(true)}><Sparkles size={15}/> Ask this note</button><span>{wordCount} words</span></footer>

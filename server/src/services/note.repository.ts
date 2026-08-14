@@ -1,7 +1,7 @@
 import { supabase } from '../supabase/client.js'
-import type { Note, NoteInput, Task } from '../types/index.js'
+import type { Note, NoteInput, Task, NoteKind } from '../types/index.js'
 
-const select = 'id,user_id,title,content,summary,favorite,archived,deleted_at,created_at,updated_at,note_tags(tags(id,name)),tasks(id,user_id,note_id,text,completed,created_at)'
+const select = 'id,user_id,title,content,summary,favorite,archived,deleted_at,created_at,updated_at,kind,note_tags(tags(id,name)),tasks(id,user_id,note_id,text,completed,created_at)'
 function normalize(row: any): Note { return { ...row, tags: (row.note_tags || []).map((item: any) => item.tags?.name).filter(Boolean), tasks: row.tasks || [] } }
 
 async function tagsFor(userId: string, noteId: string, names: string[]) {
@@ -34,9 +34,9 @@ export const notes = {
     if (error) throw error
     return normalize(data)
   },
-  async create(userId: string, input: NoteInput) {
+  async create(userId: string, input: NoteInput, kind: NoteKind = 'note') {
     const { tags = [], ...data } = input
-    const { data: note, error } = await supabase.from('notes').insert({ ...data, user_id: userId, title: data.title || '', content: data.content || '', favorite: data.favorite || false, archived: data.archived || false }).select().single()
+    const { data: note, error } = await supabase.from('notes').insert({ ...data, kind, user_id: userId, title: data.title || '', content: data.content || '', favorite: data.favorite || false, archived: data.archived || false }).select().single()
     if (error) throw error
     await tagsFor(userId, note.id, tags)
     return this.get(userId, note.id)
