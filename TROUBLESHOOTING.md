@@ -359,32 +359,20 @@ Confirm the exact host-gateway IP seen by the current container:
 docker compose exec -T server getent hosts host.docker.internal
 ```
 
-Configure the host Ollama system service to bind to that gateway IP—not
-`0.0.0.0`, which would expose Ollama to the LAN. For the usual Docker bridge
-(`172.17.0.1`), run:
+Muse includes an `ollama-bridge` Compose service for Linux. It listens only on
+Docker's host-gateway address and forwards to host Ollama's loopback API, so
+you do **not** need to bind Ollama to `0.0.0.0` or change its system service.
+Start it with the rest of the stack, then recreate the Muse server so it
+receives the corrected environment:
 
 ```bash
-sudo systemctl edit ollama
-```
-
-```ini
-[Service]
-Environment="OLLAMA_HOST=172.17.0.1:11434"
-```
-
-Then restart Ollama and recreate the Muse server so it receives the corrected
-environment:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl restart ollama
-docker compose up -d --force-recreate server
+docker compose up -d --build ollama-bridge server
 docker compose exec -T server node -e "fetch('http://host.docker.internal:11434/api/tags').then(r => console.log(r.status))"
 ```
 
 Expect `200`, and ensure `nomic-embed-text:latest` appears in the returned
-model list. If Docker's gateway address changes, update the Ollama service
-override to the address returned by `getent`.
+model list. If Docker's gateway address changes, set `OLLAMA_BRIDGE_HOST` to
+the address returned by `getent` and recreate `ollama-bridge`.
 
 ## Research reports show `Fetch failed`
 

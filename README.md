@@ -214,7 +214,8 @@ Optional AI tuning variables in `.env`:
 - `OLLAMA_NUM_CTX` — the context window in tokens passed to the chat model (default `32768`). It also sets the character budget used to assemble retrieved context for "Ask my notes", so longer windows allow more notes per answer.
 - `RAG_TOP_K` — how many Qdrant matches "Ask my notes" retrieves per question (default `10`).
 - `OLLAMA_EMBEDDING_BASE_URL` / `OLLAMA_EMBEDDING_MODEL` — the local Ollama used for host-run development and embeddings only.
-- `OLLAMA_EMBEDDING_BASE_URL_DOCKER` — optional Compose-server override; defaults to `http://host.docker.internal:11434`. Host Ollama must listen on Docker's host-gateway address (see `TROUBLESHOOTING.md`).
+- `OLLAMA_EMBEDDING_BASE_URL_DOCKER` — optional Compose-server override; defaults to `http://host.docker.internal:11434`.
+- `OLLAMA_BRIDGE_HOST` — Linux Docker host-gateway address used by the private `ollama-bridge` service (default `172.17.0.1`).
 
 ## REST API
 
