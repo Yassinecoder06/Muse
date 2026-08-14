@@ -37,22 +37,39 @@ The API returns note saves immediately. A background processor generates missing
 
    `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` must be JWTs made with the configured `JWT_SECRET` (see "Environment file" below). The Express API uses the service-role key only; it is never sent to the browser.
 
-2. Start local infrastructure:
+2. Start the Docker services:
 
    ```bash
-   docker compose up -d
+   docker compose up -d --build
    ```
 
-   This starts Postgres, Kong, GoTrue Auth, PostgREST, Realtime, Storage, Meta, Studio, and Qdrant. Qdrant is available at `http://localhost:6333`; Kong/Supabase is exposed at `http://localhost:8000`. (*Edge Runtime is intentionally not included:* Muse never uses edge functions.)
+   This starts Postgres, Kong, GoTrue Auth, PostgREST, Realtime, Storage,
+   Meta, Studio, Qdrant, the private mail-template server, and the Docker
+   Nginx gateway. This builds the Nginx image and bundled React client. Nginx
+   is available at `http://localhost:8080`; Qdrant is available at
+   `http://localhost:6333`; Kong/Supabase stays on `http://localhost:8000`.
+   (*Edge Runtime is intentionally not included:* Muse never uses edge
+   functions.)
 
-3. Install and run the application:
+3. Install and run Muse for hot-reload development:
 
    ```bash
    npm install
    npm run dev
    ```
 
-   The client runs on `http://localhost:5173`; Express runs on `http://localhost:3001`.
+   Open `http://localhost:5173` for the Vite client; Express runs on
+   `http://localhost:3001`. The Docker Nginx gateway at
+   `http://localhost:8080` will also work while Express is running, but it
+   serves the client bundle built when Compose last ran.
+
+   Use `http://localhost:8080` when you want to exercise the same Nginx proxy
+   topology used in deployment. Rebuild that bundle after frontend or Nginx
+   configuration edits:
+
+   ```bash
+   docker compose up -d --build nginx
+   ```
 
 4. Verify production compilation:
 
@@ -64,7 +81,8 @@ The API returns note saves immediately. A background processor generates missing
 
    ```bash
    curl -s http://localhost:3001/health     # {"ok":true}
-   docker compose ps                        # db and kong should show (healthy)
+   curl -sI http://localhost:8080/ | head -n 1
+   docker compose ps                        # db, kong, and nginx should be healthy
    ```
 
 ### Environment file
@@ -73,7 +91,53 @@ The API returns note saves immediately. A background processor generates missing
 
 - Set `JWT_SECRET` to a random value **at least 32 characters** long.
 - Generate `ANON_KEY` and `SERVICE_ROLE_KEY` as JWTs **signed with that same `JWT_SECRET`**, with `"role": "anon"` / `"role": "service_role"` claims. Kong accepts them as `apikey` credentials; GoTrue issues session tokens signed with `JWT_SECRET`, so all three components must agree.
-- Never put `POSTGRES_PASSWORD`, `JWT_SECRET`, `SERVICE_ROLE_KEY`, or Ollama credentials in a `VITE_*` variable. Vite embeds those variables in browser JavaScript at build time.
+- Never put `POSTGRES_PASSWORD`, `JWT_SECRET`, `SERVICE_ROLE_KEY`, Resend,
+  or Ollama credentials in a `VITE_*` variable. Vite embeds those variables in
+  browser JavaScript at build time. The Nginx image receives only
+  `VITE_SUPABASE_ANON_KEY`, which is intentionally public.
+
+### Transactional email with Resend
+
+Muse routes Supabase Auth's database-triggered emails through Resend SMTP. This
+covers signup verification, secure email changes, password-change alerts, and
+email-change alerts. Each message is addressed to the account email involved:
+an email change sends confirmation links to both the old and new addresses.
+
+1. In Resend, add a domain you own (a subdomain such as
+   `updates.example.com` is a good choice), add the DNS records Resend shows,
+   and wait for the domain to verify. Create an API key with sending access.
+   Resend cannot deliver to arbitrary recipients from its test domain; the
+   `From` address must belong to your verified domain.
+2. Add these values to the root `.env` file. Do not put the API key in any
+   `VITE_*` variable or commit it.
+
+   ```dotenv
+   RESEND_API_KEY=re_your_key_here
+   RESEND_FROM_EMAIL=notifications@updates.example.com
+   RESEND_FROM_NAME=Muse
+   ```
+
+3. Recreate the Auth service so it receives the new SMTP credentials:
+
+   ```bash
+   docker compose up -d --force-recreate auth mailer-templates
+   ```
+
+4. Create a test account from Muse. The confirmation email is sent to the
+   entered address. If it is not visible after a moment, check Spam or Junk.
+   The same reminder appears in Muse and in the email templates.
+
+The mailer uses Resend's SMTP endpoint (`smtp.resend.com`, port `465`, user
+`resend`) internally. Do not change those Compose values. The `supabase/templates`
+directory is mounted by the private `mailer-templates` service, which serves
+the four templates only to GoTrue on the Docker network; it has no public port.
+
+### Updating account information
+
+Signed-in users can open **Settings** and update their name, email address, or
+password. A name change saves immediately. An email change must be confirmed
+from both the current and replacement email address before it takes effect. A
+password change sends a security notice to the account's email address.
 
 ## Database and migration
 
@@ -88,6 +152,18 @@ docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/001
 ```bash
 docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/002_images.sql
 ```
+
+`003_api_keys.sql` enables the per-user Ollama key store in Supabase Vault and
+creates service-role-only RPC helpers. It runs automatically for a newly
+initialized database. For an existing healthy database, apply it once:
+
+```bash
+docker compose exec -T db psql -U postgres -d postgres < supabase/migrations/003_api_keys.sql
+```
+
+The Vault encryption root key is generated once in the Docker-managed
+`muse_pgsodium-key` volume. Keep that volume with `muse_postgres-data`; deleting
+either independently can make saved Vault secrets unrecoverable.
 
 ### Images
 
@@ -141,43 +217,41 @@ The per-user Ollama API key lives in `user_settings` via `GET|PUT|DELETE /api/se
 
 See `endpoints.md` for the full reference.
 
-## Deploy with Nginx and Cloudflare Tunnel
+## Deploy with Docker Nginx and Cloudflare Tunnel
 
 This setup exposes one HTTPS hostname while keeping Postgres, Qdrant, Ollama,
 Kong, and Express private. Cloudflare Tunnel provides the public HTTPS entry
-point; Nginx serves the React build and proxies internal paths.
+point; the Compose-managed Nginx service builds and serves the React client,
+then proxies internal paths.
 
 ```text
-Browser -> https://notes.example.com -> Cloudflare Tunnel -> Nginx (127.0.0.1:8080)
-                                                            |- /api/* -> Express (127.0.0.1:3001)
-                                                            |- /uploads/* -> Express (127.0.0.1:3001)
-                                                            `- /auth/v1/* and /rest/v1/* -> Kong (127.0.0.1:8000)
+Browser -> https://notes.example.com -> Cloudflare Tunnel -> Docker Nginx (127.0.0.1:8080)
+                                                                   |- /api/* -> host Express (127.0.0.1:3001)
+                                                                   |- /uploads/* -> host Express (127.0.0.1:3001)
+                                                                   `- Supabase paths -> Kong (Compose network)
 ```
 
 1. Create a production `.env` with unique secrets. The values built into the
-   browser must use the public domain, while server services use private
-   loopback addresses:
+   Nginx image uses the public domain, while the Express API keeps private
+   loopback access to Supabase and Qdrant:
 
    ```dotenv
    PUBLIC_URL=https://notes.example.com
-   VITE_API_URL=/api
-   VITE_SUPABASE_URL=https://notes.example.com
-   VITE_SUPABASE_ANON_KEY=${ANON_KEY}
-
    SUPABASE_URL=http://127.0.0.1:8000
    QDRANT_URL=http://127.0.0.1:6333
    ```
 
-2. Update the GoTrue public settings in `docker-compose.yml`:
-
-   ```yaml
-   API_EXTERNAL_URL: ${PUBLIC_URL}
-   GOTRUE_SITE_URL: ${PUBLIC_URL}
-   GOTRUE_URI_ALLOW_LIST: ${PUBLIC_URL}
-   ```
-
-   Add `https://notes.example.com` to the CORS origins in `docker/kong.yml`
+2. Add `https://notes.example.com` to the CORS origins in `docker/supabase/kong.yml`
    (`plugins` → `cors` → `config.origins`).
+
+   `PUBLIC_URL` is passed to the browser build, GoTrue, and Express CORS when
+   Compose starts. Therefore set it before running the build command; changing
+   it later requires `docker compose up -d --build nginx` and recreating Auth:
+
+   ```bash
+   docker compose up -d --build nginx
+   docker compose up -d --force-recreate auth
+   ```
 
 3. Keep host port mappings private. If Express runs on the host, it needs
    loopback access to Kong and Qdrant:
@@ -190,19 +264,23 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Nginx (127.0.0.1:80
      ports: ["127.0.0.1:6333:6333"]
    ```
 
-   Do not map Studio, Postgres, Qdrant, or Kong to public interfaces. If
-   Nginx and Express are also containers on the same Compose network, they can
-   call `kong:8000` and `qdrant:6333` by service name and no host mappings are
-   needed.
+   Do not map Studio, Postgres, Qdrant, or Kong to public interfaces. The
+   Docker Nginx service has the only web port (`127.0.0.1:8080`) and accesses
+   Kong by its Compose service name.
 
-4. Install Nginx, build the frontend, and start Docker:
+4. Build and start the Docker stack. The Nginx build injects only the public
+   anon key and browser URLs; it does not include the service-role key or any
+   other server secret:
 
    ```bash
-   sudo apt update && sudo apt install -y nginx
-   npm ci
-   npm run build
-   docker compose up -d
+   docker compose up -d --build
    ```
+
+   The reverse-proxy configuration is committed at
+   `docker/nginx/default.conf`: `/api` and `/uploads` reach the Express process
+   on the Docker host, while `/auth/v1`, `/rest/v1`, `/storage/v1`, and
+   `/realtime/v1` reach Kong on the Compose network. The Nginx host binding is
+   deliberately loopback-only (`127.0.0.1:8080:80`).
 
 5. Run Express and the AI worker as a `systemd` service. Replace
    `<user>` and `/home/<user>/Muse` with the Linux user that owns the
@@ -240,87 +318,38 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Nginx (127.0.0.1:80
 
    **Pitfalls caught in production:** the `User=` must be an account that
    actually exists, and `ExecStart` must not resolve to a Node 18 binary --
-   both caused the unit to crash-loop instantly. And **after every
-   `npm run build`, restart the service** (`sudo systemctl restart muse`) —
-   the running process keeps the old `server/dist` in memory until you do.
-
-6. Configure a private Nginx site. Replace `/home/<user>/Muse` with the
-   directory that contains this repository:
+   both caused the unit to crash-loop instantly. After server changes, run
+   `npm run build` and restart it (`sudo systemctl restart muse`). After client
+   or Nginx-config changes, rebuild just the web gateway:
 
    ```bash
-   sudo apt update
-   sudo apt install -y nginx
-   sudo unlink /etc/nginx/sites-enabled/default
-   sudo nano /etc/nginx/sites-available/muse
+   docker compose up -d --build nginx
    ```
 
-   Paste this into `/etc/nginx/sites-available/muse`:
-
-   ```nginx
-   server {
-       listen 127.0.0.1:8080;
-       server_name _;
-       root /home/<user>/Muse/client/dist;
-       index index.html;
-       client_max_body_size 6m;
-
-       location /api/ {
-           proxy_pass http://127.0.0.1:3001;
-           proxy_set_header Host $host;
-           proxy_set_header X-Forwarded-Proto https;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-       }
-       location /uploads/ {
-           proxy_pass http://127.0.0.1:3001;
-           proxy_set_header Host $host;
-           proxy_set_header X-Forwarded-Proto https;
-       }
-       location ~ ^/(auth|rest|storage|realtime)/v1/ {
-           proxy_pass http://127.0.0.1:8000;
-           proxy_http_version 1.1;
-           proxy_set_header Host $host;
-           proxy_set_header X-Forwarded-Proto https;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection "upgrade";
-       }
-       location / { try_files $uri $uri/ /index.html; }
-   }
-   ```
-
-   Enable the site, validate the configuration, start and reload Nginx:
-
-   ```bash
-   sudo ln -s /etc/nginx/sites-available/muse /etc/nginx/sites-enabled/muse
-   sudo nginx -t
-   sudo systemctl start nginx
-   sudo systemctl reload nginx
-   ```
-
-7. In Cloudflare, create a Tunnel and add a **Published application** route:
+6. In Cloudflare, create a Tunnel and add a **Published application** route:
 
    ```text
    Hostname: notes.example.com
    Service URL: http://127.0.0.1:8080
    ```
 
-   If the connector runs in Docker and Nginx listens on `127.0.0.1`, run the
-   connector with host networking so it can reach that local listener. The
-   Cloudflare dashboard supplies the private tunnel token.
+   If the connector runs in Docker, give it host networking so it can reach
+   this loopback-only listener. The Cloudflare dashboard supplies the private
+   tunnel token.
 
 Only Cloudflare is public in this design. Do not open inbound ports `80`,
 `443`, `3001`, `8000`, `5432`, or `6333` for Muse.
 
-For a local setup, the backend notes server and tunnel ingress must use the
-same port: if Express runs on `3001`, the tunnel ingress for `notes.example.com`
-should point at `http://localhost:8080`, which Nginx forwards to `3001` -- not
-directly at `3001`.
+For a local setup, the tunnel ingress must point to `http://localhost:8080`.
+The Nginx container forwards `/api` to Express on port `3001`; do not point a
+tunnel directly to Express.
 
 ## Verify a production deployment
 
 After the full stack is up, confirm every layer end to end:
 
 ```bash
-docker compose ps --format "table {{.Name}}\t{{.Status}}"   # db & kong healthy
+docker compose ps --format "table {{.Name}}\t{{.Status}}"   # db, kong & nginx healthy
 curl -s http://localhost:3001/health                        # via Express directly
 curl -sI https://notes.example.com/ | head -n 1             # 200 or 30x
 ```
@@ -329,9 +358,15 @@ Then exercise auth and notes against the public host. The commands below reuse
 the anon key from `.env` so no secret appears in your shell history:
 
 ```bash
-# Sign up (auto-confirmed by GoTrue). Capture the access_token.
+# Sign up. Resend delivers an email-confirmation link; open it before running
+# the sign-in command below.
 ANON=$(grep -m1 '^ANON_KEY=' .env | cut -d= -f2-)
-TOKEN=$(curl -s -X POST https://notes.example.com/auth/v1/signup \
+curl -s -X POST https://notes.example.com/auth/v1/signup \
+  -H "apikey: $ANON" -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"Password123!"}'
+
+# After opening the confirmation link, sign in and capture the access token.
+TOKEN=$(curl -s -X POST https://notes.example.com/auth/v1/token?grant_type=password \
   -H "apikey: $ANON" -H "Content-Type: application/json" \
   -d '{"email":"you@example.com","password":"Password123!"}' \
   | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).access_token||''))")
@@ -343,7 +378,8 @@ curl -s -X POST https://notes.example.com/api/notes \
 curl -s https://notes.example.com/api/notes -H "Authorization: Bearer $TOKEN" | head -c 300
 ```
 
-An empty `TOKEN` means signup failed; check the GoTrue container:
+An empty `TOKEN` after confirming the email means sign-in failed; check the
+GoTrue container:
 
 ```bash
 docker compose logs auth --tail 20

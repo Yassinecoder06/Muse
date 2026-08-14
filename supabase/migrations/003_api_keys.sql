@@ -1,5 +1,6 @@
 -- 003: per-user Ollama API keys, encrypted in Supabase Vault.
--- pgsodium root key is seeded on first boot; the app talks to Vault through
+-- The pgsodium root key is held in Docker's persistent pgsodium-key volume;
+-- this migration creates the logical Vault key and exposes the app through
 -- security-definer RPC functions executable by service_role only, so users
 -- can never read or overwrite each other's keys (not even through PostgREST).
 
