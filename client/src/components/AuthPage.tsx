@@ -26,7 +26,7 @@ export function AuthPage() {
       : await supabase.auth.signUp({ ...credentials, options: { data: { full_name: name.trim() } } })
     setWorking(false)
     if (result.error) setMessage(result.error.message)
-    else if (mode === 'sign-up') setMessage('Account created. You can now use Muse.')
+    else if (mode === 'sign-up') setMessage('Check your inbox to confirm your email before signing in. If it is not there shortly, check Spam or Junk.')
   }
 
   function changeMode() {

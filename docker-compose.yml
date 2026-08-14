@@ -1,8 +1,23 @@
 name: muse
 services:
+  pgsodium-key:
+    image: alpine:3.20
+    restart: "no"
+    # Create the pgsodium key once in a private Docker volume. The database
+    # process runs as UID 105/GID 106 in this Supabase image, so it is the only
+    # service user that can read it.
+    command: >
+      sh -ec 'if [ ! -s /keys/pgsodium_root.key ]; then
+      head -c 32 /dev/urandom | od -An -tx1 | tr -d " \\n" > /keys/pgsodium_root.key;
+      fi;
+      chown 105:106 /keys/pgsodium_root.key;
+      chmod 600 /keys/pgsodium_root.key'
+    volumes: ["pgsodium-key:/keys"]
   db:
     image: supabase/postgres:15.8.1.060
     restart: unless-stopped
+    depends_on:
+      pgsodium-key: { condition: service_completed_successfully }
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: postgres
@@ -10,18 +25,17 @@ services:
       JWT_EXP: 3600
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # pgsodium root key MUST be pinned: the image generates a random one on
-      # every container (re)create and the vault ciphertexts become
-      # undecryptable when it changes. This file persists the root key across
-      # container recreations. Never delete it — vault data is unrecoverable
-      # without it.
-      - ./docker/pgsodium_root.key:/etc/postgresql-custom/pgsodium_root.key:ro
-      - ./docker/roles.sql:/docker-entrypoint-initdb.d/z0_roles.sql:ro
+      # pgsodium root key MUST be pinned: the named volume survives container
+      # recreation. Never delete it while retaining this database volume —
+      # Vault data is unrecoverable without it.
+      - pgsodium-key:/etc/postgresql-custom:ro
+      - ./docker/supabase/roles.sql:/docker-entrypoint-initdb.d/z0_roles.sql:ro
       # The Supabase image's migrate.sh creates its database roles first.  This
       # application migration must run afterward because it grants privileges
       # to those roles.
       - ./supabase/migrations/001_initial.sql:/docker-entrypoint-initdb.d/zz_001_initial.sql:ro
       - ./supabase/migrations/002_images.sql:/docker-entrypoint-initdb.d/zz_002_images.sql:ro
+      - ./supabase/migrations/003_api_keys.sql:/docker-entrypoint-initdb.d/zz_003_api_keys.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -39,25 +53,68 @@ services:
       KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
       ANON_KEY: ${ANON_KEY}
       SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-    volumes: ["./docker/kong.yml:/var/lib/kong/kong.yml:ro"]
+    volumes: ["./docker/supabase/kong.yml:/var/lib/kong/kong.yml:ro"]
     ports: ["127.0.0.1:8000:8000", "127.0.0.1:8443:8443"]
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+      args:
+        VITE_API_URL: /api
+        VITE_SUPABASE_URL: ${PUBLIC_URL:-http://localhost:8080}
+        VITE_SUPABASE_ANON_KEY: ${ANON_KEY}
+    restart: unless-stopped
+    depends_on: [kong]
+    # Lets the container reach the Express API and AI worker that run on the
+    # host; this maps to Docker's host gateway on Linux as well as Docker Desktop.
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["127.0.0.1:8080:80"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
   auth:
     image: supabase/gotrue:v2.158.1
     restart: unless-stopped
-    depends_on: [db]
+    depends_on: [db, mailer-templates]
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
-      API_EXTERNAL_URL: http://localhost:8000
+      API_EXTERNAL_URL: ${PUBLIC_URL:-http://localhost:8080}
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres
-      GOTRUE_SITE_URL: http://localhost:5173
-      GOTRUE_URI_ALLOW_LIST: http://localhost:5173
+      GOTRUE_SITE_URL: ${PUBLIC_URL:-http://localhost:8080}
+      GOTRUE_URI_ALLOW_LIST: ${PUBLIC_URL:-http://localhost:8080},http://localhost:5173
       GOTRUE_JWT_SECRET: ${JWT_SECRET:-replace-this-with-a-32-character-minimum-secret}
       GOTRUE_JWT_EXP: 3600
       GOTRUE_DISABLE_SIGNUP: "false"
       GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
-      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      # Resend SMTP delivers the database-triggered Auth emails (signup,
+      # email-change confirmation, and account-change notifications).
+      GOTRUE_SMTP_HOST: smtp.resend.com
+      GOTRUE_SMTP_PORT: "465"
+      GOTRUE_SMTP_USER: resend
+      GOTRUE_SMTP_PASS: ${RESEND_API_KEY}
+      GOTRUE_SMTP_ADMIN_EMAIL: ${RESEND_FROM_EMAIL}
+      GOTRUE_SMTP_SENDER_NAME: ${RESEND_FROM_NAME:-Muse}
+      GOTRUE_MAILER_AUTOCONFIRM: "false"
+      GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: "true"
+      GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED: "true"
+      GOTRUE_MAILER_NOTIFICATIONS_EMAIL_CHANGED_ENABLED: "true"
+      # Auth is exposed through Kong below /auth/v1, so links in messages must
+      # retain that gateway prefix.
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: http://mailer-templates:8080/confirmation.html
+      GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE: http://mailer-templates:8080/email-change.html
+      GOTRUE_MAILER_TEMPLATES_PASSWORD_CHANGED_NOTIFICATION: http://mailer-templates:8080/password-changed.html
+      GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGED_NOTIFICATION: http://mailer-templates:8080/email-changed.html
+  mailer-templates:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes: ["./supabase/templates:/usr/share/nginx/html:ro"]
   rest:
     image: postgrest/postgrest:v12.2.3
     restart: unless-stopped
@@ -136,6 +193,7 @@ services:
     ports: ["127.0.0.1:6333:6333", "127.0.0.1:6334:6334"]
     volumes: ["qdrant-data:/qdrant/storage"]
 volumes:
+  pgsodium-key:
   postgres-data:
   storage-data:
   qdrant-data:

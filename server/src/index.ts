@@ -17,7 +17,7 @@ const imageTypes = new Map([
 ])
 const mimeByExtension = new Map([['.jpg', 'image/jpeg'], ['.png', 'image/png'], ['.gif', 'image/gif'], ['.webp', 'image/webp'], ['.avif', 'image/avif']])
 await mkdir(uploadsDirectory, { recursive: true })
-app.use(cors({ origin: 'http://localhost:5173' })); app.use(express.json({ limit: '2mb' }))
+app.use(cors({ origin: [env.PUBLIC_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'] })); app.use(express.json({ limit: '2mb' }))
 app.set('trust proxy', true)
 app.get('/health', (_req, res) => res.json({ ok: true }))
 app.post('/api/uploads', requireAuth, express.raw({ type: 'image/*', limit: '5mb' }), async (req, res, next) => {
