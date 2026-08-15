@@ -177,7 +177,7 @@ docker compose up -d --build server nginx
 
 ## Browser signup or sign-in says `Failed to fetch`
 
-**Observed:** 2026-08-04; updated for Resend/Nginx 2026-08-14
+**Observed:** 2026-08-04; updated for SMTP/Nginx 2026-08-15
 
 ### Local Vite UI
 
@@ -210,18 +210,23 @@ to Kong; do not build a production bundle with `localhost` URLs.
 ### Cause
 
 GoTrue sends signup confirmations, secure email-change confirmations, and
-account-change notifications through Resend SMTP. Delivery fails if the API key
-is absent/invalid, the sender is not on a verified Resend domain, or the
-recipient's mailbox filters the message.
+account-change notifications through the configured SMTP provider. Delivery
+fails if the SMTP credentials are absent/invalid, the sender is not permitted,
+or the recipient's mailbox filters the message.
 
 ### Resolution
 
 Check the root `.env`:
 
 ```dotenv
-RESEND_API_KEY=re_...
-RESEND_FROM_EMAIL=notifications@your-verified-domain.example
-RESEND_FROM_NAME=Muse
+DISABLE_SIGNUP=false
+ENABLE_EMAIL_AUTOCONFIRM=false
+SMTP_ADMIN_EMAIL=notifications@your-verified-domain.example
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-smtp-user
+SMTP_PASS=your-smtp-password
+SMTP_SENDER_NAME=Muse
 ```
 
 Recreate Auth after changing mail variables:
@@ -237,7 +242,7 @@ both the old and new address by design.
 ## Password-reset link does not open the new-password form
 
 Use **Forgot your password?** on the sign-in screen. Muse sends a recovery
-email through GoTrue and Resend; opening its link creates a temporary recovery
+email through GoTrue and SMTP; opening its link creates a temporary recovery
 session and displays the new-password form. The reset link must open the same
 `PUBLIC_URL` used to build Nginx and configure GoTrue.
 

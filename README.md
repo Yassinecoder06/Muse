@@ -92,31 +92,33 @@ The API returns note saves immediately. A background processor generates missing
 
 - Set `JWT_SECRET` to a random value **at least 32 characters** long.
 - Generate `ANON_KEY` and `SERVICE_ROLE_KEY` as JWTs **signed with that same `JWT_SECRET`**, with `"role": "anon"` / `"role": "service_role"` claims. Kong accepts them as `apikey` credentials; GoTrue issues session tokens signed with `JWT_SECRET`, so all three components must agree.
-- Never put `POSTGRES_PASSWORD`, `JWT_SECRET`, `SERVICE_ROLE_KEY`, Resend,
+- Never put `POSTGRES_PASSWORD`, `JWT_SECRET`, `SERVICE_ROLE_KEY`, SMTP,
   or Ollama credentials in a `VITE_*` variable. Vite embeds those variables in
   browser JavaScript at build time. The Nginx image receives only
   `VITE_SUPABASE_ANON_KEY`, which is intentionally public.
 
-### Transactional email with Resend
+### Transactional email with SMTP
 
-Muse routes Supabase Auth's database-triggered emails through Resend SMTP. This
+Muse routes Supabase Auth's database-triggered emails through your SMTP provider. This
 covers signup verification, password-reset links, secure email changes,
 password-change alerts, and email-change alerts. Each message is addressed to
 the account email involved: an email change sends confirmation links to both
 the old and new addresses.
 
-1. In Resend, add a domain you own (a subdomain such as
-   `updates.example.com` is a good choice), add the DNS records Resend shows,
-   and wait for the domain to verify. Create an API key with sending access.
-   Resend cannot deliver to arbitrary recipients from its test domain; the
-   `From` address must belong to your verified domain.
-2. Add these values to the root `.env` file. Do not put the API key in any
+1. Configure an SMTP account with a sender address you are allowed to use.
+   Resend, Postmark, Amazon SES, Mailgun, and a company mail relay all work.
+2. Add these values to the root `.env` file. Do not put the password in any
    `VITE_*` variable or commit it.
 
    ```dotenv
-   RESEND_API_KEY=re_your_key_here
-   RESEND_FROM_EMAIL=notifications@updates.example.com
-   RESEND_FROM_NAME=Muse
+   DISABLE_SIGNUP=false
+   ENABLE_EMAIL_AUTOCONFIRM=false
+   SMTP_ADMIN_EMAIL=notifications@updates.example.com
+   SMTP_HOST=smtp.example.com
+   SMTP_PORT=587
+   SMTP_USER=your-smtp-user
+   SMTP_PASS=your-smtp-password
+   SMTP_SENDER_NAME=Muse
    ```
 
 3. Recreate the Auth service so it receives the new SMTP credentials:
@@ -129,9 +131,8 @@ the old and new addresses.
    entered address. If it is not visible after a moment, check Spam or Junk.
    The same reminder appears in Muse and in the email templates.
 
-The mailer uses Resend's SMTP endpoint (`smtp.resend.com`, port `465`, user
-`resend`) internally. Do not change those Compose values. The `supabase/templates`
-directory is mounted by the private `mailer-templates` service, which serves
+The mailer uses the provider-neutral SMTP values from the root `.env`. The
+`supabase/templates` directory is mounted by the private `mailer-templates` service, which serves
 the five templates only to GoTrue on the Docker network; it has no public port.
 
 ### Updating account information
@@ -377,7 +378,7 @@ Then exercise auth and notes against the public host. The commands below reuse
 the anon key from `.env` so no secret appears in your shell history:
 
 ```bash
-# Sign up. Resend delivers an email-confirmation link; open it before running
+# Sign up. Your SMTP provider delivers an email-confirmation link; open it before running
 # the sign-in command below.
 ANON=$(grep -m1 '^ANON_KEY=' .env | cut -d= -f2-)
 curl -s -X POST https://notes.example.com/auth/v1/signup \

@@ -129,17 +129,17 @@ services:
       GOTRUE_URI_ALLOW_LIST: ${PUBLIC_URL:-http://localhost:8080},http://localhost:5173
       GOTRUE_JWT_SECRET: ${JWT_SECRET:-replace-this-with-a-32-character-minimum-secret}
       GOTRUE_JWT_EXP: 3600
-      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_DISABLE_SIGNUP: "${DISABLE_SIGNUP:-false}"
       GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
-      # Resend SMTP delivers the database-triggered Auth emails (signup,
-      # email-change confirmation, and account-change notifications).
-      GOTRUE_SMTP_HOST: smtp.resend.com
-      GOTRUE_SMTP_PORT: "465"
-      GOTRUE_SMTP_USER: resend
-      GOTRUE_SMTP_PASS: ${RESEND_API_KEY}
-      GOTRUE_SMTP_ADMIN_EMAIL: ${RESEND_FROM_EMAIL}
-      GOTRUE_SMTP_SENDER_NAME: ${RESEND_FROM_NAME:-Muse}
-      GOTRUE_MAILER_AUTOCONFIRM: "false"
+      # Provider-neutral SMTP delivers Auth emails (signup, recovery, and
+      # account-change confirmation/notifications). Configure these in .env.
+      GOTRUE_SMTP_HOST: "${SMTP_HOST:-}"
+      GOTRUE_SMTP_PORT: "${SMTP_PORT:-587}"
+      GOTRUE_SMTP_USER: "${SMTP_USER:-}"
+      GOTRUE_SMTP_PASS: "${SMTP_PASS:-}"
+      GOTRUE_SMTP_ADMIN_EMAIL: "${SMTP_ADMIN_EMAIL:-noreply@example.com}"
+      GOTRUE_SMTP_SENDER_NAME: "${SMTP_SENDER_NAME:-Muse}"
+      GOTRUE_MAILER_AUTOCONFIRM: "${ENABLE_EMAIL_AUTOCONFIRM:-false}"
       GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: "true"
       GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED: "true"
       GOTRUE_MAILER_NOTIFICATIONS_EMAIL_CHANGED_ENABLED: "true"
