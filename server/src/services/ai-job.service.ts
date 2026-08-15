@@ -3,6 +3,8 @@ import { ai, contextBudgetChars, type HistoryItem } from './ai.service.js'
 import { notes } from './note.repository.js'
 import { vectors } from './vector.service.js'
 import { research } from './research.service.js'
+import { researchArtifacts, researchDocuments } from './research-document.repository.js'
+import { reportRepository } from './reporting/repository.js'
 import { settings } from './settings.repository.js'
 import { extractImageTags, restoreImages, stripImages } from '../utils/images.js'
 import type { AiJob, AiJobType } from '../types/index.js'
@@ -10,7 +12,7 @@ import type { AiJob, AiJobType } from '../types/index.js'
 export class AiQueueLimitError extends Error {}
 
 export const jobs = {
-  async enqueue(userId: string, noteId: string | null, type: AiJobType, payload: { mode?: string; question?: string; history?: HistoryItem[]; model?: string; topic?: string; depth?: 'concise' | 'standard' | 'in-depth' } = {}) {
+  async enqueue(userId: string, noteId: string | null, type: AiJobType, payload: any = {}) {
     if (noteId) await notes.get(userId, noteId)
     const { data: active, error: activeError } = await supabase.from('ai_jobs').select('id').eq('user_id', userId).in('status', ['queued', 'processing']).limit(1)
     if (activeError) throw activeError
@@ -31,8 +33,9 @@ export const jobs = {
     return (data?.[0] as { type: AiJobType } | undefined) ?? null
   },
   async complete(id: string, result: Record<string, unknown>) { const { error } = await supabase.from('ai_jobs').update({ status: 'complete', result, finished_at: new Date().toISOString(), error: null }).eq('id', id); if (error) throw error },
+  async progress(id: string, result: Record<string, unknown>) { const { error } = await supabase.from('ai_jobs').update({ result }).eq('id', id); if (error) throw error },
   async fail(id: string, error: unknown) { const message = error instanceof Error ? error.message : 'Muse could not complete this request.'; const { error: updateError } = await supabase.from('ai_jobs').update({ status: 'failed', error: message.slice(0, 500), finished_at: new Date().toISOString() }).eq('id', id); if (updateError) throw updateError },
-  async cleanup() { await supabase.from('ai_jobs').delete().eq('status', 'complete').lt('finished_at', new Date(Date.now() - 60 * 60 * 1000).toISOString()); await supabase.from('ai_jobs').delete().eq('status', 'failed').lt('finished_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()) }
+  async cleanup() { await supabase.from('ai_jobs').delete().eq('status', 'complete').neq('type', 'research').lt('finished_at', new Date(Date.now() - 60 * 60 * 1000).toISOString()); await supabase.from('ai_jobs').delete().eq('status', 'failed').neq('type', 'research').lt('finished_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()) }
 }
 
 async function process(job: AiJob) {
@@ -76,10 +79,20 @@ async function process(job: AiJob) {
   }
   else if (job.type === 'research') {
     const topic = job.payload?.topic?.trim(); if (!topic) throw new Error('Research topic is missing.')
-    const { title, content, sources } = await research(topic, job.payload?.depth, model, apiKey)
-    const created = await notes.create(job.user_id, { title, content }, 'research')
+    const documents = await researchDocuments.getMany(job.user_id, job.payload?.documentIds || [])
+    const completedStages: string[] = []
+    await jobs.progress(job.id, { stage: 'research', label: 'Preparing web research', completedStages, documentCount: documents.length })
+    const started = Date.now()
+    const generated = await research({ topic, title: job.payload?.title, depth: job.payload?.depth, reportType: job.payload?.reportType, objective: job.payload?.objective, audience: job.payload?.audience, instructions: job.payload?.instructions, outputFormat: job.payload?.outputFormat, enabledSkills: job.payload?.enabledSkills as any, documentIds: job.payload?.documentIds }, model, apiKey, documents, async (stage, label, artifact, stats) => {
+      await researchArtifacts.save(job.id, job.user_id, stage, artifact)
+      completedStages.push(stage)
+      await jobs.progress(job.id, { stage, label, completedStages: [...completedStages], documentCount: documents.length })
+      if (stats) await reportRepository.stage(job.id, job.user_id, stage, started, stats.input, stats.output, stats.status, stats.error)
+    })
+    const created = await notes.create(job.user_id, { title: generated.title, content: generated.content }, 'research')
     await vectors.upsertVector(created)
-    result = { noteId: created.id, title, sources: sources.map(({ title: sourceTitle, url }) => ({ title: sourceTitle, url })) }
+    await reportRepository.save(created.id, job.id, job.user_id, { reportType: generated.plan.report_type, objective: generated.plan.objective, audience: generated.plan.target_audience, instructions: job.payload?.instructions || '', outputFormat: generated.outputFormat, plan: generated.plan, quality: generated.quality, revisions: generated.revisions })
+    result = { noteId: created.id, title: generated.title, sources: generated.sources.map(({ title: sourceTitle, url }) => ({ title: sourceTitle, url })), stages: completedStages, documentCount: documents.length, quality: generated.quality, outputFormat: generated.outputFormat }
   }
   if (note) await vectors.upsertVector(await notes.get(job.user_id, note.id))
   return result

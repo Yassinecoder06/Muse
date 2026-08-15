@@ -100,9 +100,10 @@ The API returns note saves immediately. A background processor generates missing
 ### Transactional email with Resend
 
 Muse routes Supabase Auth's database-triggered emails through Resend SMTP. This
-covers signup verification, secure email changes, password-change alerts, and
-email-change alerts. Each message is addressed to the account email involved:
-an email change sends confirmation links to both the old and new addresses.
+covers signup verification, password-reset links, secure email changes,
+password-change alerts, and email-change alerts. Each message is addressed to
+the account email involved: an email change sends confirmation links to both
+the old and new addresses.
 
 1. In Resend, add a domain you own (a subdomain such as
    `updates.example.com` is a good choice), add the DNS records Resend shows,
@@ -131,7 +132,7 @@ an email change sends confirmation links to both the old and new addresses.
 The mailer uses Resend's SMTP endpoint (`smtp.resend.com`, port `465`, user
 `resend`) internally. Do not change those Compose values. The `supabase/templates`
 directory is mounted by the private `mailer-templates` service, which serves
-the four templates only to GoTrue on the Docker network; it has no public port.
+the five templates only to GoTrue on the Docker network; it has no public port.
 
 ### Updating account information
 
@@ -139,6 +140,8 @@ Signed-in users can open **Settings** and update their name, email address, or
 password. A name change saves immediately. An email change must be confirmed
 from both the current and replacement email address before it takes effect. A
 password change sends a security notice to the account's email address.
+Signed-out users can select **Forgot your password?** from sign-in; the emailed
+recovery link opens a dedicated new-password form before returning to Muse.
 
 ## Database and migration
 
@@ -173,6 +176,22 @@ Run it once on an existing database before starting the new server container:
 docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/004_research_documents.sql
 ```
 
+`005_research_pipeline.sql` adds private extracted research documents and the
+saved artifacts for each staged research run. It does **not** read from your
+other Muse notes. Apply it once to an existing database:
+
+```bash
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/005_research_pipeline.sql
+```
+
+`006_modular_reports.sql` adds report plans, quality results, and per-skill
+execution telemetry for the modular report engine. Apply it once to an existing
+database:
+
+```bash
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/006_modular_reports.sql
+```
+
 ### Images
 
 Images live **inside Postgres** (base64 text in `images.data`) — there is no
@@ -186,7 +205,26 @@ afterwards — images can never be deleted by a rewrite.
 
 Research reports are stored as a distinct note type and use an editorial layout
 with an executive summary, analytical sections, findings, conclusion, and
-sources.
+sources. The Research dialog can also include up to five explicitly selected
+PDF, DOCX, Markdown/text, or CSV files (10 MB each). Muse stores extracted text
+for those files, combines it with web research, and records the eight workflow
+artifacts—research, extraction, analysis, critical reasoning, recommendations,
+structure, writing, and quality control—against the completed research job.
+The Docker Nginx gateway accepts research-file requests up to 11 MB so the
+server can enforce the 10 MB per-file limit itself.
+
+### Modular reports
+
+Research is a modular report engine, not one large writing prompt. A planner
+selects skills from `server/src/services/reporting/skills.ts` according to the
+Business, Technical, Financial, Research, Management, or Project
+preset. Skills enrich a structured evidence representation; the writer renders
+that representation, then QC can trigger up to two bounded revisions. Financial
+formulas such as ROI and payback are calculated in code when their sourced
+inputs are available. Each run records its plan, high-level status, artifacts,
+quality result, and per-skill timing. A new skill needs a `SkillDefinition` in
+the registry plus an executor path in `reporting/engine.ts`—the planner and UI
+remain unchanged. Completed reports can be requested as HTML, PDF, or DOCX.
 
 ## AI configuration
 
@@ -222,7 +260,9 @@ Optional AI tuning variables in `.env`:
 | Area | Endpoints |
 | --- | --- |
 | Notes | `GET /api/notes`, `GET /api/notes/:id`, `POST /api/notes`, `PUT /api/notes/:id`, `DELETE /api/notes/:id` (soft), `DELETE /api/notes/:id/permanent`, bulk/restore/trash helpers |
-| AI jobs | `POST /api/ai/jobs` (`summary`, `tasks`, `title`, `tags`, `rewrite` + `mode`, `research` + `topic`/`depth`; optional `model` override), `GET /api/ai/jobs/:id`, `GET /api/models`, `GET /api/ai/usage` |
+| AI jobs | `POST /api/ai/jobs` (`summary`, `tasks`, `title`, `tags`, `rewrite` + `mode`, `research` + `topic`/`depth`/optional `documentIds`; optional `model` override), `GET /api/ai/jobs/:id`, `GET /api/ai/jobs/:id/artifacts`, `GET /api/models`, `GET /api/ai/usage` |
+| Research files | `POST /api/research/documents` (authenticated raw PDF, DOCX, Markdown/text, or CSV body; `X-Research-Filename`; 10 MB) |
+| Report export | `GET /api/reports/:noteId/export?format=html|pdf|docx` |
 | Chat | `POST /api/chat/note`, `POST /api/chat/search` (both accept optional `model`) |
 | Images | `POST /api/uploads` (raw body, ≤5 MB, optional `?noteId`), `GET /api/images/:id` (public by UUID) |
 

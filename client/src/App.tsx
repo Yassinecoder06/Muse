@@ -15,6 +15,12 @@ import { AuthPage } from './components/AuthPage'
 import { AccountSettings } from './components/AccountSettings'
 import { supabase } from './services/supabase'
 
+function isRecoveryLink() {
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+  const query = new URLSearchParams(window.location.search)
+  return hash.get('type') === 'recovery' || query.get('type') === 'recovery'
+}
+
 function MuseApp() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -35,6 +41,7 @@ function MuseApp() {
   const [usage, setUsage] = useState<AiUsage | null>(null)
   const [usageError, setUsageError] = useState('')
   const [authenticated, setAuthenticated] = useState<boolean | undefined>(undefined)
+  const [passwordRecovery, setPasswordRecovery] = useState(isRecoveryLink)
   const [userEmail, setUserEmail] = useState('')
   const [userName, setUserName] = useState('')
   const [aiWorking, setAiWorking] = useState('')
@@ -75,8 +82,9 @@ function MuseApp() {
       setUserEmail(data.session?.user.email || '')
       setUserName(typeof data.session?.user.user_metadata?.full_name === 'string' ? data.session.user.user_metadata.full_name : '')
     })
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       setAuthenticated(!!session)
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
       setUserEmail(session?.user.email || '')
       setUserName(typeof session?.user.user_metadata?.full_name === 'string' ? session.user.user_metadata.full_name : '')
       queryClient.clear()
@@ -110,7 +118,7 @@ function MuseApp() {
   const tags = [...new Set((allQuery.data || []).flatMap(note => note.tags))].sort()
   const dashboard = <Dashboard notes={notesQuery.data || []} counts={counts} scope={scope} setScope={setScope} query={query} setQuery={setQuery} create={() => create.mutate()} open={note => navigate(`/note/${note.id}`)} dark={dark} toggleTheme={() => setDark(!dark)} ask={() => setAsk(true)} research={() => setResearch(true)} collections={() => setCollections(true)} settings={() => setSettings(true)} userEmail={userEmail} userName={userName} emptyTrash={() => emptyTrash.mutate()} deleteSelected={ids => deleteSelected.mutate(ids)} restoreSelected={ids => restoreSelected.mutate(ids)} aiWorking={aiWorking} />
   if (authenticated === undefined) return <div className="app-loading"><div className="loader"/>Loading your space</div>
-  if (!authenticated) return <AuthPage/>
+  if (!authenticated || passwordRecovery) return <AuthPage recovery={passwordRecovery} onPasswordUpdated={() => setPasswordRecovery(false)}/>
   return <>
     {notesQuery.isLoading ? <div className="app-loading"><div className="loader"/>Loading your space</div> : <Routes><Route path="/" element={dashboard}/><Route path="/note/:id" element={<NoteRoute toast={setToast}/>}/><Route path="*" element={dashboard}/></Routes>}
     <CommandPalette open={command} close={() => setCommand(false)} create={() => create.mutate()} ask={() => setAsk(true)} theme={() => setDark(!dark)}/>
