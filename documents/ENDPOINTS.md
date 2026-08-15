@@ -1,7 +1,7 @@
 # Muse API and system reference
 
 Last reviewed: **2026-08-14**. This reference describes the current
-Compose-managed Nginx, Supabase, Resend, and Express setup.
+Compose-managed Nginx, Supabase, SMTP, and Express setup.
 
 ## Architecture
 
@@ -145,7 +145,7 @@ routes are provided by GoTrue through Kong, not Express.
 
 | Operation | Client call | Result |
 | --- | --- | --- |
-| Sign up | `supabase.auth.signUp({ email, password, options: { data } })` | Sends a Resend confirmation email; sign-in requires confirmation |
+| Sign up | `supabase.auth.signUp({ email, password, options: { data } })` | Sends an SMTP confirmation email; sign-in requires confirmation |
 | Sign in | `supabase.auth.signInWithPassword({ email, password })` | Returns a session/access token |
 | Forgot password | `supabase.auth.resetPasswordForEmail(email, { redirectTo })` | Sends a recovery email without disclosing whether an account exists |
 | Complete recovery | `supabase.auth.updateUser({ password })` | Updates the password from the recovery session opened by the emailed link |
@@ -154,9 +154,9 @@ routes are provided by GoTrue through Kong, not Express.
 | Change password | `supabase.auth.updateUser({ password })` | Updates password and sends a security notification |
 | Sign out | `supabase.auth.signOut()` | Clears the current session |
 
-GoTrue uses Resend SMTP (`smtp.resend.com:465`, user `resend`) with
-`RESEND_API_KEY`, `RESEND_FROM_EMAIL`, and `RESEND_FROM_NAME` from the root
-`.env`. Signup and account-change templates live in `supabase/templates` and
+GoTrue uses the provider-neutral `SMTP_*` variables from the root `.env`.
+`DISABLE_SIGNUP` controls registration and `ENABLE_EMAIL_AUTOCONFIRM` controls
+whether signup requires email confirmation. Signup and account-change templates live in `supabase/templates` and
 are served privately by `mailer-templates`. Recipients should check Spam or
 Junk if a message does not arrive.
 
