@@ -5,18 +5,20 @@ import type { AiJob, Note, NoteInput } from '../types'
 import { ChatPanel } from './ChatPanel'
 
 const rewriteModes = ['improve', 'professional', 'friendly', 'shorter', 'longer', 'grammar']
-const allowedTags = new Set(['A', 'B', 'BR', 'BLOCKQUOTE', 'CODE', 'DIV', 'EM', 'H1', 'H2', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'STRONG', 'UL'])
+const allowedTags = new Set(['A', 'B', 'BR', 'BLOCKQUOTE', 'CODE', 'DIV', 'EM', 'H1', 'H2', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'SECTION', 'SPAN', 'STRONG', 'UL'])
+const reportClasses = new Set(['research-key-findings', 'report-dashboard', 'report-kpi-grid', 'report-kpi', 'report-chart', 'report-chart-row', ...Array.from({ length: 10 }, (_, index) => `report-fill-${index + 1}`)])
 
 function sanitizeHtml(value: string) {
   const container = document.createElement('div')
   container.innerHTML = value
-    for (const element of [...container.querySelectorAll('*')]) {
+  for (const element of [...container.querySelectorAll('*')]) {
       if (!allowedTags.has(element.tagName)) {
         element.replaceWith(...Array.from(element.childNodes))
         continue
       }
       const source = element.getAttribute('src') || ''
       const href = element.getAttribute('href') || ''
+      const approvedClasses = [...element.classList].filter(name => reportClasses.has(name))
       for (const attribute of [...element.attributes]) element.removeAttribute(attribute.name)
       if (element.tagName === 'IMG') {
         if (!/^(https?:\/\/|\/api\/images\/)/i.test(source)) element.remove()
@@ -26,8 +28,32 @@ function sanitizeHtml(value: string) {
         if (!/^https:\/\//i.test(href)) element.replaceWith(...Array.from(element.childNodes))
         else { element.setAttribute('href', href); element.setAttribute('target', '_blank'); element.setAttribute('rel', 'noreferrer noopener') }
       }
+      if (approvedClasses.length) element.setAttribute('class', approvedClasses.join(' '))
     }
   return container.innerHTML
+}
+
+function decorateKeyFindings(value: string) {
+  const container = document.createElement('div')
+  container.innerHTML = value
+  for (const heading of [...container.querySelectorAll('h2')]) {
+    if (!/^\s*key findings\s*$/i.test(heading.textContent || '') || heading.closest('section.research-key-findings')) continue
+    const card = document.createElement('section')
+    card.className = 'research-key-findings'
+    heading.before(card)
+    card.append(heading)
+    while (card.nextElementSibling && card.nextElementSibling.tagName !== 'H2') card.append(card.nextElementSibling)
+  }
+  return container.innerHTML
+}
+
+function researchOutline(value: string) {
+  const container = document.createElement('div')
+  container.innerHTML = value
+  const headings = [...container.querySelectorAll('h2')].map(heading => (heading.textContent || '').trim()).filter(Boolean)
+  const sourceHeading = [...container.querySelectorAll('h2')].find(heading => /^\s*sources?\s*$/i.test(heading.textContent || ''))
+  const sourceCount = sourceHeading?.nextElementSibling?.tagName === 'OL' ? sourceHeading.nextElementSibling.querySelectorAll('li').length : 0
+  return { headings, sourceCount }
 }
 
 function plainText(html: string) {
@@ -75,6 +101,7 @@ function completionMessage(job: AiJob) {
 }
 
 export function Editor({ note, onBack, save, refresh, trash, restore, permanentlyDelete, onToast }: { note: Note; onBack: () => void; save: (input: NoteInput) => Promise<unknown>; refresh: () => Promise<Note>; trash: () => Promise<void>; restore: () => Promise<void>; permanentlyDelete: () => Promise<void>; onToast: (message: string) => void }) {
+  const isResearch = note.kind === 'research'
   const ref = useRef<HTMLDivElement>(null)
   const timer = useRef<number | undefined>(undefined)
   const imageInput = useRef<HTMLInputElement>(null)
@@ -89,7 +116,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
 
   useEffect(() => {
     document.execCommand('styleWithCSS', false, 'false')
-    const cleaned = sanitizeHtml(note.content)
+    const cleaned = isResearch ? decorateKeyFindings(sanitizeHtml(note.content)) : sanitizeHtml(note.content)
     setContent(cleaned)
     setTitle(note.title)
     if (ref.current) ref.current.innerHTML = withImageUrls(cleaned)
@@ -104,7 +131,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
         setJobId(null); setWorking(false)
         if (job.status === 'complete') {
           const updated = await refresh()
-          const updatedContent = sanitizeHtml(updated.content)
+          const updatedContent = isResearch ? decorateKeyFindings(sanitizeHtml(updated.content)) : sanitizeHtml(updated.content)
           // Title and content are controlled locally to support autosave. They
           // must be explicitly synchronized after an AI job changes the note.
           setTitle(updated.title)
@@ -127,7 +154,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
 
   function edit(html: string) {
     const stored = toStoredHtml(html)
-    const cleaned = sanitizeHtml(stored)
+    const cleaned = isResearch ? decorateKeyFindings(sanitizeHtml(stored)) : sanitizeHtml(stored)
     setContent(cleaned)
     queue({ content: cleaned })
   }
@@ -242,6 +269,9 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
   }
 
   const wordCount = plainText(content).trim().split(/\s+/).filter(Boolean).length
+  const { headings: researchHeadings, sourceCount } = isResearch ? researchOutline(content) : { headings: [], sourceCount: 0 }
+  const readingMinutes = Math.max(1, Math.ceil(wordCount / 220))
+  const scrollToResearchSection = (index: number) => ref.current?.querySelectorAll('h2')[index]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   return <div className="editor-page">
     <header className="editor-header">
@@ -250,9 +280,12 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
       <button className="header-icon" title={note.favorite ? 'Remove from favorites' : 'Add to favorites'} onClick={() => void save({ favorite: !note.favorite })}><Star size={18} fill={note.favorite ? 'currentColor' : 'none'}/></button>
       <div className="note-menu-wrap"><button className="header-icon" title="Note actions" onClick={() => setMenu(!menu)}><MoreHorizontal size={19}/></button>{menu && <div className="note-menu">{note.deleted_at ? <><button onClick={() => void manage(restore, 'Note restored.')}>Restore note</button><button className="danger" onClick={() => void manage(permanentlyDelete, 'Note permanently deleted.')}>Delete permanently</button></> : <><button onClick={() => void manage(async () => { await save({ archived: !note.archived }) }, note.archived ? 'Note unarchived.' : 'Note archived.')}>{note.archived ? 'Unarchive note' : 'Archive note'}</button><button className="danger" onClick={() => void manage(trash, 'Note moved to trash.')}>Move to trash</button></>}</div>}</div>
     </header>
-    <div className={`editor-canvas${note.kind === 'research' ? ' research-canvas' : ''}`}>
+    <div className={`editor-canvas${isResearch ? ' research-canvas' : ''}`}>
+      {isResearch && <aside className="research-toc" aria-label="Research report table of contents"><strong>In this report</strong><nav>{researchHeadings.map((heading, index) => <button key={`${heading}-${index}`} onClick={() => scrollToResearchSection(index)}>{heading}</button>)}</nav></aside>}
+      <div className={isResearch ? 'research-body' : undefined}>
+      {isResearch && <header className="research-masthead"><span>Research report</span><p>{new Date(note.created_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}<i/> {readingMinutes} min read {sourceCount ? <><i/> {sourceCount} sources</> : null}</p></header>}
       <input className="editor-title" value={title} onChange={e => { setTitle(e.target.value); queue({ title: e.target.value }) }} placeholder="Untitled note"/>
-      <div className="editor-details">{note.kind === 'research' && <span className="research-label">Research report</span>}<span>{new Date(note.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>{note.tags.map(tag => <span className="tag" key={tag}>{tag}</span>)}{note.aiStatus === 'processing' && <span className="processing"><i/> Organizing</span>}</div>
+      <div className="editor-details">{!isResearch && <span>{new Date(note.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}{note.tags.map(tag => <span className="tag" key={tag}>{tag}</span>)}{note.aiStatus === 'processing' && <span className="processing"><i/> Organizing</span>}</div>
       <div className="toolbar">
         <button className={active.h1 ? 'active' : ''} onMouseDown={keepSelection} onClick={() => toggleBlock('h1')}><Heading1 size={17}/></button>
         <button className={active.h2 ? 'active' : ''} onMouseDown={keepSelection} onClick={() => toggleBlock('h2')}><Heading2 size={17}/></button>
@@ -266,10 +299,11 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
         <button title="Add an image" onMouseDown={keepSelection} onClick={() => imageInput.current?.click()}><Image size={17}/></button>
       </div>
       <input ref={imageInput} type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/avif" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void insertImage(file) }}/>
-      <div ref={ref} className={`rich-editor${note.kind === 'research' ? ' research-document' : ''}`} contentEditable suppressContentEditableWarning onInput={e => edit(e.currentTarget.innerHTML)} onPaste={pasteImage} onKeyUp={updateActive} onMouseUp={updateActive} onClick={updateActive}/>
+      <div ref={ref} className={`rich-editor${isResearch ? ' research-document' : ''}`} contentEditable suppressContentEditableWarning onInput={e => edit(e.currentTarget.innerHTML)} onPaste={pasteImage} onKeyUp={updateActive} onMouseUp={updateActive} onClick={updateActive}/>
       {note.summary && <section className="summary-card"><div><span><Sparkles size={16}/><strong>Muse summary</strong></span><button className="generated-remove" title="Remove summary" onClick={() => void clearSummary()}><X size={15}/></button></div><p>{note.summary}</p></section>}
       {!!note.tasks?.length && <section className="task-list"><div className="task-list-heading"><strong>Tasks</strong><button className="generated-remove" onClick={() => void clearTasks()}>Clear</button></div>{note.tasks.map(task => <label key={task.id}><input type="checkbox" checked={task.completed} onChange={e => { void toggleTask(task.id, e.target.checked) }}/><span>{task.text}</span></label>)}</section>}
       <footer className="editor-footer"><div className="ai-menu-wrap"><button className="ai-trigger" onClick={() => setAiOpen(!aiOpen)}><WandSparkles size={16}/> AI assist</button>{aiOpen && <div className="ai-menu"><button onClick={() => assist('organize')}><WandSparkles size={16}/> Organize</button><button onClick={() => assist('summary')}><Sparkles size={16}/> Summarize</button><button onClick={() => assist('tasks')}><ListChecks size={16}/> Extract tasks</button><button onClick={() => assist('title')}><FileText size={16}/> Smart title</button><button onClick={() => assist('tags')}><Sparkles size={16}/> Auto tags</button><small>REWRITE</small>{rewriteModes.map(mode => <button key={mode} onClick={() => assist(mode)}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}{imageCount(content) > 0 && <small className="ai-warning"><Image size={13}/> Images stay in place when the note is rewritten.</small>}</div>}</div><button className="ask-note" onClick={() => setChat(true)}><Sparkles size={15}/> Ask this note</button><span>{wordCount} words</span></footer>
+      </div>
     </div>
     {chat && <ChatPanel note={note} mode="note" onClose={() => setChat(false)}/>}
   </div>

@@ -234,6 +234,25 @@ docker compose logs --tail 100 auth
 Ask the recipient to check Spam or Junk. Email changes require confirmation at
 both the old and new address by design.
 
+## Password-reset link does not open the new-password form
+
+Use **Forgot your password?** on the sign-in screen. Muse sends a recovery
+email through GoTrue and Resend; opening its link creates a temporary recovery
+session and displays the new-password form. The reset link must open the same
+`PUBLIC_URL` used to build Nginx and configure GoTrue.
+
+After changing `PUBLIC_URL` or the recovery template configuration, recreate
+both Auth and the frontend gateway:
+
+```bash
+docker compose up -d --build nginx
+docker compose up -d --force-recreate auth mailer-templates
+```
+
+If the browser shows a generic sign-in form after opening the link, request a
+fresh reset email and open it in the same browser. Recovery links are
+single-use and expire according to GoTrue's configured recovery-token policy.
+
 ## Docker Nginx gateway is stale or unavailable
 
 **Observed:** 2026-08-14
@@ -268,8 +287,8 @@ permissions, or edited `/etc/nginx/sites-*` no longer apply.
 
 **Observed:** 2026-08-10; updated 2026-08-14
 
-New databases run `001_initial.sql`, `002_images.sql`, `003_api_keys.sql`, and
-`004_research_documents.sql`
+New databases run `001_initial.sql`, `002_images.sql`, `003_api_keys.sql`,
+`004_research_documents.sql`, and `005_research_pipeline.sql`
 through the database initialization mounts. For a healthy existing database,
 apply the missing migrations once:
 
@@ -277,6 +296,8 @@ apply the missing migrations once:
 docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/002_images.sql
 docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/003_api_keys.sql
 docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/004_research_documents.sql
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/005_research_pipeline.sql
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/006_modular_reports.sql
 ```
 
 `003_api_keys.sql` creates the logical pgsodium key and the service-role-only
@@ -390,6 +411,33 @@ pipeline runs only from Dashboard → **Research**, not from Ask Muse/chat.
 2. Create a new report through Dashboard → **Research**.
 3. Inspect `docker compose logs --tail 100 server` for the upstream request
    error if the job fails.
+
+## A research source document cannot be uploaded or has no usable text
+
+Research accepts at most five explicitly selected files per run: PDF, DOCX,
+Markdown/text, or CSV. Each file must be no larger than 10 MB. The Nginx
+gateway permits 11 MB so that Express can apply this exact limit.
+
+- A file-type mismatch, an invalid PDF/DOCX signature, an oversized file, or
+  an unsupported extension is rejected before it reaches the AI queue.
+- Scanned/image-only PDFs have no embedded text; Muse does not perform OCR, so
+  upload an OCR'd PDF or a text export instead.
+- The original file binary is intentionally not retained. Muse stores only its
+  extracted text, privately tied to the signed-in user, for the selected run.
+
+If a valid document still fails, inspect `docker compose logs --tail 100
+server`. The error names the affected parsing step; removing that file leaves
+the rest of the research workflow available.
+
+## Research appears to pause between stages
+
+The report is intentionally generated as eight sequential stages: web research,
+extraction, analysis, critical reasoning, recommendations, structure, writing,
+and quality control. The Research dialog updates after each completed stage.
+An in-depth report can therefore take longer than the previous single-pass
+generator, especially with large source documents or a busy Ollama Cloud model.
+The job remains inspectable at `GET /api/ai/jobs/:id`, and the saved stage
+artifacts are available at `GET /api/ai/jobs/:id/artifacts` after completion.
 
 ## Research creates an empty note
 

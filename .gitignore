@@ -5,8 +5,4 @@ dist
 *.log
 supabase/.temp
 server/uploads/
-*.md
-!README.md
-!ENDPOINTS.md
-!TROUBLESHOOTING.md
 docker/pgsodium_root.key

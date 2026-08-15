@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import express from 'express'
 import * as notes from '../controllers/notes.controller.js'
 import * as ai from '../controllers/ai.controller.js'
 import * as settings from '../controllers/settings.controller.js'
@@ -13,6 +14,8 @@ router.post('/notes/:id/restore', notes.restoreNote).delete('/notes/:id/permanen
 router.delete('/notes/:id/summary', notes.clearSummary).delete('/notes/:id/tasks', notes.clearTasks)
 router.post('/notes/:id/organize', notes.organizeNote)
 router.patch('/tasks/:taskId', notes.updateTask)
-router.post('/ai/jobs', ai.enqueue).get('/ai/jobs/:id', ai.getJob).get('/ai/active', ai.active).get('/models', ai.listModels).get('/ai/usage', ai.usage)
+router.post('/research/documents', express.raw({ type: () => true, limit: '10mb' }), ai.uploadResearchDocument)
+router.get('/reports/:noteId/export', ai.exportReport)
+router.post('/ai/jobs', ai.enqueue).get('/ai/jobs/:id', ai.getJob).get('/ai/jobs/:id/artifacts', ai.getArtifacts).get('/ai/active', ai.active).get('/models', ai.listModels).get('/ai/usage', ai.usage)
 router.post('/chat/note', ai.askNote).post('/chat/search', ai.askSearch)
 router.get('/settings', settings.getSettings).put('/settings', settings.saveApiKey).delete('/settings', settings.deleteApiKey)

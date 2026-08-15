@@ -37,6 +37,8 @@ services:
       - ./supabase/migrations/002_images.sql:/docker-entrypoint-initdb.d/zz_002_images.sql:ro
       - ./supabase/migrations/003_api_keys.sql:/docker-entrypoint-initdb.d/zz_003_api_keys.sql:ro
       - ./supabase/migrations/004_research_documents.sql:/docker-entrypoint-initdb.d/zz_004_research_documents.sql:ro
+      - ./supabase/migrations/005_research_pipeline.sql:/docker-entrypoint-initdb.d/zz_005_research_pipeline.sql:ro
+      - ./supabase/migrations/006_modular_reports.sql:/docker-entrypoint-initdb.d/zz_006_modular_reports.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -148,6 +150,7 @@ services:
       GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
       GOTRUE_MAILER_TEMPLATES_CONFIRMATION: http://mailer-templates:8080/confirmation.html
       GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE: http://mailer-templates:8080/email-change.html
+      GOTRUE_MAILER_TEMPLATES_RECOVERY: http://mailer-templates:8080/recovery.html
       GOTRUE_MAILER_TEMPLATES_PASSWORD_CHANGED_NOTIFICATION: http://mailer-templates:8080/password-changed.html
       GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGED_NOTIFICATION: http://mailer-templates:8080/email-changed.html
   mailer-templates:

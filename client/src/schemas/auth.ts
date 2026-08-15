@@ -1,4 +1,4 @@
-export type AuthMode = 'sign-in' | 'sign-up'
+export type AuthMode = 'sign-in' | 'sign-up' | 'forgot-password' | 'reset-password'
 
 export type AuthCredentials = {
   name?: string
@@ -16,8 +16,15 @@ export function validateAuthCredentials(mode: AuthMode, credentials: AuthCredent
   const name = credentials.name?.trim() || ''
   const email = credentials.email.trim()
   if (mode === 'sign-up' && name.length < 2) return 'Enter the name you would like to use in Muse.'
+  if (mode === 'reset-password') {
+    if (credentials.password.length < 6) return 'Your password must contain at least 6 characters.'
+    if (!credentials.confirmPassword) return 'Confirm your password.'
+    if (credentials.password !== credentials.confirmPassword) return 'Passwords do not match.'
+    return null
+  }
   if (!email) return 'Enter your email address.'
   if (!/^\S+@\S+\.\S+$/.test(email)) return 'Enter a valid email address.'
+  if (mode === 'forgot-password') return null
   if (credentials.password.length < 6) return 'Your password must contain at least 6 characters.'
   if (mode === 'sign-up' && !credentials.confirmPassword) return 'Confirm your password.'
   if (mode === 'sign-up' && credentials.password !== credentials.confirmPassword) return 'Passwords do not match.'

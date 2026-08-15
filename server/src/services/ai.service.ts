@@ -31,6 +31,9 @@ async function chat(messages: Message[], model: string | undefined, apiKey: stri
   const data = await ollama('/api/chat', { model: cloudModelName(model || env.OLLAMA_CHAT_MODEL), stream: false, messages, options: { num_ctx: env.OLLAMA_NUM_CTX } }, key)
   return String(data.message?.content || '').trim()
 }
+export async function complete(system: string, prompt: string, model?: string, apiKey?: string) {
+  return chat([{ role: 'system', content: system }, { role: 'user', content: prompt }], model, apiKey)
+}
 type ToolMessage = { content: string; tool_calls?: ToolCall[] }
 export async function chatWithTools(messages: Message[], tools: unknown, model?: string, apiKey?: string): Promise<ToolMessage> {
   const key = requireKey(apiKey)

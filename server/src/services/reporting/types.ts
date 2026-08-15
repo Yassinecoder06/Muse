@@ -1,0 +1,12 @@
+export type ReportType = 'business' | 'technical' | 'financial' | 'research' | 'management' | 'project'
+export type OutputFormat = 'html' | 'pdf' | 'docx'
+export type SkillName = 'research' | 'information_extraction' | 'data_analysis' | 'critical_reasoning' | 'financial_analysis' | 'recommendation' | 'visualization' | 'report_structure' | 'professional_writing' | 'citation_management' | 'quality_control'
+export type ReportRequest = { title?: string; topic: string; depth?: 'concise' | 'standard' | 'in-depth'; reportType?: ReportType; objective?: string; audience?: string; instructions?: string; outputFormat?: OutputFormat; enabledSkills?: SkillName[]; documentIds?: string[] }
+export type Source = { source_id: string; source_name: string; source_type: 'web' | 'document'; url?: string; page?: string; section?: string; claim?: string }
+export type Metric = { name: string; value?: number; unit?: string; source_ids: string[]; note?: string }
+export type Recommendation = { recommendation: string; reason: string; supporting_evidence: string[]; expected_impact: string; cost_or_effort: string; risk: string; confidence: 'low' | 'medium' | 'high' }
+export type Visualization = { visualization_type: 'table' | 'bar' | 'line' | 'donut' | 'scatter' | 'map'; data_required: string; purpose: string; key_message: string }
+export type ReportIR = { facts: { statement: string; source_ids: string[]; confidence: 'low' | 'medium' | 'high' }[]; entities: string[]; dates: string[]; metrics: Metric[]; assumptions: string[]; findings: string[]; analysis: string[]; risks: string[]; recommendations: Recommendation[]; sources: Source[]; visualizations: Visualization[]; calculations: string[]; gaps: string[] }
+export type ReportPlan = { report_type: ReportType; objective: string; target_audience: string; required_sections: string[]; required_skills: SkillName[]; available_data: string[]; analysis_requirements: string[]; visualization_requirements: string[]; citation_requirements: string[]; output_format: OutputFormat }
+export type QualityResult = { passed: boolean; score: number; issues: { severity: 'low' | 'medium' | 'high'; type: string; location: string; description: string; suggested_fix: string }[] }
+export type SkillDefinition = { name: SkillName; description: string; purpose: string; required_inputs: string[]; optional_inputs: string[]; instructions: string; output_schema: string; validation_rules: string[] }

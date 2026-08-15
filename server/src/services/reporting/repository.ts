@@ -1,0 +1,6 @@
+import { supabase } from '../../supabase/client.js'
+import type { OutputFormat, QualityResult, ReportPlan } from './types.js'
+export const reportRepository = {
+  async stage(jobId: string, userId: string, skill: string, startedAt: number, inputSize: number, outputSize: number, status: 'complete' | 'failed' | 'skipped', error?: string) { const { error: dbError } = await supabase.from('report_stage_runs').insert({ job_id: jobId, user_id: userId, skill, execution_time_ms: Date.now() - startedAt, input_size: inputSize, output_size: outputSize, status, error: error?.slice(0, 500) || null }); if (dbError) throw dbError },
+  async save(noteId: string, jobId: string, userId: string, values: { reportType: string; objective: string; audience: string; instructions: string; outputFormat: OutputFormat; plan: ReportPlan; quality: QualityResult; revisions: number }) { const { error } = await supabase.from('report_metadata').insert({ note_id: noteId, job_id: jobId, user_id: userId, report_type: values.reportType, objective: values.objective, audience: values.audience, instructions: values.instructions, output_format: values.outputFormat, plan: values.plan, quality: values.quality, revision_count: values.revisions }); if (error) throw error }
+}
