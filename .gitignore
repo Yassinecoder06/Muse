@@ -6,3 +6,4 @@ dist
 supabase/.temp
 server/uploads/
 docker/pgsodium_root.key
+backup/
