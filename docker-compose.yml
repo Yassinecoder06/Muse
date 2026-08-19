@@ -1,23 +1,8 @@
 name: muse
 services:
-  pgsodium-key:
-    image: alpine:3.20
-    restart: "no"
-    # Create the pgsodium key once in a private Docker volume. The database
-    # process runs as UID 105/GID 106 in this Supabase image, so it is the only
-    # service user that can read it.
-    command: >
-      sh -ec 'if [ ! -s /keys/pgsodium_root.key ]; then
-      head -c 32 /dev/urandom | od -An -tx1 | tr -d " \\n" > /keys/pgsodium_root.key;
-      fi;
-      chown 105:106 /keys/pgsodium_root.key;
-      chmod 600 /keys/pgsodium_root.key'
-    volumes: ["pgsodium-key:/keys"]
   db:
     image: supabase/postgres:15.8.1.060
     restart: unless-stopped
-    depends_on:
-      pgsodium-key: { condition: service_completed_successfully }
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: postgres
@@ -25,10 +10,21 @@ services:
       JWT_EXP: 3600
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      # pgsodium root key MUST be pinned: the named volume survives container
-      # recreation. Never delete it while retaining this database volume —
-      # Vault data is unrecoverable without it.
-      - pgsodium-key:/etc/postgresql-custom:ro
+      # pgsodium root key MUST be pinned: the image generates a random one on
+      # every container (re)create and vault ciphertexts become undecryptable
+      # when it changes. This host file persists the key across recreations.
+      # NOTE: mounted as a file (not a directory) so it does not mask the
+      # image's own /etc/postgresql-custom/*.conf files. Never delete it —
+      # vault data is unrecoverable without it.
+      #
+      # FRESH DEPLOYMENT: create the key file BEFORE the first `docker compose
+      # up` (if the file is missing, Docker creates a directory in its place
+      # and the database fails to initialize). This is the same command the
+      # Supabase image's own pgsodium_getkey.sh runs when the file is absent:
+      #
+      #   head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > docker/pgsodium_root.key
+      #   chmod 644 docker/pgsodium_root.key
+      - ./docker/pgsodium_root.key:/etc/postgresql-custom/pgsodium_root.key:ro
       - ./docker/supabase/roles.sql:/docker-entrypoint-initdb.d/z0_roles.sql:ro
       # The Supabase image's migrate.sh creates its database roles first.  This
       # application migration must run afterward because it grants privileges
@@ -54,6 +50,7 @@ services:
       KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
       KONG_DNS_ORDER: LAST,A,CNAME
       KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_TRUSTED_IPS: 172.18.0.0/16
       ANON_KEY: ${ANON_KEY}
       SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
     volumes: ["./docker/supabase/kong.yml:/var/lib/kong/kong.yml:ro"]
@@ -92,29 +89,12 @@ services:
     depends_on:
       kong: { condition: service_started }
       qdrant: { condition: service_started }
-      ollama-bridge: { condition: service_started }
     extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 6
-  ollama-bridge:
-    build:
-      context: .
-      dockerfile: docker/ollama-bridge/Dockerfile
-    # Host networking lets this small proxy reach a host Ollama daemon bound
-    # to 127.0.0.1, while it listens only on Docker's gateway address.
-    network_mode: host
-    restart: unless-stopped
-    environment:
-      OLLAMA_BRIDGE_HOST: ${OLLAMA_BRIDGE_HOST:-172.17.0.1}
-      OLLAMA_BRIDGE_PORT: 11434
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:11434/api/tags').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
-      interval: 10s
-      timeout: 5s
-      retries: 3
   auth:
     image: supabase/gotrue:v2.158.1
     restart: unless-stopped
@@ -235,7 +215,6 @@ services:
     ports: ["127.0.0.1:6333:6333", "127.0.0.1:6334:6334"]
     volumes: ["qdrant-data:/qdrant/storage"]
 volumes:
-  pgsodium-key:
   postgres-data:
   storage-data:
   qdrant-data:

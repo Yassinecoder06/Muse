@@ -37,7 +37,22 @@ The API returns note saves immediately. A background processor generates missing
 
    `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` must be JWTs made with the configured `JWT_SECRET` (see "Environment file" below). The Express API uses the service-role key only; it is never sent to the browser.
 
-2. Start the Docker services:
+2. Create the pgsodium Vault root key **before the first start**. The database
+   pins its Vault encryption key to this host file; without it the container
+   cannot initialize. This is the same command the Supabase image's
+   `pgsodium_getkey.sh` runs when the file is absent:
+
+   ```bash
+   head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > docker/pgsodium_root.key
+   chmod 644 docker/pgsodium_root.key
+   ```
+
+   The file must be readable by the database process (uid 105 in the
+   container), so keep it at least `644` (or `600` with `chown 105:106`).
+   Never delete `docker/pgsodium_root.key` while the `postgres-data` volume
+   exists — encrypted Vault secrets become unrecoverable without it.
+
+3. Start the Docker services:
 
    ```bash
    docker compose up -d --build
@@ -52,7 +67,7 @@ The API returns note saves immediately. A background processor generates missing
    (*Edge Runtime is intentionally not included:* Muse never uses edge
    functions.)
 
-3. Install and run Muse for hot-reload development:
+4. Install and run Muse for hot-reload development:
 
    ```bash
    npm install
@@ -72,13 +87,13 @@ The API returns note saves immediately. A background processor generates missing
    docker compose up -d --build nginx
    ```
 
-4. Verify production compilation:
+5. Verify production compilation:
 
    ```bash
    npm run build
    ```
 
-5. Sanity-check the running infrastructure:
+6. Sanity-check the running infrastructure:
 
    ```bash
    curl -s http://localhost:8080/health     # {"ok":true}
@@ -166,9 +181,13 @@ initialized database. For an existing healthy database, apply it once:
 docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/003_api_keys.sql
 ```
 
-The Vault encryption root key is generated once in the Docker-managed
-`muse_pgsodium-key` volume. Keep that volume with `muse_postgres-data`; deleting
-either independently can make saved Vault secrets unrecoverable.
+The Vault encryption root key is pinned to the host file
+`docker/pgsodium_root.key` (gitignored) and bind-mounted into the database
+container read-only. The Supabase image only generates a key when that file is
+missing, so the pinned file survives container recreations and keeps saved
+Vault secrets decryptable. A fresh deployment must create it before the first
+start (see "Quick start"). Keep it with `muse_postgres-data`; deleting either
+independently can make saved Vault secrets unrecoverable.
 
 `004_research_documents.sql` marks notes as standard or research documents.
 Run it once on an existing database before starting the new server container:
