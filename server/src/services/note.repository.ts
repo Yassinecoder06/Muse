@@ -1,8 +1,9 @@
 import { supabase } from '../supabase/client.js'
+import { decryptIfPresent, encryptIfPresent } from '../utils/crypto.js'
 import type { Note, NoteInput, Task, NoteKind } from '../types/index.js'
 
 const select = 'id,user_id,title,content,summary,favorite,archived,deleted_at,created_at,updated_at,kind,note_tags(tags(id,name)),tasks(id,user_id,note_id,text,completed,created_at)'
-function normalize(row: any): Note { return { ...row, tags: (row.note_tags || []).map((item: any) => item.tags?.name).filter(Boolean), tasks: row.tasks || [] } }
+function normalize(row: any): Note { return { ...row, title: decryptIfPresent(row.user_id, row.title), content: decryptIfPresent(row.user_id, row.content), summary: decryptIfPresent(row.user_id, row.summary), tags: (row.note_tags || []).map((item: any) => item.tags?.name).filter(Boolean), tasks: row.tasks || [] } }
 
 async function tagsFor(userId: string, noteId: string, names: string[]) {
   const cleaned = [...new Set(names.map(name => name.trim().toLowerCase()).filter(Boolean))].slice(0, 6)
@@ -36,20 +37,22 @@ export const notes = {
   },
   async create(userId: string, input: NoteInput, kind: NoteKind = 'note') {
     const { tags = [], ...data } = input
-    const { data: note, error } = await supabase.from('notes').insert({ ...data, kind, user_id: userId, title: data.title || '', content: data.content || '', favorite: data.favorite || false, archived: data.archived || false }).select().single()
+    const { data: note, error } = await supabase.from('notes').insert({ ...data, kind, user_id: userId, title: encryptIfPresent(userId, data.title || ''), content: encryptIfPresent(userId, data.content || ''), favorite: data.favorite || false, archived: data.archived || false }).select().single()
     if (error) throw error
     await tagsFor(userId, note.id, tags)
     return this.get(userId, note.id)
   },
   async update(userId: string, id: string, input: NoteInput) {
     const { tags, ...data } = input
-    const { error } = await supabase.from('notes').update(data).eq('id', id).eq('user_id', userId)
+    const encrypted = { ...data, title: encryptIfPresent(userId, data.title), content: encryptIfPresent(userId, data.content) }
+    const { error } = await supabase.from('notes').update(encrypted).eq('id', id).eq('user_id', userId)
     if (error) throw error
     if (tags) await tagsFor(userId, id, tags)
     return this.get(userId, id)
   },
   async setGenerated(userId: string, id: string, values: { title?: string; summary?: string | null; tags?: string[] }) {
     const { tags, ...data } = values
+    const encrypted = { ...data, title: encryptIfPresent(userId, data.title), summary: encryptIfPresent(userId, data.summary) }
     if (Object.keys(data).length) { const { error } = await supabase.from('notes').update(data).eq('id', id).eq('user_id', userId); if (error) throw error }
     if (tags) await tagsFor(userId, id, tags)
     return this.get(userId, id)

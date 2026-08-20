@@ -5,8 +5,8 @@ import type { AiJob, Note, NoteInput } from '../types'
 import { ChatPanel } from './ChatPanel'
 
 const rewriteModes = ['improve', 'professional', 'friendly', 'shorter', 'longer', 'grammar']
-const allowedTags = new Set(['A', 'B', 'BR', 'BLOCKQUOTE', 'CODE', 'DIV', 'EM', 'H1', 'H2', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'SECTION', 'SPAN', 'STRONG', 'UL'])
-const reportClasses = new Set(['research-key-findings', 'report-dashboard', 'report-kpi-grid', 'report-kpi', 'report-chart', 'report-chart-row', ...Array.from({ length: 10 }, (_, index) => `report-fill-${index + 1}`)])
+const allowedTags = new Set(['A', 'B', 'BR', 'BLOCKQUOTE', 'CODE', 'DIV', 'EM', 'H1', 'H2', 'H3', 'HR', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'SECTION', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL'])
+const reportClasses = new Set(['muse-report', 'report-meta', 'research-key-findings', 'report-dashboard', 'report-kpi-grid', 'report-kpi', 'report-chart', 'report-chart-row', ...Array.from({ length: 10 }, (_, index) => `report-fill-${index + 1}`)])
 
 function sanitizeHtml(value: string) {
   const container = document.createElement('div')

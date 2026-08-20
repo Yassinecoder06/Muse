@@ -1,6 +1,6 @@
 # Muse API and system reference
 
-Last reviewed: **2026-08-14**. This reference describes the current
+Last reviewed: **2026-08-19**. This reference describes the current
 Compose-managed Nginx, Supabase, SMTP, and Express setup.
 
 ## Architecture
@@ -59,7 +59,11 @@ Both upload endpoints require authentication. Images are stored in
 `public.images` as base64 data and are returned with a relative API URL. The
 legacy `/uploads/*` route remains only for old filesystem-backed notes.
 Research files are parsed server-side and stored as extracted text in
-`public.research_documents`; their original binary is not retained.
+`public.research_documents`; their original binary is not retained. Each stored
+document carries a `scan_status` (`clean` or `flagged`) and `scan_notes` from
+the upload-time security scan — dangerous structures reject the upload outright,
+prompt-injection heuristics flag the document so you see a warning before its
+text feeds an AI run.
 
 ### Notes
 
@@ -114,6 +118,18 @@ For `type: "research"`, optional fields are `title`, `reportType`
 (`html`, `pdf`, or `docx`). The planner selects the preset skill set and saves
 the plan, QC result, bounded revisions, and stage telemetry with the report.
 
+### Graph
+
+| Method | Path | Response |
+| --- | --- | --- |
+| GET | `/api/graph` | `{ nodes: GraphNode[], edges: GraphEdge[] }` |
+
+The graph is **derived, never stored**: nodes come from the signed-in user's
+notes, and edges come from the note embeddings that already live in Qdrant
+(cosine similarity above a threshold) plus shared tags. Results are cached for
+30 seconds per user. `GraphNode` is `{ id, title, kind, tags, updated_at }`;
+`GraphEdge` is `{ source, target, strength, reason: "similar"|"tag"|"both" }`.
+
 ### Report export
 
 | Method | Path | Response |
@@ -165,16 +181,25 @@ Junk if a message does not arrive.
 | Resource | Docker volume or source | Purpose |
 | --- | --- | --- |
 | PostgreSQL | `muse_postgres-data` | Auth, notes, uploaded research text, research artifacts, tasks, jobs, images, and Vault data |
-| pgsodium root key | `muse_pgsodium-key` | Persistent root key for Vault encryption |
+| pgsodium root key | `docker/pgsodium_root.key` (host file, bind-mounted read-only) | Persistent root key for Vault encryption |
 | Storage | `muse_storage-data` | Supabase Storage service data |
 | Qdrant | `muse_qdrant-data` | Note embeddings and metadata |
 | Supabase roles | `docker/supabase/roles.sql` | Internal database login roles |
-| App migrations | `supabase/migrations/001_initial.sql` through `006_modular_reports.sql` | App tables, images, report pipeline data, telemetry, and encrypted API-key RPCs |
+| App migrations | `supabase/migrations/001_initial.sql` through `007_document_scan.sql` | App tables, images, report pipeline data, telemetry, encrypted API-key RPCs, and document scanning |
 
-The database initialization mounts all six migrations. For a healthy existing
+The database initialization mounts all seven migrations. For a healthy existing
 database that predates a migration, apply it once with `psql`. Do not delete
-`muse_pgsodium-key` separately from `muse_postgres-data`; saved Vault secrets
-depend on both.
+`docker/pgsodium_root.key` separately from `muse_postgres-data`; saved Vault
+secrets depend on both.
+
+## Encryption at rest
+
+Every piece of user text — note titles, content, summaries, research-document
+text, research artifacts — is encrypted with **AES-256-GCM** by the Express
+server before it is written to Postgres or Qdrant, and decrypted again on
+read. The key is `DATA_ENCRYPTION_KEY` in the root `.env` (64 hex chars).
+See `README.md → Encryption at rest` for the format, the one-time backfill
+script, and backup requirements.
 
 ## Infrastructure and configuration
 

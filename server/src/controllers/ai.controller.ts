@@ -4,7 +4,7 @@ import { jobs } from '../services/ai-job.service.js'
 import { AI_KEY_REQUIRED, fetchAccountUsage, listModels as getModels } from '../services/ai.service.js'
 import { settings } from '../services/settings.repository.js'
 import { supabase } from '../supabase/client.js'
-import { researchDocuments } from '../services/research-document.repository.js'
+import { researchArtifacts, researchDocuments } from '../services/research-document.repository.js'
 import { extractResearchDocument } from '../services/research-document.service.js'
 import { notes } from '../services/note.repository.js'
 import { exports as reportExports } from '../services/reporting/export.service.js'
@@ -29,9 +29,7 @@ export async function getArtifacts(req: Request, res: Response, next: NextFuncti
   try {
     const jobId = z.string().uuid().parse(req.params.id)
     await jobs.get(user(req), jobId)
-    const { data, error } = await supabase.from('research_artifacts').select('stage,content,created_at').eq('job_id', jobId).eq('user_id', user(req)).order('created_at')
-    if (error) throw error
-    res.json(data || [])
+    res.json(await researchArtifacts.list(jobId, user(req)))
   } catch (error) { next(error) }
 }
 export async function exportReport(req: Request, res: Response, next: NextFunction) {

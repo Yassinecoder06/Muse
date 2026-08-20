@@ -4,8 +4,10 @@ import * as notes from '../controllers/notes.controller.js'
 import * as ai from '../controllers/ai.controller.js'
 import * as settings from '../controllers/settings.controller.js'
 import { requireAuth } from '../middleware/auth.js'
+import { graph } from '../services/graph.service.js'
 export const router = Router()
 router.use(requireAuth)
+router.get('/graph', async (req, res, next) => { try { res.json(await graph(req.userId!)) } catch (error) { next(error) } })
 router.delete('/notes/bulk', notes.bulkDeleteNotes).post('/notes/bulk-restore', notes.bulkRestoreNotes)
 router.delete('/notes/trash', notes.emptyTrash)
 router.get('/notes', notes.listNotes).post('/notes', notes.createNote)

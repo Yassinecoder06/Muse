@@ -2,3 +2,6 @@ export type Task = { id: string; note_id: string; text: string; completed: boole
 export type Note = { id: string; title: string; content: string; summary: string | null; favorite: boolean; archived: boolean; deleted_at: string | null; created_at: string; updated_at: string; kind: 'note' | 'research'; tags: string[]; tasks: Task[]; aiStatus?: 'idle' | 'processing' | 'complete' | 'error' }
 export type NoteInput = Partial<Pick<Note, 'title' | 'content' | 'favorite' | 'archived' | 'tags'>>
 export type AiJob = { id: string; note_id: string | null; type: 'organize' | 'summary' | 'tasks' | 'title' | 'tags' | 'rewrite' | 'ask_note' | 'ask_search' | 'research'; status: 'queued' | 'processing' | 'complete' | 'failed'; attempts: number; error: string | null; result: Record<string, unknown> | null; queuePosition?: number }
+export type GraphNode = { id: string; title: string; kind: string; tags: string[]; updated_at: string }
+export type GraphEdge = { source: string; target: string; strength: number; reason: 'similar' | 'tag' | 'both' }
+export type GraphData = { nodes: GraphNode[]; edges: GraphEdge[] }

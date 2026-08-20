@@ -1,6 +1,6 @@
 import sanitizeHtml from 'sanitize-html'
 
-const reportClasses = new Set(['research-key-findings', 'report-dashboard', 'report-kpi-grid', 'report-kpi', 'report-chart', 'report-chart-row', ...Array.from({ length: 10 }, (_, index) => `report-fill-${index + 1}`)])
+const reportClasses = new Set(['muse-report', 'report-meta', 'research-key-findings', 'report-dashboard', 'report-kpi-grid', 'report-kpi', 'report-chart', 'report-chart-row', ...Array.from({ length: 10 }, (_, index) => `report-fill-${index + 1}`)])
 
 export function escapeHtml(value: unknown) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] as string))
@@ -28,7 +28,7 @@ function transformTag(tagName: string, attribs: Record<string, string>) {
 
 export function sanitizeReportHtml(html: string) {
   return sanitizeHtml(html, {
-    allowedTags: ['a', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2', 'i', 'img', 'li', 'ol', 'p', 'pre', 'section', 'span', 'strong', 'ul'],
+    allowedTags: ['a', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2', 'h3', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 'section', 'span', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'ul'],
     allowedAttributes: { a: ['href', 'target', 'rel'], img: ['src'], '*': ['class'] },
     allowedSchemes: ['https'],
     transformTags: { '*': transformTag },
