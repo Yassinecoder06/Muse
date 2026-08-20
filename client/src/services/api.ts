@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { chatModel } from './settings'
-import type { AiJob, Note, NoteInput, Task } from '../types'
+import type { AiJob, GraphData, Note, NoteInput, Task } from '../types'
 
 const root = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 function apiOrigin() { return /^https?:\/\//.test(root) ? new URL(root).origin : window.location.origin }
@@ -27,7 +27,8 @@ export const api = {
   askNote: (noteId: string, question: string, history?: { role: 'user' | 'assistant'; text: string }[]) => request<AiJob>('/chat/note', { method: 'POST', body: JSON.stringify({ noteId, question, history, ...(chatModel() && { model: chatModel() }) }) }), askNotes: (question: string, history?: { role: 'user' | 'assistant'; text: string }[]) => request<AiJob>('/chat/search', { method: 'POST', body: JSON.stringify({ question, history, ...(chatModel() && { model: chatModel() }) }) }),
   getSettings: () => request<{ hasApiKey: boolean }>('/settings'), saveApiKey: (apiKey: string) => request<{ hasApiKey: boolean }>('/settings', { method: 'PUT', body: JSON.stringify({ apiKey }) }), deleteApiKey: () => request<{ hasApiKey: boolean }>('/settings', { method: 'DELETE' }),
   getAiUsage: () => request<AiUsage>('/ai/usage'),
-  getAiActive: () => request<{ running: boolean; type?: string }>('/ai/active')
+  getAiActive: () => request<{ running: boolean; type?: string }>('/ai/active'),
+  getGraph: () => request<GraphData>('/graph')
 }
 export type AiUsage = { configured: boolean; plan?: string | null; session?: { usedPct: number; models: { name: string; requests: number }[] }; weekly?: { usedPct: number; models: { name: string; requests: number }[] } }
 export type ResearchDocument = { id: string; filename: string; mime: string; size: number; created_at: string }

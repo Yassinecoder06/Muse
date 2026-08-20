@@ -16,9 +16,11 @@ The API returns note saves immediately. A background processor generates missing
 
 - Premium responsive dashboard, dark mode, keyboard shortcuts, and command palette (`Ctrl/⌘ K`, `Ctrl/⌘ N`)
 - Rich editable notes with headings, formatting, lists, checklists, code blocks, quotes, autosave, word count, and save state
+- A **note graph**: every note becomes a node connected to meaningfully similar notes and notes that share tags (see the Graph entry in the sidebar)
 - AI title generation, tag extraction, summaries, task extraction, and six rewrite modes
 - "Ask this note" constrained to the active note
 - RAG-powered "Ask my notes" that embeds the question, retrieves up to eight Qdrant matches, fetches those complete notes, and cites their titles
+- **Security-scanned research uploads**: documents are checked at upload time; dangerous structures are rejected outright and prompt-injection patterns are flagged so you see a warning before the text feeds an AI run
 - Soft deletion with Qdrant vector cleanup, background embedding upserts, REST validation, and toast feedback
 
 ## Prerequisites
@@ -107,10 +109,40 @@ The API returns note saves immediately. A background processor generates missing
 
 - Set `JWT_SECRET` to a random value **at least 32 characters** long.
 - Generate `ANON_KEY` and `SERVICE_ROLE_KEY` as JWTs **signed with that same `JWT_SECRET`**, with `"role": "anon"` / `"role": "service_role"` claims. Kong accepts them as `apikey` credentials; GoTrue issues session tokens signed with `JWT_SECRET`, so all three components must agree.
+- Set `DATA_ENCRYPTION_KEY` to 64 hex characters (32 random bytes) — see "Encryption at rest" below. **Back it up; it cannot be recovered.**
 - Never put `POSTGRES_PASSWORD`, `JWT_SECRET`, `SERVICE_ROLE_KEY`, SMTP,
   or Ollama credentials in a `VITE_*` variable. Vite embeds those variables in
   browser JavaScript at build time. The Nginx image receives only
   `VITE_SUPABASE_ANON_KEY`, which is intentionally public.
+
+### Encryption at rest
+
+All user text is encrypted with **AES-256-GCM** before it reaches the database:
+
+- **Encrypted:** note titles, note content, AI-generated summaries, extracted
+  research-document text, research artifacts, and the note metadata stored in
+  the Qdrant search index.
+- **Encryption key:** `DATA_ENCRYPTION_KEY` in the root `.env` (64 hex
+  characters = 32 bytes). Generate one with `openssl rand -hex 32`.
+- **Format:** each value is stored as `v1:<base64url(nonce + auth tag +
+  ciphertext)>`, bound to its owner's user id, so ciphertext cannot be swapped
+  between accounts. Values fail loudly (never silently) if the key changes or
+  the data was tampered with.
+- **Where it happens:** the Express API encrypts on write and decrypts on
+  read — the browser and the database never see the same value, and no SQL,
+  search, or client change was needed.
+
+The server validates the key at startup and refuses to start without it. For an
+existing database, run the one-time idempotent backfill (it skips rows that are
+already encrypted) from the server workspace:
+
+```bash
+cd server && npx tsx src/scripts/backfill-encrypt.ts
+```
+
+> **Back up `DATA_ENCRYPTION_KEY`** (e.g. in a password manager). Losing it
+> while keeping the database makes every note permanently unreadable. The key
+> is never sent to the browser and never committed to the repository.
 
 ### Transactional email with SMTP
 
@@ -212,6 +244,13 @@ database:
 docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/006_modular_reports.sql
 ```
 
+`007_document_scan.sql` adds the security-scan columns to research documents
+(`scan_status`, `scan_notes`). Apply it once to an existing database:
+
+```bash
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/007_document_scan.sql
+```
+
 ### Images
 
 Images live **inside Postgres** (base64 text in `images.data`) — there is no
@@ -245,6 +284,11 @@ inputs are available. Each run records its plan, high-level status, artifacts,
 quality result, and per-skill timing. A new skill needs a `SkillDefinition` in
 the registry plus an executor path in `reporting/engine.ts`—the planner and UI
 remain unchanged. Completed reports can be requested as HTML, PDF, or DOCX.
+
+Finished reports are wrapped in a styled, self-contained document (`.muse-report`
+with a meta header, KPI cards and charts for sourced numeric data, tables for
+structured comparisons, and clean typography for headings, quotes, and
+references) — in both light and dark themes, and preserved in PDF/DOCX exports.
 
 ## AI configuration
 
@@ -283,13 +327,15 @@ Optional AI tuning variables in `.env`:
 | AI jobs | `POST /api/ai/jobs` (`summary`, `tasks`, `title`, `tags`, `rewrite` + `mode`, `research` + `topic`/`depth`/optional `documentIds`; optional `model` override), `GET /api/ai/jobs/:id`, `GET /api/ai/jobs/:id/artifacts`, `GET /api/models`, `GET /api/ai/usage` |
 | Research files | `POST /api/research/documents` (authenticated raw PDF, DOCX, Markdown/text, or CSV body; `X-Research-Filename`; 10 MB) |
 | Report export | `GET /api/reports/:noteId/export?format=html|pdf|docx` |
+| Graph | `GET /api/graph` — note nodes and similarity/tag edges, derived from the existing Qdrant vectors (cached 30 s) |
 | Chat | `POST /api/chat/note`, `POST /api/chat/search` (both accept optional `model`) |
 | Images | `POST /api/uploads` (raw body, ≤5 MB, optional `?noteId`), `GET /api/images/:id` (public by UUID) |
 
 Muse has no synchronous AI endpoints — every AI call is a job in `ai_jobs` that a background worker processes, and the client polls `GET /api/ai/jobs/:id`.
 The per-user Ollama API key lives in `user_settings` via `GET|PUT|DELETE /api/settings` (never returned), encrypted in Postgres Vault.
 
-See `endpoints.md` for the full reference.
+See `documentation/ENDPOINTS.md` for the full API reference, and
+`documentation/TROUBLESHOOTING.md` for a symptom-by-symptom operations guide.
 
 ## Deploy with Docker Nginx and Cloudflare Tunnel
 

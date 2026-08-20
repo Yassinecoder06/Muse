@@ -50,18 +50,33 @@ Postgres from starting.
 
 ### Current fix
 
-Muse now uses the Docker-managed `pgsodium-key` named volume. The one-shot
-`pgsodium-key` service creates the key once, sets its ownership to the
-Supabase Postgres image's UID/GID (`105:106`), and sets mode `0600`. The `db`
-service mounts that volume read-only at `/etc/postgresql-custom`.
+Muse pins the Vault root key to the host file `docker/pgsodium_root.key`
+(gitignored), bind-mounted read-only into the database container at
+`/etc/postgresql-custom/pgsodium_root.key`. The Supabase image generates the
+key only when that file is absent, so the pinned file survives container
+recreations and keeps saved Vault secrets decryptable.
+
+Create the key before the first start and keep it readable by the database
+process (uid 105 inside the container) — `644` is safe:
 
 ```bash
-docker compose up -d --force-recreate pgsodium-key db
+head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > docker/pgsodium_root.key
+chmod 644 docker/pgsodium_root.key
+```
+
+If a host path was mistakenly created as a directory or with restrictive
+ownership, remove the bad entry and recreate the file, then recreate the
+database container:
+
+```bash
+rm -f docker/pgsodium_root.key
+# recreate the key as above
+docker compose up -d --force-recreate db
 docker compose ps db                 # expect: Up ... (healthy)
 ```
 
-Never delete `muse_pgsodium-key` while keeping `muse_postgres-data`: any Vault
-secrets encrypted with the old root key will be unreadable.
+Never delete `docker/pgsodium_root.key` while keeping `muse_postgres-data`:
+any Vault secrets encrypted with the old root key will be unreadable.
 
 ### First initialization was interrupted
 
@@ -258,6 +273,70 @@ If the browser shows a generic sign-in form after opening the link, request a
 fresh reset email and open it in the same browser. Recovery links are
 single-use and expire according to GoTrue's configured recovery-token policy.
 
+## Emailed links open as `http://localhost` instead of your domain
+
+**Observed:** 2026-08-19
+
+### Symptoms
+
+Signup confirmation, recovery, and change-email links in emails point to
+`http://localhost/...` even though `PUBLIC_URL` is correct, or they point to an
+old domain you no longer use.
+
+### Cause
+
+GoTrue builds action links from the `X-Forwarded-Proto` / `X-Forwarded-Host`
+headers it receives. Two conditions broke this: the gateway did not set
+`X-Forwarded-Host`, and Kong (which overwrites forwarded headers) did not trust
+the gateway as a proxy.
+
+### Resolution
+
+Both fixes are committed:
+
+1. The Nginx location for `/auth|rest|storage|realtime/v1` sets
+   `proxy_set_header X-Forwarded-Host $host;` (`docker/nginx/default.conf`).
+2. Kong trusts the Docker network: `KONG_TRUSTED_IPS: 172.18.0.0/16` on the
+   `kong` service (`docker-compose.yml`).
+
+Apply, then recreate the gateway and Kong:
+
+```bash
+docker compose up -d --build nginx
+docker compose up -d --force-recreate kong
+docker compose exec -T nginx sh -c 'cp /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/backup.conf; nginx -s reload'
+```
+
+A freshly generated recovery link should now begin with your public origin.
+
+## Signed out unexpectedly; every request returns 401
+
+**Observed:** 2026-08-19
+
+### Symptoms
+
+The app reports "Your session is invalid or expired" for a user whose account
+definitely exists, or the server log shows:
+
+```text
+User from sub claim in JWT does not exist
+```
+
+### Cause
+
+The browser's stored session was issued by a **different GoTrue instance that
+shares the same `JWT_SECRET`** — typically a local copy of the repository using
+the same `.env` and the same `localhost:8080` Supabase URL. The two apps share
+the same `localStorage` key, so the stale local session is reused on the
+deployed site. The token's `sub`/`session_id` do not exist in this database.
+
+### Resolution
+
+Have the user sign in fresh: send a recovery link (see above) and open it in
+the same browser, then reset the password once. To prevent it recurring, keep
+`JWT_SECRET` unique per deployment and use a distinct Supabase URL in each
+copy of the app.
+
 ## Docker Nginx gateway is stale or unavailable
 
 **Observed:** 2026-08-14
@@ -293,7 +372,8 @@ permissions, or edited `/etc/nginx/sites-*` no longer apply.
 **Observed:** 2026-08-10; updated 2026-08-14
 
 New databases run `001_initial.sql`, `002_images.sql`, `003_api_keys.sql`,
-`004_research_documents.sql`, and `005_research_pipeline.sql`
+`004_research_documents.sql`, `005_research_pipeline.sql`,
+`006_modular_reports.sql`, and `007_document_scan.sql`
 through the database initialization mounts. For a healthy existing database,
 apply the missing migrations once:
 
@@ -303,11 +383,46 @@ docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supaba
 docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/004_research_documents.sql
 docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/005_research_pipeline.sql
 docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/006_modular_reports.sql
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/007_document_scan.sql
 ```
 
 `003_api_keys.sql` creates the logical pgsodium key and the service-role-only
 Vault RPC functions. It revokes execution from `public`, `anon`, and
 `authenticated`; do not loosen those grants.
+
+## Notes show `v1:...` ciphertext instead of your text
+
+**Observed:** 2026-08-19
+
+### Symptoms
+
+Notes display strings that start with `v1:` instead of the real title or
+content, or the server logs "Muse could not decrypt a stored value".
+
+### Cause
+
+User text is encrypted with AES-256-GCM using `DATA_ENCRYPTION_KEY` from the
+root `.env` (see README → Encryption at rest). This error appears when a
+request is served by a process with a **different or missing key** — most
+commonly a stale host-run instance or a second deployment sharing the same
+database — or when the key was rotated without re-encrypting the data.
+
+### Resolution
+
+- Every server that reads the database must run with the **same**
+  `DATA_ENCRYPTION_KEY`. Check that the process serving the request is the
+  current build — rebuild and restart the Compose server after a code change:
+  `docker compose up -d --build server`.
+- Verify the key is present: `grep '^DATA_ENCRYPTION_KEY=' .env`.
+- If the key genuinely changed, the data cannot be decrypted; restore the key
+  or restore the database from a backup taken with that key. There is no
+  other recovery path — this is by design.
+- After enabling encryption on an existing database, run the idempotent
+  backfill so legacy plaintext rows are encrypted too:
+
+  ```bash
+  cd server && npx tsx src/scripts/backfill-encrypt.ts
+  ```
 
 ## Notes return HTTP 500
 
@@ -455,12 +570,6 @@ empty note. Check the job's `error` and server log:
 
 ```bash
 docker compose logs --tail 100 --no-log-prefix 2>/dev/null || true
-```
-
-For a host-run API, inspect the systemd journal instead:
-
-```bash
-journalctl -u muse -n 100 --no-pager
 ```
 
 ## Studio, Edge Functions, and orphan warnings

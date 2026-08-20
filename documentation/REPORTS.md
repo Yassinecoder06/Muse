@@ -42,6 +42,22 @@ in code before the AI runs. The resulting report can show KPI cards and a
 compact comparison chart. Muse intentionally does not create a chart when the
 source data is missing, ambiguous, or non-numeric.
 
+## Presentation
+
+Finished reports are wrapped in a styled document (`<div class="muse-report">`)
+that includes:
+
+- a **meta header** — report type, generation date, audience, and output format;
+- the **KPI dashboard and comparison chart** described above;
+- clean **typography** for headings, paragraphs, blockquotes (used for key
+  findings and limitations), horizontal rules between major sections, and
+  **tables** for structured comparisons;
+- a **References** list with working links to web sources.
+
+The wrapper survives the client's HTML sanitizer, exports cleanly to PDF and
+DOCX, and adapts to light and dark themes. The writer prompt restricts output
+to these elements, so every stored report is portable and safe to render.
+
 ## Model routing
 
 Reports automatically use the three available cloud models by task:

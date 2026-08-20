@@ -10,6 +10,7 @@ import { Editor } from './components/Editor'
 import { CommandPalette } from './components/CommandPalette'
 import { ChatPanel } from './components/ChatPanel'
 import { ResearchPanel } from './components/ResearchPanel'
+import { GraphView } from './components/GraphView'
 import { Toast } from './components/Toast'
 import { AuthPage } from './components/AuthPage'
 import { AccountSettings } from './components/AccountSettings'
@@ -116,11 +117,11 @@ function MuseApp() {
 
   const counts = { all: allQuery.data?.length || 0, favorites: favoritesQuery.data?.length || 0, archive: archiveQuery.data?.length || 0, trash: trashQuery.data?.length || 0 }
   const tags = [...new Set((allQuery.data || []).flatMap(note => note.tags))].sort()
-  const dashboard = <Dashboard notes={notesQuery.data || []} counts={counts} scope={scope} setScope={setScope} query={query} setQuery={setQuery} create={() => create.mutate()} open={note => navigate(`/note/${note.id}`)} dark={dark} toggleTheme={() => setDark(!dark)} ask={() => setAsk(true)} research={() => setResearch(true)} collections={() => setCollections(true)} settings={() => setSettings(true)} userEmail={userEmail} userName={userName} emptyTrash={() => emptyTrash.mutate()} deleteSelected={ids => deleteSelected.mutate(ids)} restoreSelected={ids => restoreSelected.mutate(ids)} aiWorking={aiWorking} />
+  const dashboard = <Dashboard notes={notesQuery.data || []} counts={counts} scope={scope} setScope={setScope} query={query} setQuery={setQuery} create={() => create.mutate()} open={note => navigate(`/note/${note.id}`)} dark={dark} toggleTheme={() => setDark(!dark)} ask={() => setAsk(true)} research={() => setResearch(true)} collections={() => setCollections(true)} graph={() => navigate('/graph')} settings={() => setSettings(true)} userEmail={userEmail} userName={userName} emptyTrash={() => emptyTrash.mutate()} deleteSelected={ids => deleteSelected.mutate(ids)} restoreSelected={ids => restoreSelected.mutate(ids)} aiWorking={aiWorking} />
   if (authenticated === undefined) return <div className="app-loading"><div className="loader"/>Loading your space</div>
   if (!authenticated || passwordRecovery) return <AuthPage recovery={passwordRecovery} onPasswordUpdated={() => setPasswordRecovery(false)}/>
   return <>
-    {notesQuery.isLoading ? <div className="app-loading"><div className="loader"/>Loading your space</div> : <Routes><Route path="/" element={dashboard}/><Route path="/note/:id" element={<NoteRoute toast={setToast}/>}/><Route path="*" element={dashboard}/></Routes>}
+    {notesQuery.isLoading ? <div className="app-loading"><div className="loader"/>Loading your space</div> : <Routes><Route path="/" element={dashboard}/><Route path="/note/:id" element={<NoteRoute toast={setToast}/>}/><Route path="/graph" element={<GraphView onBack={() => navigate('/')} create={() => create.mutate()}/>}/><Route path="*" element={dashboard}/></Routes>}
     <CommandPalette open={command} close={() => setCommand(false)} create={() => create.mutate()} ask={() => setAsk(true)} theme={() => setDark(!dark)}/>
     {ask && <ChatPanel mode="search" onClose={() => setAsk(false)}/>}
     {research && <ResearchPanel onClose={() => setResearch(false)} onDone={id => { setResearch(false); if (id) { queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate(`/note/${id}`) } }}/>}<Toast message={toast} onClose={() => setToast('')}/>
