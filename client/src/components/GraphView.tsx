@@ -10,7 +10,8 @@ type NodeObject = GraphNode & { x?: number; y?: number; degree?: number }
 type LinkObject = { source: string | NodeObject; target: string | NodeObject; strength: number; reason: GraphEdge['reason'] }
 
 const NOTE_COLOR = '#8660f1'
-const RESEARCH_COLOR = '#3f9d95'
+const RESEARCH_COLOR = '#237a46'
+const SPECIALIZED_COLOR = '#2678ca'
 const DIM = 0.12
 
 export function GraphView({ onBack, create }: { onBack: () => void; create: () => void }) {
@@ -63,7 +64,7 @@ export function GraphView({ onBack, create }: { onBack: () => void; create: () =
     const radius = 3 + Math.min(9, (node.degree || 0) * 1.4)
     ctx.beginPath()
     ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI)
-    const color = node.kind === 'research' ? RESEARCH_COLOR : NOTE_COLOR
+    const color = node.kind === 'research' ? RESEARCH_COLOR : node.kind === 'specialized' ? SPECIALIZED_COLOR : NOTE_COLOR
     ctx.fillStyle = inFocus ? color : hexWithAlpha(color, DIM)
     ctx.fill()
     if (isHovered) { ctx.strokeStyle = hexWithAlpha('#ffffff', 0.85); ctx.lineWidth = 1.6; ctx.stroke() }
@@ -98,7 +99,7 @@ export function GraphView({ onBack, create }: { onBack: () => void; create: () =
           graphData={graphData as any}
           backgroundColor="rgba(0,0,0,0)"
           nodeLabel={(node: NodeObject) => `<div style="font:12px/1.4 'DM Sans',sans-serif;padding:2px 0"><strong>${escapeAttr(node.title)}</strong>${node.tags.length ? `<br/><span style="opacity:.7">#${node.tags.join(' · #')}</span>` : ''}</div>`}
-          nodeColor={(node: NodeObject) => neighborOf(node) ? (node.kind === 'research' ? RESEARCH_COLOR : NOTE_COLOR) : hexWithAlpha(node.kind === 'research' ? RESEARCH_COLOR : NOTE_COLOR, DIM)}
+          nodeColor={(node: NodeObject) => { const color = node.kind === 'research' ? RESEARCH_COLOR : node.kind === 'specialized' ? SPECIALIZED_COLOR : NOTE_COLOR; return neighborOf(node) ? color : hexWithAlpha(color, DIM) }}
           nodeVal={(node: NodeObject) => 2 + Math.min(8, (node.degree || 0) * 1.2)}
           nodeCanvasObject={nodeCanvasObject as any}
           nodeCanvasObjectMode={(() => true) as any}
@@ -115,7 +116,7 @@ export function GraphView({ onBack, create }: { onBack: () => void; create: () =
           onNodeHover={(node: NodeObject | null) => setHovered(node ? node.id : null)}
           onBackgroundClick={() => setSelected(null)}
         /> : <div className="graph-empty"><Waypoints size={26}/><h3>No graph yet</h3><p>The graph grows as Muse learns your notes. Create a note, run “Organize”, and connected dots will appear here.</p></div>}
-        <aside className="graph-legend"><span><i style={{ background: NOTE_COLOR }}/> Note</span><span><i style={{ background: RESEARCH_COLOR }}/> Research</span><span><i className="edge similar"/> Similar meaning</span><span><i className="edge tag"/> Shared tag</span></aside>
+        <aside className="graph-legend"><span><i style={{ background: NOTE_COLOR }}/> Note</span><span><i style={{ background: RESEARCH_COLOR }}/> Research</span><span><i style={{ background: SPECIALIZED_COLOR }}/> Specialized</span><span><i className="edge similar"/> Similar meaning</span><span><i className="edge tag"/> Shared tag</span></aside>
         {hasNotes && selected ? <button className="graph-clear" onClick={() => setSelected(null)}>Clear focus</button> : null}
         {graph.error ? <button className="graph-retry" onClick={() => void graph.refetch()}>Could not load the graph — retry</button> : null}
       </div>

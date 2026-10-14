@@ -1,5 +1,5 @@
 import { supabase } from '../supabase/client.js'
-import { ai, contextBudgetChars, type HistoryItem } from './ai.service.js'
+import { ai, contextBudgetChars, type HistoryItem, OLLAMA_LOCAL_URL } from './ai.service.js'
 import { notes } from './note.repository.js'
 import { vectors } from './vector.service.js'
 import { research } from './research.service.js'
@@ -40,8 +40,15 @@ export const jobs = {
 
 async function process(job: AiJob) {
   if ((job.type !== 'ask_search' && job.type !== 'research' && !job.note_id) || ((job.type === 'ask_note') && !job.payload?.question)) throw new Error('AI job is missing its required note or question.')
-  const apiKey = await settings.getKey(job.user_id)
-  if (!apiKey) throw new Error('Add your Ollama API key in Settings to use AI features.')
+  const apiKey = (await settings.getKey(job.user_id).catch(() => null)) || undefined
+  if (!apiKey) {
+    try {
+      const res = await fetch(`${OLLAMA_LOCAL_URL}/api/tags`)
+      if (!res.ok) throw new Error()
+    } catch {
+      throw new Error('Add your Ollama API key in Settings or ensure local Ollama is running.')
+    }
+  }
   const note = job.note_id ? await notes.get(job.user_id, job.note_id) : null
   const model = job.payload?.model || undefined
   let result: Record<string, unknown> = {}

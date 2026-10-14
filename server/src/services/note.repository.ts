@@ -2,8 +2,8 @@ import { supabase } from '../supabase/client.js'
 import { decryptIfPresent, encryptIfPresent } from '../utils/crypto.js'
 import type { Note, NoteInput, Task, NoteKind } from '../types/index.js'
 
-const select = 'id,user_id,title,content,summary,favorite,archived,deleted_at,created_at,updated_at,kind,note_tags(tags(id,name)),tasks(id,user_id,note_id,text,completed,created_at)'
-function normalize(row: any): Note { return { ...row, title: decryptIfPresent(row.user_id, row.title), content: decryptIfPresent(row.user_id, row.content), summary: decryptIfPresent(row.user_id, row.summary), tags: (row.note_tags || []).map((item: any) => item.tags?.name).filter(Boolean), tasks: row.tasks || [] } }
+const select = 'id,user_id,title,content,summary,favorite,archived,deleted_at,created_at,updated_at,kind,specialized,note_tags(tags(id,name)),tasks(id,user_id,note_id,text,completed,created_at)'
+function normalize(row: any): Note { return { ...row, title: decryptIfPresent(row.user_id, row.title), content: decryptIfPresent(row.user_id, row.content), summary: decryptIfPresent(row.user_id, row.summary), tags: (row.note_tags || []).map((item: any) => item.tags?.name).filter(Boolean), tasks: row.tasks || [], specialized: row.specialized || undefined } }
 
 async function tagsFor(userId: string, noteId: string, names: string[]) {
   const cleaned = [...new Set(names.map(name => name.trim().toLowerCase()).filter(Boolean))].slice(0, 6)
@@ -36,8 +36,9 @@ export const notes = {
     return normalize(data)
   },
   async create(userId: string, input: NoteInput, kind: NoteKind = 'note') {
-    const { tags = [], ...data } = input
-    const { data: note, error } = await supabase.from('notes').insert({ ...data, kind, user_id: userId, title: encryptIfPresent(userId, data.title || ''), content: encryptIfPresent(userId, data.content || ''), favorite: data.favorite || false, archived: data.archived || false }).select().single()
+    const noteKind = input.kind || kind || 'note'
+    const { tags = [], kind: _k, ...data } = input
+    const { data: note, error } = await supabase.from('notes').insert({ ...data, kind: noteKind, user_id: userId, title: encryptIfPresent(userId, data.title || ''), content: encryptIfPresent(userId, data.content || ''), favorite: data.favorite || false, archived: data.archived || false }).select().single()
     if (error) throw error
     await tagsFor(userId, note.id, tags)
     return this.get(userId, note.id)
@@ -58,6 +59,7 @@ export const notes = {
     return this.get(userId, id)
   },
   async trash(userId: string, id: string) { const { error } = await supabase.from('notes').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('user_id', userId); if (error) throw error },
+  async trashMany(userId: string, ids: string[]) { if (!ids.length) return; const { error } = await supabase.from('notes').update({ deleted_at: new Date().toISOString() }).eq('user_id', userId).in('id', ids); if (error) throw error },
   async restore(userId: string, id: string) { const { error } = await supabase.from('notes').update({ deleted_at: null }).eq('id', id).eq('user_id', userId); if (error) throw error; return this.get(userId, id) },
   async trashIds(userId: string) { const { data, error } = await supabase.from('notes').select('id').eq('user_id', userId).not('deleted_at', 'is', null); if (error) throw error; return (data || []).map((row: any) => row.id as string) },
   async deleteMany(userId: string, ids: string[]) { if (!ids.length) return; const { error } = await supabase.from('notes').delete().eq('user_id', userId).in('id', ids); if (error) throw error },

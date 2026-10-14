@@ -4,7 +4,20 @@ import { notes } from '../services/note.repository.js'
 import { jobs } from '../services/ai-job.service.js'
 import { vectors } from '../services/vector.service.js'
 
-const noteSchema = z.object({ title: z.string().max(300).optional(), content: z.string().max(100000).optional(), favorite: z.boolean().optional(), archived: z.boolean().optional(), tags: z.array(z.string().max(50)).max(6).optional() })
+const noteSchema = z.object({
+  title: z.string().max(300).optional(),
+  content: z.string().max(100000).optional(),
+  favorite: z.boolean().optional(),
+  archived: z.boolean().optional(),
+  tags: z.array(z.string().max(50)).max(6).optional(),
+  kind: z.enum(['note', 'research', 'specialized']).optional(),
+  specialized: z.object({
+    category: z.string(),
+    templateId: z.string().optional(),
+    fields: z.record(z.any()),
+    aiInstruction: z.string().optional()
+  }).optional()
+})
 const id = (value: unknown) => z.string().uuid().parse(value)
 const noteIds = (value: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(100) }).parse(value).ids
 const user = (req: Request) => req.userId!
@@ -14,6 +27,7 @@ export async function createNote(req: Request, res: Response, next: NextFunction
 export async function updateNote(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.update(user(req), id(req.params.id), noteSchema.parse(req.body))) } catch (error) { next(error) } }
 export async function organizeNote(req: Request, res: Response, next: NextFunction) { try { const job = await jobs.enqueue(user(req), id(req.params.id), 'organize'); res.status(202).json(job) } catch (error) { next(error) } }
 export async function deleteNote(req: Request, res: Response, next: NextFunction) { try { await notes.trash(user(req), id(req.params.id)); res.status(204).end() } catch (error) { next(error) } }
+export async function bulkTrashNotes(req: Request, res: Response, next: NextFunction) { try { const selectIds = noteIds(req.body); await notes.trashMany(user(req), selectIds); res.status(204).end() } catch (error) { next(error) } }
 export async function emptyTrash(req: Request, res: Response, next: NextFunction) { try { const userId = user(req); const ids = await notes.trashIds(userId); await notes.deleteMany(userId, ids); void vectors.deleteVectors(ids); res.status(204).end() } catch (error) { next(error) } }
 export async function bulkDeleteNotes(req: Request, res: Response, next: NextFunction) { try { const selectIds = noteIds(req.body); await notes.deleteMany(user(req), selectIds); void vectors.deleteVectors(selectIds); res.status(204).end() } catch (error) { next(error) } }
 export async function bulkRestoreNotes(req: Request, res: Response, next: NextFunction) { try { await notes.restoreMany(user(req), noteIds(req.body)); res.status(204).end() } catch (error) { next(error) } }

@@ -35,6 +35,9 @@ services:
       - ./supabase/migrations/004_research_documents.sql:/docker-entrypoint-initdb.d/zz_004_research_documents.sql:ro
       - ./supabase/migrations/005_research_pipeline.sql:/docker-entrypoint-initdb.d/zz_005_research_pipeline.sql:ro
       - ./supabase/migrations/006_modular_reports.sql:/docker-entrypoint-initdb.d/zz_006_modular_reports.sql:ro
+      - ./supabase/migrations/007_document_scan.sql:/docker-entrypoint-initdb.d/zz_007_document_scan.sql:ro
+      - ./supabase/migrations/008_secure_vault.sql:/docker-entrypoint-initdb.d/zz_008_secure_vault.sql:ro
+      - ./supabase/migrations/009_calendar_and_tasks.sql:/docker-entrypoint-initdb.d/zz_009_calendar_and_tasks.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s

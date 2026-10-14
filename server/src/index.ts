@@ -1,12 +1,19 @@
+import dns from 'node:dns'
+import { setGlobalDispatcher, Agent } from 'undici'
+
+dns.setDefaultResultOrder('ipv4first')
+setGlobalDispatcher(new Agent({ connect: { autoSelectFamily: false } }))
+
 import express from 'express'
 import cors from 'cors'
+import cookieParser from 'cookie-parser'
 import { mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ZodError, z } from 'zod'
-import { env } from './utils/env.js'
+import { env, webauthn } from './utils/env.js'
 import { ensureCollection } from './qdrant/client.js'
-import { supabase, authClient } from './supabase/client.js'
+import { supabase } from './supabase/client.js'
 import { router } from './routes/index.js'
 import { startAiWorker } from './services/ai-job.service.js'
 import { requireAuth } from './middleware/auth.js'
@@ -17,7 +24,11 @@ const imageTypes = new Map([
 ])
 const mimeByExtension = new Map([['.jpg', 'image/jpeg'], ['.png', 'image/png'], ['.gif', 'image/gif'], ['.webp', 'image/webp'], ['.avif', 'image/avif']])
 await mkdir(uploadsDirectory, { recursive: true })
-app.use(cors({ origin: [env.PUBLIC_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'] })); app.use(express.json({ limit: '2mb' }))
+const allowedOrigins = [...new Set([...webauthn.origins, ...(process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173', 'http://127.0.0.1:5173'])])]
+// Encrypted attachments are base64 wrapped before they reach the vault. Keep
+// this below a deliberately bounded limit, but high enough for the existing
+// 5 MB attachment ceiling during the additive legacy migration.
+app.use(cors({ origin: allowedOrigins, credentials: true })); app.use(cookieParser()); app.use(express.json({ limit: '12mb' }))
 app.set('trust proxy', true)
 app.get('/health', (_req, res) => res.json({ ok: true }))
 app.post('/api/uploads', requireAuth, express.raw({ type: 'image/*', limit: '5mb' }), async (req, res, next) => {
@@ -36,15 +47,10 @@ app.post('/api/uploads', requireAuth, express.raw({ type: 'image/*', limit: '5mb
     res.status(201).json({ url: `/api/images/${data.id}` })
   } catch (error) { next(error) }
 })
-app.get('/api/images/:id', async (req, res, next) => {
+app.get('/api/images/:id', requireAuth, async (req, res, next) => {
   try {
     const id = z.string().uuid().parse(req.params.id)
-    const token = req.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1] || String(req.query.token || '')
-    if (token) {
-      const { error } = await authClient.auth.getUser(token)
-      if (error) return res.status(401).json({ error: 'Your session is invalid or expired.' })
-    }
-    const { data, error } = await supabase.from('images').select('mime, data').eq('id', id).single()
+    const { data, error } = await supabase.from('images').select('mime, data').eq('id', id).eq('user_id', req.userId).single()
     if (error || !data) return res.status(404).json({ error: 'Image not found.' })
     res.setHeader('Content-Type', data.mime)
     res.setHeader('Cache-Control', 'private, max-age=86400')
