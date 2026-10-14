@@ -14,14 +14,21 @@ The API returns note saves immediately. A background processor generates missing
 
 ## Included capabilities
 
-- Premium responsive dashboard, dark mode, keyboard shortcuts, and command palette (`Ctrl/⌘ K`, `Ctrl/⌘ N`)
+- Premium responsive dashboard, dark mode, keyboard shortcuts, and command palette (`Ctrl/⌘ K`, `Ctrl/⌘ M`)
 - Rich editable notes with headings, formatting, lists, checklists, code blocks, quotes, autosave, word count, and save state
+- Topbar quick-access **"Ask Muse"** and chat panel (`Enter` to send, `Shift + Enter` for newline)
 - A **note graph**: every note becomes a node connected to meaningfully similar notes and notes that share tags (see the Graph entry in the sidebar)
+- **Specialized Notes & Custom Templates**: Structured templates (Gym workout, Daily tasks & feedback, Expense & decisions) and custom templates where you name your own fields, write freely alongside structured data, assign color accents (7 swatches), and search templates
+- **Interactive Calendar & Natural Language Scheduling**: Monthly calendar agenda, natural-language event creation (e.g. "Gym tomorrow at 20h"), and note-event deep linking
+- **Dedicated Tasks Management**: Global filterable tasks workspace (All, Pending, Completed, Note-specific) with due dates, priority, and bi-directional note navigation
+- **AI Schedule & Task Detector**: Scans note text for dates, appointments, and actionable tasks, allowing one-click review and workspace addition
+- **Batch Note Selection**: Multi-select notes on the dashboard to move multiple notes to trash, restore, or manage in bulk
 - AI title generation, tag extraction, summaries, task extraction, and six rewrite modes
 - "Ask this note" constrained to the active note
 - RAG-powered "Ask my notes" that embeds the question, retrieves up to eight Qdrant matches, fetches those complete notes, and cites their titles
 - **Security-scanned research uploads**: documents are checked at upload time; dangerous structures are rejected outright and prompt-injection patterns are flagged so you see a warning before the text feeds an AI run
 - Soft deletion with Qdrant vector cleanup, background embedding upserts, REST validation, and toast feedback
+- Signature violet theme hover interactions in both light and dark modes
 
 ## Prerequisites
 
@@ -251,6 +258,27 @@ docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supaba
 docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/007_document_scan.sql
 ```
 
+`008_secure_vault.sql` adds encrypted user vaults, passkey credential metadata,
+and encrypted envelopes. Apply it once to an existing database:
+
+```bash
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/008_secure_vault.sql
+```
+
+`009_calendar_and_tasks.sql` adds interactive calendar events and workspace
+tasks with note-linking support:
+
+```bash
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/009_calendar_and_tasks.sql
+```
+
+`010_specialized_notes.sql` adds specialized note metadata, custom template
+support, and color styling:
+
+```bash
+docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/010_specialized_notes.sql
+```
+
 ### Images
 
 Images live **inside Postgres** (base64 text in `images.data`) — there is no
@@ -292,6 +320,47 @@ references) — in both light and dark themes, and preserved in PDF/DOCX exports
 
 ## AI configuration
 
+### Secure Vault, passkeys, and recovery keys
+
+Muse now supports a **Secure Vault** with optional passkeys. Email/password
+sign-in remains available; after sign-in, each account must set up its vault
+before opening Muse. Setup stores an Ollama API key in Supabase Vault and
+generates or imports a required 32-byte Base64URL AES recovery key. The user
+can choose to add a device passkey during setup or later in Devices & Security.
+
+- A passkey authenticates a device. Muse stores its public credential, ID,
+  counter, and transport metadata; the authenticator keeps the private key.
+- The recovery key decrypts content. It is converted to a non-extractable
+  browser `CryptoKey` in IndexedDB and is never sent to Supabase Vault,
+  Postgres, logs, or email. Save it in a password manager or another safe
+  place. On a new device, sign in with email/password (or a passkey, if one
+  exists), then enter the same recovery key. The user may add a passkey there;
+  it must never replace the encryption key.
+- New Secure Vault content is AES-256-GCM encrypted in the browser with a
+  unique nonce and AAD bound to user, record ID, and envelope version. Search,
+  tags, tasks, and graph data are derived after local unlock.
+- For existing accounts, the first unlocked browser copies legacy content into
+  encrypted envelopes, preserves logical IDs/timestamps, verifies the copy,
+  and leaves legacy rows untouched. See
+  [Security and migration](documentation/SECURITY_AND_MIGRATION.md).
+
+Secure Vault configuration:
+
+```dotenv
+WEBAUTHN_RP_ID=notes.example.com
+WEBAUTHN_RP_NAME=Muse
+WEBAUTHN_ORIGINS=https://notes.example.com
+MUSE_SESSION_SECRET=<at-least-32-random-characters>
+VAULT_LEGACY_MIGRATION=enabled
+```
+
+`MUSE_SESSION_SECRET` and `VAULT_LEGACY_MIGRATION` apply to every Secure Vault
+account. The WebAuthn values apply when passkeys are enabled; WebAuthn requires
+HTTPS in production. `WEBAUTHN_RP_ID` is a hostname, not a URL, and must match
+or be a registrable suffix of the browser origin. Keep `DATA_ENCRYPTION_KEY`
+while legacy data exists; it decrypts only retained legacy rows and is not used
+for new vault envelopes.
+
 AI is **cloud-only and per-user**: every feature (chat, research, organize, rewrite, …) calls `https://ollama.com` directly with **the signed-in user's own Ollama API key** — no local Ollama, no sign-in queue. Each user adds their key once in the app (Settings → Ollama API key; create it at `https://ollama.com/settings/keys`). The key is validated before it is stored, encrypted at rest in the database via the Supabase **Vault** (`vault.create_secret` / pgsodium, root key seeded by `003_api_keys.sql`), is only ever decrypted server-side for the AI call, and is never returned by any endpoint (`GET /api/settings` returns just `{ "hasApiKey": true }`). A missing or revoked key is reported per request ("Add your Ollama API key in Settings…"); the server never logs it.
 
 The available models are a curated set (Settings → Chat model):
@@ -324,12 +393,16 @@ Optional AI tuning variables in `.env`:
 | Area | Endpoints |
 | --- | --- |
 | Notes | `GET /api/notes`, `GET /api/notes/:id`, `POST /api/notes`, `PUT /api/notes/:id`, `DELETE /api/notes/:id` (soft), `DELETE /api/notes/:id/permanent`, bulk/restore/trash helpers |
+| Calendar | `GET /api/calendar/events`, `POST /api/calendar/events`, `PUT /api/calendar/events/:id`, `DELETE /api/calendar/events/:id`, `POST /api/calendar/natural` |
+| Tasks | `GET /api/tasks`, `POST /api/tasks`, `PUT /api/tasks/:id`, `DELETE /api/tasks/:id`, `PATCH /api/tasks/:id` |
+| Detection | `POST /api/detection/schedule` (extracts events and tasks from note text), `POST /api/detection/apply` |
 | AI jobs | `POST /api/ai/jobs` (`summary`, `tasks`, `title`, `tags`, `rewrite` + `mode`, `research` + `topic`/`depth`/optional `documentIds`; optional `model` override), `GET /api/ai/jobs/:id`, `GET /api/ai/jobs/:id/artifacts`, `GET /api/models`, `GET /api/ai/usage` |
 | Research files | `POST /api/research/documents` (authenticated raw PDF, DOCX, Markdown/text, or CSV body; `X-Research-Filename`; 10 MB) |
 | Report export | `GET /api/reports/:noteId/export?format=html|pdf|docx` |
 | Graph | `GET /api/graph` — note nodes and similarity/tag edges, derived from the existing Qdrant vectors (cached 30 s) |
 | Chat | `POST /api/chat/note`, `POST /api/chat/search` (both accept optional `model`) |
-| Images | `POST /api/uploads` (raw body, ≤5 MB, optional `?noteId`), `GET /api/images/:id` (public by UUID) |
+| Images | `POST /api/uploads` (raw body, ≤5 MB, optional `?noteId`), `GET /api/images/:id` (owner-authenticated) |
+| Secure Vault | `GET /api/vault`, `PUT /api/vault`, `GET /api/vault/records`, `POST /api/vault/records`, WebAuthn passkey endpoints |
 
 Muse has no synchronous AI endpoints — every AI call is a job in `ai_jobs` that a background worker processes, and the client polls `GET /api/ai/jobs/:id`.
 The per-user Ollama API key lives in `user_settings` via `GET|PUT|DELETE /api/settings` (never returned), encrypted in Postgres Vault.

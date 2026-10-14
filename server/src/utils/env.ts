@@ -16,6 +16,23 @@ const schema = z.object({
   RAG_TOP_K: z.coerce.number().int().min(1).max(50).default(10),
   PUBLIC_URL: z.string().url().default('http://localhost:8080'),
   PORT: z.coerce.number().default(3001),
-  DATA_ENCRYPTION_KEY: z.string().regex(/^[0-9a-f]{64}$/i, 'DATA_ENCRYPTION_KEY must be 64 hex chars (32 random bytes)')
+  // DATA_ENCRYPTION_KEY remains required while legacy rows are available for
+  // migration. New secure-vault records never use it.
+  DATA_ENCRYPTION_KEY: z.string().regex(/^[0-9a-f]{64}$/i, 'DATA_ENCRYPTION_KEY must be 64 hex chars (32 random bytes)'),
+  WEBAUTHN_RP_ID: z.string().min(1).optional(),
+  WEBAUTHN_RP_NAME: z.string().min(1).default('Muse'),
+  WEBAUTHN_ORIGINS: z.string().optional(),
+  MUSE_SESSION_SECRET: z.string().min(32).default('muse-development-session-secret-change-before-production'),
+  VAULT_LEGACY_MIGRATION: z.enum(['enabled', 'disabled']).default('enabled')
 })
 export const env = schema.parse(process.env)
+
+if (process.env.NODE_ENV === 'production' && env.MUSE_SESSION_SECRET === 'muse-development-session-secret-change-before-production') {
+  throw new Error('MUSE_SESSION_SECRET must be set to a unique value in production.')
+}
+
+export const webauthn = {
+  rpID: env.WEBAUTHN_RP_ID || new URL(env.PUBLIC_URL).hostname,
+  rpName: env.WEBAUTHN_RP_NAME,
+  origins: (env.WEBAUTHN_ORIGINS || env.PUBLIC_URL).split(',').map(origin => origin.trim()).filter(Boolean)
+}

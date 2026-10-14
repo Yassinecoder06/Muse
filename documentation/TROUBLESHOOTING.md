@@ -21,6 +21,54 @@ curl -sI http://localhost:8080/ | head -n 1
 is the Docker Nginx gateway used by deployment. Do not expect an edit made in
 Vite to appear at `:8080` until the gateway is rebuilt.
 
+## Passkey setup, sign-in, or new-device unlock fails
+
+### “The relying party ID is invalid” or browser refuses to create a passkey
+
+WebAuthn is bound to the browser origin. In production, serve Muse over HTTPS,
+set `WEBAUTHN_RP_ID` to the hostname only, and include the exact browser origin
+in `WEBAUTHN_ORIGINS`:
+
+```dotenv
+PUBLIC_URL=https://notes.example.com
+WEBAUTHN_RP_ID=notes.example.com
+WEBAUTHN_ORIGINS=https://notes.example.com
+MUSE_SESSION_SECRET=<at-least-32-random-characters>
+```
+
+For local development, `localhost` is allowed with HTTP and the supplied
+example uses `WEBAUTHN_RP_ID=localhost`. Rebuild/restart the server after
+changing environment values:
+
+```bash
+docker compose up -d --build server nginx
+```
+
+### “This recovery key does not unlock this Muse vault”
+
+The AES recovery key is distinct from the passkey and Ollama API key. Paste the
+original 32-byte Base64URL recovery key exactly; do not create a new one on the
+new device. Muse cannot reset or retrieve this key. If an existing device is
+still unlocked, keep it available and copy its saved recovery key from the
+user’s safe backup—not from Muse, because Muse does not retain raw keys.
+
+### Passkey accepted but Muse still shows the sign-in page
+
+Confirm the browser accepts cookies for the exact `PUBLIC_URL` origin and that
+the reverse proxy forwards `/api/auth/passkeys/*` without caching. Delete stale
+`muse_session` cookies, retry the passkey flow, and inspect the server logs for
+an RP ID/origin mismatch. A passkey needs a valid `MUSE_SESSION_SECRET` to
+issue the HttpOnly application session.
+
+### Legacy migration is paused or does not start
+
+Keep `VAULT_LEGACY_MIGRATION=enabled`, retain the original
+`DATA_ENCRYPTION_KEY`, and apply migration 008 before deploying the vault UI.
+The migration is additive: a failure leaves legacy rows unchanged. Check the
+status and encrypted-record counts with the queries in
+`SECURITY_AND_MIGRATION.md`, then unlock the vault again to retry. Do not purge
+legacy notes, images, documents, reports, jobs, or vectors automatically.
+
 ## Database fails with `invalid secret key`
 
 **Observed:** 2026-08-14

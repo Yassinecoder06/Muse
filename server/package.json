@@ -6,11 +6,15 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx --test src/services/vault-security.test.ts src/services/reporting/analytics.test.ts src/services/calendar-tasks.test.ts"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.13.0",
+    "@simplewebauthn/server": "^13.3.2",
     "@supabase/supabase-js": "^2.49.1",
+    "chrono-node": "^2.10.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "docx": "^9.5.1",
     "dotenv": "^16.4.7",
@@ -20,9 +24,11 @@
     "pdf-parse": "^1.1.1",
     "pdfkit": "^0.17.2",
     "sanitize-html": "^2.17.7",
+    "undici": "^8.11.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",

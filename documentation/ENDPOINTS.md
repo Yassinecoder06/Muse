@@ -51,7 +51,7 @@ unless the table below says otherwise.
 | --- | --- | --- | --- |
 | GET | `/health` | — | `{ "ok": true }` |
 | POST | `/api/uploads` | Raw JPEG, PNG, GIF, WebP, or AVIF body (≤5 MB); optional `?noteId=<uuid>` | 201 `{ url: "/api/images/<uuid>" }` |
-| GET | `/api/images/:id` | Optional Bearer token or `?token=` | Image bytes; public by unguessable UUID |
+| GET | `/api/images/:id` | Owner session/Bearer | Image bytes for the owning account |
 | POST | `/api/research/documents` | Raw PDF, DOCX, Markdown/text, or CSV body (≤10 MB), `X-Research-Filename` header | 201 extracted-document metadata |
 | GET | `/uploads/*` | — | Legacy files from `server/uploads` |
 
@@ -84,9 +84,26 @@ text feeds an AI run.
 | POST | `/api/notes/:id/organize` | — | 202 `AiJob` |
 | PATCH | `/api/tasks/:taskId` | `{ completed: boolean }` | `Task` |
 
-`NoteInput` is `{ title?, content?, favorite?, archived?, tags? }`. Limits:
+`NoteInput` is `{ title?, content?, favorite?, archived?, tags?, kind?, specialized? }`. Limits:
 title ≤300 characters, content ≤100,000 characters, and up to six tags of at
-most 50 characters. `Note` includes `tags` and `tasks` arrays.
+most 50 characters. `Note` includes `tags` and `tasks` arrays. Specialized notes carry category, color, and structured fields.
+
+### Calendar and tasks
+
+| Method | Path | Request | Response |
+| --- | --- | --- | --- |
+| GET | `/api/calendar/events` | `?start=&end=` | `CalendarEvent[]` |
+| POST | `/api/calendar/events` | `{ title, start_time, end_time?, all_day?, note_id? }` | 201 `CalendarEvent` |
+| PUT | `/api/calendar/events/:id` | Partial event object | `CalendarEvent` |
+| DELETE | `/api/calendar/events/:id` | — | 204 |
+| POST | `/api/calendar/natural` | `{ text, note_id? }` | 201 parsed `CalendarEvent` |
+| GET | `/api/tasks` | `?completed=&note_id=` | `Task[]` |
+| POST | `/api/tasks` | `{ text, note_id?, due_date?, priority? }` | 201 `Task` |
+| PUT | `/api/tasks/:id` | `{ text?, completed?, due_date?, priority? }` | `Task` |
+| DELETE | `/api/tasks/:id` | — | 204 |
+| PATCH | `/api/tasks/:id` | `{ completed: boolean }` | `Task` |
+| POST | `/api/detection/schedule` | `{ noteId, title, content }` | `{ events: DetectedEvent[], tasks: DetectedTask[] }` |
+| POST | `/api/detection/apply` | `{ events: DetectedEvent[], tasks: DetectedTask[] }` | `{ addedEvents: number, addedTasks: number }` |
 
 ### AI jobs and chat
 
@@ -154,6 +171,47 @@ The API validates the key before saving. It is never returned to the browser;
 it is stored in Supabase Vault and only the Express service-role client can use
 the Vault RPC functions.
 
+## Secure Vault and passkeys
+
+Most authenticated endpoints accept either the normal Supabase Bearer token or
+the Secure, HttpOnly `muse_session` cookie issued after password or passkey
+authentication. Passkeys are optional. The passkey private key and recovery
+AES key are never API inputs.
+
+| Method | Path | Request | Response |
+| --- | --- | --- | --- |
+| POST | `/api/auth/session` | Supabase-authenticated request | Creates fallback Muse session cookie |
+| GET | `/api/auth/session` | Session/Bearer | Current authenticated account and method |
+| DELETE | `/api/auth/session` | — | Clears Muse session cookie |
+| GET | `/api/vault` | Session/Bearer | Vault setup, migration, passkey-count metadata and encrypted vault check |
+| PUT | `/api/vault` | `{ vaultCheck }` | Creates the one-time vault-check envelope; refuses replacement setup |
+| GET | `/api/vault/records?type=` | — | Opaque AES-GCM envelopes owned by the user |
+| POST | `/api/vault/records` | `{ records }` | Saves up to 100 opaque encrypted envelopes |
+| POST | `/api/vault/migration` | `{ status: copying\|verified\|failed }` | Updates client-side migration state (enabled only during migration) |
+| GET | `/api/vault/legacy-export` | — | Temporary authenticated legacy export (enabled only during migration) |
+| POST | `/api/auth/passkeys/registration/options` | — | WebAuthn registration options and server challenge ID |
+| POST | `/api/auth/passkeys/registration/verify` | `{ challengeId, response, name? }` | Verifies and stores public credential |
+| POST | `/api/auth/passkeys/authentication/options` | — | Unauthenticated WebAuthn assertion options/challenge ID |
+| POST | `/api/auth/passkeys/authentication/verify` | `{ challengeId, response }` | Verifies assertion and sets Muse session cookie |
+| GET | `/api/auth/passkeys` | — | Registered public-credential metadata |
+| DELETE | `/api/auth/passkeys/:id` | — | Revokes that passkey |
+
+`vault_records.ciphertext` is opaque to Express. Its maximum individual
+envelope size is 8 MB and JSON vault requests are capped at 12 MB. Browser
+code batches large migrations below that request limit.
+
+### Foreground encrypted AI
+
+| Method | Path | Request | Response |
+| --- | --- | --- | --- |
+| POST | `/api/ai/stream` | `{ action, mode?, note: { title, content, specialized? }, model? }` | Server-sent `progress`, `result`, or `error` events |
+
+`action` is `summary`, `tasks`, `title`, `tags`, `rewrite`, or `organize`.
+This endpoint is for an unlocked client vault only. It does not create an AI
+job, report, embedding, or prompt/result database row; decrypted request data
+exists only during the HTTP request. The client displays progress immediately
+and applies a returned patch only after user acceptance for specialized notes.
+
 ## Supabase Auth through Kong
 
 The browser uses the Supabase client against `${PUBLIC_URL}/auth/v1`. These
@@ -185,9 +243,9 @@ Junk if a message does not arrive.
 | Storage | `muse_storage-data` | Supabase Storage service data |
 | Qdrant | `muse_qdrant-data` | Note embeddings and metadata |
 | Supabase roles | `docker/supabase/roles.sql` | Internal database login roles |
-| App migrations | `supabase/migrations/001_initial.sql` through `007_document_scan.sql` | App tables, images, report pipeline data, telemetry, encrypted API-key RPCs, and document scanning |
+| App migrations | `supabase/migrations/001_initial.sql` through `010_specialized_notes.sql` | App tables, images, report pipeline data, telemetry, encrypted API-key RPCs, document scanning, vault, calendar/tasks, and specialized notes |
 
-The database initialization mounts all seven migrations. For a healthy existing
+The database initialization mounts all migrations. For a healthy existing
 database that predates a migration, apply it once with `psql`. Do not delete
 `docker/pgsodium_root.key` separately from `muse_postgres-data`; saved Vault
 secrets depend on both.

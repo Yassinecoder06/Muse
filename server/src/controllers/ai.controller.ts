@@ -1,13 +1,14 @@
 import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { jobs } from '../services/ai-job.service.js'
-import { AI_KEY_REQUIRED, fetchAccountUsage, listModels as getModels } from '../services/ai.service.js'
+import { AI_KEY_REQUIRED, ai, fetchAccountUsage, listModels as getModels, OLLAMA_LOCAL_URL } from '../services/ai.service.js'
 import { settings } from '../services/settings.repository.js'
 import { supabase } from '../supabase/client.js'
 import { researchArtifacts, researchDocuments } from '../services/research-document.repository.js'
 import { extractResearchDocument } from '../services/research-document.service.js'
 import { notes } from '../services/note.repository.js'
 import { exports as reportExports } from '../services/reporting/export.service.js'
+import { stripImages } from '../utils/images.js'
 
 const model = z.string().min(1).max(100).optional()
 const reportType = z.enum(['business', 'technical', 'financial', 'research', 'management', 'project']).optional()
@@ -15,8 +16,24 @@ const outputFormat = z.enum(['html', 'pdf', 'docx']).optional()
 const skill = z.enum(['research','information_extraction','data_analysis','critical_reasoning','financial_analysis','recommendation','visualization','report_structure','professional_writing','citation_management','quality_control'])
 const job = z.object({ noteId: z.string().uuid().optional(), type: z.enum(['summary', 'tasks', 'title', 'tags', 'rewrite', 'research']), mode: z.string().optional(), topic: z.string().min(1).max(500).optional(), title: z.string().max(300).optional(), objective: z.string().max(2000).optional(), audience: z.string().max(300).optional(), instructions: z.string().max(4000).optional(), reportType, outputFormat, enabledSkills: z.array(skill).min(1).max(11).optional(), depth: z.enum(['concise', 'standard', 'in-depth']).optional(), documentIds: z.array(z.string().uuid()).max(5).optional(), model })
 const history = z.array(z.object({ role: z.enum(['user', 'assistant']), text: z.string().min(1).max(4000) })).max(6).optional()
+const secureAction = z.enum(['summary', 'tasks', 'title', 'tags', 'rewrite', 'organize'])
+const secureRun = z.object({
+  action: secureAction,
+  mode: z.enum(['improve', 'professional', 'friendly', 'shorter', 'longer', 'grammar']).optional(),
+  note: z.object({ title: z.string().max(500), content: z.string().min(1).max(250_000), specialized: z.object({ category: z.string().max(40), aiInstruction: z.string().max(2000).optional() }).optional() }),
+  model
+})
 const user = (req: Request) => req.userId!
-async function requireKey(userId: string) { if (!(await settings.hasKey(userId))) { const error = new Error(AI_KEY_REQUIRED); (error as any).statusCode = 400; throw error } }
+async function requireKey(userId: string) {
+  if (await settings.hasKey(userId)) return
+  try {
+    const res = await fetch(`${OLLAMA_LOCAL_URL}/api/tags`, { method: 'GET' })
+    if (res.ok) return
+  } catch {}
+  const error = new Error('No local Ollama found on port 11434 and no Ollama API key configured in Settings.')
+  ;(error as any).statusCode = 400
+  throw error
+}
 export async function enqueue(req: Request, res: Response, next: NextFunction) {
   try {
     const body = job.parse(req.body)
@@ -53,7 +70,48 @@ export async function uploadResearchDocument(req: Request, res: Response, next: 
   } catch (error) { next(error) }
 }
 export async function active(req: Request, res: Response, next: NextFunction) { try { const job = await jobs.active(user(req)); res.json(job ? { running: true, type: job.type } : { running: false }) } catch (error) { next(error) } }
-export async function listModels(_req: Request, res: Response, next: NextFunction) { try { res.json(getModels()) } catch (error) { next(error) } }
+
+// A foreground SSE route for client-encrypted notes. Decrypted content exists
+// only in the request/response lifetime: it is never put in ai_jobs, report
+// tables, logs, or the vector index. Closing the tab aborts the HTTP request.
+export async function secureStream(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = secureRun.parse(req.body)
+    const apiKey = await settings.getKey(user(req))
+    if (!apiKey) { res.status(400).json({ error: AI_KEY_REQUIRED }); return }
+    res.status(200).set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
+    res.flushHeaders()
+    const emit = (event: 'progress' | 'result' | 'error', value: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`)
+    const source = stripImages(body.note.content)
+    const specialty = body.note.specialized?.aiInstruction ? ` Follow this specialized-note instruction: ${body.note.specialized.aiInstruction}` : ''
+    const patch: Record<string, unknown> = {}
+    emit('progress', { message: 'Muse is thinking' })
+    if (body.action === 'summary') { patch.summary = await ai.summarize(`${source}${specialty}`, body.model, apiKey) }
+    else if (body.action === 'tasks') { patch.tasks = await ai.extractTasks(`${source}${specialty}`, body.model, apiKey) }
+    else if (body.action === 'title') { patch.title = await ai.generateTitle(`${source}${specialty}`, body.model, apiKey) }
+    else if (body.action === 'tags') { patch.tags = await ai.generateTags(`${source}${specialty}`, body.model, apiKey) }
+    else if (body.action === 'rewrite') {
+      if (!body.mode) throw new Error('Choose a rewrite mode.')
+      // The browser replaces image tags with [IMAGE n] markers before this
+      // request and restores them after the stream. This keeps both inline
+      // attachment bytes and their URLs out of the AI request.
+      patch.content = await ai.rewrite(body.note.content, body.mode, body.model, apiKey)
+    } else {
+      emit('progress', { message: 'Creating a title' })
+      patch.title = body.note.title.trim() || await ai.generateTitle(`${source}${specialty}`, body.model, apiKey)
+      emit('progress', { message: 'Finding key themes' })
+      patch.tags = await ai.generateTags(`${source}${specialty}`, body.model, apiKey)
+      emit('progress', { message: 'Writing a summary' })
+      patch.summary = await ai.summarize(`${source}${specialty}`, body.model, apiKey)
+    }
+    emit('result', { patch })
+    res.end()
+  } catch (error) {
+    if (res.headersSent) { res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Muse could not complete this request.' })}\n\n`); res.end(); return }
+    next(error)
+  }
+}
+export async function listModels(_req: Request, res: Response, next: NextFunction) { try { res.json(await getModels()) } catch (error) { next(error) } }
 export async function askNote(req: Request, res: Response, next: NextFunction) { try { const body = z.object({ noteId: z.string().uuid(), question: z.string().min(1).max(2000), history, model }).parse(req.body); await requireKey(user(req)); res.status(202).json(await jobs.enqueue(user(req), body.noteId, 'ask_note', { question: body.question, history: body.history, model: body.model })) } catch (error) { next(error) } }
 export async function askSearch(req: Request, res: Response, next: NextFunction) { try { const { question, history: turns, model: chatModel } = z.object({ question: z.string().min(1).max(2000), history, model }).parse(req.body); await requireKey(user(req)); res.status(202).json(await jobs.enqueue(user(req), null, 'ask_search', { question, history: turns, model: chatModel })) } catch (error) { next(error) } }
 export async function usage(_req: Request, res: Response, next: NextFunction) {

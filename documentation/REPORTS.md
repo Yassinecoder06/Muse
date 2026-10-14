@@ -42,6 +42,16 @@ in code before the AI runs. The resulting report can show KPI cards and a
 compact comparison chart. Muse intentionally does not create a chart when the
 source data is missing, ambiguous, or non-numeric.
 
+The deterministic visual toolkit is in
+`server/src/services/reporting/analytics.ts`. It validates finite numeric data
+before producing a typed bar, line, donut, or table specification; it supports
+totals, averages, and change percentages and returns a clear **data-gap** state
+instead of guessing. AI may choose an appropriate visual, but it cannot supply
+chart markup or invent the numeric points. Reports render only validated visual
+data. Secure-vault notes retain this deterministic local data handling, while
+background research/report jobs remain legacy-mode only because they persist
+source artifacts.
+
 ## Presentation
 
 Finished reports are wrapped in a styled document (`<div class="muse-report">`)

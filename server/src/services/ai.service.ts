@@ -1,78 +1,240 @@
 import { env } from '../utils/env.js'
 
 export const OLLAMA_CLOUD_URL = 'https://ollama.com'
+export const OLLAMA_LOCAL_URL = (env.OLLAMA_EMBEDDING_BASE_URL || 'http://localhost:11434').replace(/\/$/, '')
 export const AI_KEY_REQUIRED = 'Add your Ollama API key in Settings to use AI features.'
+export const LOCAL_MODEL = 'gemma4-ab-qat:e4b'
 export const curatedModels = ['gpt-oss:120b-cloud', 'nemotron-3-super:cloud', 'gemma4:31b-cloud']
+export const ALLOWED_MODELS = [LOCAL_MODEL, ...curatedModels]
 export const cloudModelName = (name: string) => name?.replace(/-cloud$/, '').replace(/:cloud$/, '') || name
+
+export function isCloudModel(name: string | undefined): boolean {
+  if (!name) return false
+  return curatedModels.includes(name) || name.endsWith('-cloud') || name.endsWith(':cloud')
+}
 
 type Message = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string }
 export type ToolCall = { id: string; function: { name: string; arguments: string | object } }
 export type HistoryItem = { role: 'user' | 'assistant'; text: string }
 
-async function ollama(path: string, body: unknown, apiKey: string, method = 'POST') {
+export async function getDefaultLocalModel(): Promise<string> {
+  return LOCAL_MODEL
+}
+
+export async function resolveModelAndEndpoint(
+  requestedModel: string | undefined,
+  apiKey: string | undefined
+): Promise<{ modelName: string; isCloud: boolean; apiKey?: string }> {
+  let selected = requestedModel
+  if (!selected) {
+    if (apiKey) {
+      selected = env.OLLAMA_CHAT_MODEL || 'gemma4:31b-cloud'
+    } else {
+      selected = LOCAL_MODEL
+    }
+  }
+
+  if (isCloudModel(selected)) {
+    if (!apiKey) {
+      throw new Error('Add your Ollama API key in Settings to use cloud AI models.')
+    }
+    return {
+      modelName: cloudModelName(selected),
+      isCloud: true,
+      apiKey
+    }
+  }
+
+  return {
+    modelName: LOCAL_MODEL,
+    isCloud: false,
+    apiKey: undefined
+  }
+}
+
+async function queryOllama(path: string, body: unknown, apiKey?: string, method = 'POST') {
+  const isCloud = Boolean(apiKey)
+  const baseUrl = isCloud ? OLLAMA_CLOUD_URL : OLLAMA_LOCAL_URL
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (isCloud) {
+    headers['Authorization'] = `Bearer ${apiKey}`
+  }
+
   let response: Response
   try {
-    response = await fetch(`${OLLAMA_CLOUD_URL}${path}`, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }, body: method === 'GET' ? undefined : JSON.stringify(body) })
-  } catch { throw new Error('Muse could not reach Ollama Cloud. Check your internet connection.') }
+    response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers,
+      body: method === 'GET' ? undefined : JSON.stringify(body)
+    })
+  } catch (err) {
+    if (!isCloud) {
+      throw new Error(`Muse could not reach local Ollama at ${baseUrl}. Ensure Ollama is running.`)
+    }
+    throw new Error('Muse could not reach Ollama Cloud. Check your internet connection.')
+  }
+
   if (!response.ok) {
     const text = await response.text().catch(() => '')
     let detail = ''
-    try { const parsed = JSON.parse(text); detail = String(parsed.error?.message || parsed.error || '') } catch { detail = text.slice(0, 120) }
+    try {
+      const parsed = JSON.parse(text)
+      detail = String(parsed.error?.message || parsed.error || '')
+    } catch {
+      detail = text.slice(0, 120)
+    }
     if (response.status === 401) throw new Error('Your Ollama API key is invalid or revoked — update it in Settings.')
     if (response.status === 402) throw new Error(`Your Ollama quota is exhausted (402).${detail ? ` ${detail}` : ''} Check Usage in Settings.`)
     if (response.status === 429) throw new Error('Ollama is rate limiting this account right now (429). Try again in a moment.')
     throw new Error(`Ollama request failed: ${response.status}${detail ? ` ${detail}` : ''}`)
   }
+
   return response.json() as Promise<any>
 }
-function requireKey(apiKey?: string) { if (!apiKey) throw new Error(AI_KEY_REQUIRED); return apiKey }
+
 async function chat(messages: Message[], model: string | undefined, apiKey: string | undefined) {
-  const key = requireKey(apiKey)
-  const data = await ollama('/api/chat', { model: cloudModelName(model || env.OLLAMA_CHAT_MODEL), stream: false, messages, options: { num_ctx: env.OLLAMA_NUM_CTX } }, key)
+  const { modelName, isCloud, apiKey: resolvedKey } = await resolveModelAndEndpoint(model, apiKey)
+
+  const data = await queryOllama(
+    '/api/chat',
+    {
+      model: modelName,
+      stream: false,
+      messages,
+      options: { num_ctx: env.OLLAMA_NUM_CTX }
+    },
+    isCloud ? resolvedKey : undefined
+  )
   return String(data.message?.content || '').trim()
 }
+
 export async function complete(system: string, prompt: string, model?: string, apiKey?: string) {
   return chat([{ role: 'system', content: system }, { role: 'user', content: prompt }], model, apiKey)
 }
+
 type ToolMessage = { content: string; tool_calls?: ToolCall[] }
 export async function chatWithTools(messages: Message[], tools: unknown, model?: string, apiKey?: string): Promise<ToolMessage> {
-  const key = requireKey(apiKey)
-  const data = await ollama('/api/chat', { model: cloudModelName(model || env.OLLAMA_CHAT_MODEL), stream: false, messages, tools, options: { num_ctx: env.OLLAMA_NUM_CTX } }, key)
-  return { content: String(data.message?.content || ''), tool_calls: Array.isArray(data.message?.tool_calls) ? data.message.tool_calls : undefined }
+  const { modelName, isCloud, apiKey: resolvedKey } = await resolveModelAndEndpoint(model, apiKey)
+
+  const data = await queryOllama(
+    '/api/chat',
+    {
+      model: modelName,
+      stream: false,
+      messages,
+      tools,
+      options: { num_ctx: env.OLLAMA_NUM_CTX }
+    },
+    isCloud ? resolvedKey : undefined
+  )
+  return {
+    content: String(data.message?.content || ''),
+    tool_calls: Array.isArray(data.message?.tool_calls) ? data.message.tool_calls : undefined
+  }
 }
-function jsonArray(value: string) { try { const parsed = JSON.parse(value.replace(/```json|```/g, '').trim()); return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string').slice(0, 6) : [] } catch { return [] } }
+
+function jsonArray(value: string) {
+  try {
+    const parsed = JSON.parse(value.replace(/```json|```/g, '').trim())
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string').slice(0, 6) : []
+  } catch {
+    return []
+  }
+}
+
 export const contextBudgetChars = () => Math.min(120_000, env.OLLAMA_NUM_CTX * 4)
+
 function conversation(system: string, context: string, question: string, history: HistoryItem[] = []) {
   const messages: Message[] = [{ role: 'system', content: system }]
   for (const { role, text } of history.slice(-6)) messages.push({ role, content: text.slice(0, 4000) })
   messages.push({ role: 'user', content: `${context}\n\nQUESTION: ${question}` })
   return messages
 }
-export function listModels() { return curatedModels }
-export async function validateApiKey(apiKey: string) {
-  try {
-    const data = await ollama('/api/tags', undefined, apiKey, 'GET')
-    return Array.isArray(data?.models)
-  } catch { return false }
+
+export async function listModels(): Promise<string[]> {
+  return ALLOWED_MODELS
 }
+
+export async function validateApiKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    await queryOllama('/api/usage', undefined, apiKey, 'GET')
+    return { valid: true }
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('invalid or revoked') || msg.includes('401') || msg.includes('invalid credentials')) {
+      return { valid: false, error: 'That API key was rejected by Ollama Cloud (401). Verify it at ollama.com/settings/keys.' }
+    }
+    try {
+      const data = await queryOllama('/api/tags', undefined, apiKey, 'GET')
+      if (Array.isArray(data?.models)) {
+        return { valid: true }
+      }
+    } catch {}
+    return { valid: false, error: msg || 'Could not validate Ollama API key.' }
+  }
+}
+
 export async function fetchAccountUsage(apiKey: string) {
-  const data = await ollama('/api/usage', undefined, apiKey, 'GET')
+  const data = await queryOllama('/api/usage', undefined, apiKey, 'GET')
   const limits = data?.limits || {}
   const session = limits.session || {}
   const weekly = limits.weekly || {}
   const toPercent = (value: unknown) => { const n = typeof value === 'number' ? value : Number(value || 0); return Math.round((n > 1 ? n : n * 100) * 10) / 10 }
   const models = (value: unknown) => Array.isArray(value) ? value.map((item: any) => ({ name: String(item?.name || ''), requests: Number(item?.request_count || 0) })).filter(item => item.name) : []
   let plan: string | null = null
-  try { const me = await ollama('/api/me', {}, apiKey); plan = String(me?.plan || me?.subscription?.plan || '') || null } catch { }
+  try { const me = await queryOllama('/api/me', {}, apiKey); plan = String(me?.plan || me?.subscription?.plan || '') || null } catch {}
   return { plan, session: { usedPct: toPercent(session.usage), models: models(session.models) }, weekly: { usedPct: toPercent(weekly.usage), models: models(weekly.models) } }
 }
+
+let cachedEmbeddingModel: string | null = null
+let lastEmbeddingCheck = 0
+
+export async function getEmbeddingModel(): Promise<string> {
+  const now = Date.now()
+  if (cachedEmbeddingModel && now - lastEmbeddingCheck < 60_000) {
+    return cachedEmbeddingModel
+  }
+  try {
+    const res = await fetch(`${OLLAMA_LOCAL_URL}/api/tags`, { method: 'GET' })
+    if (res.ok) {
+      const data: any = await res.json()
+      if (Array.isArray(data.models)) {
+        const envMatch = data.models.find((m: any) =>
+          m.name === env.OLLAMA_EMBEDDING_MODEL || m.name.startsWith(env.OLLAMA_EMBEDDING_MODEL + ':')
+        )
+        if (envMatch) {
+          cachedEmbeddingModel = envMatch.name
+          lastEmbeddingCheck = now
+          return envMatch.name
+        }
+        const embedModel = data.models.find((m: any) =>
+          (Array.isArray(m.capabilities) && m.capabilities.includes('embedding')) ||
+          m.name.includes('embed')
+        )
+        if (embedModel) {
+          cachedEmbeddingModel = embedModel.name
+          lastEmbeddingCheck = now
+          return embedModel.name
+        }
+      }
+    }
+  } catch {}
+  return env.OLLAMA_EMBEDDING_MODEL || 'mxbai-embed-large:latest'
+}
+
 export const ai = {
   generateTitle: (content: string, model: string | undefined, apiKey?: string) => chat([{ role: 'system', content: 'Return only a short, meaningful note title. No punctuation around it.' }, { role: 'user', content }], model, apiKey),
   async generateTags(content: string, model: string | undefined, apiKey?: string) { return jsonArray(await chat([{ role: 'system', content: 'Return exactly a JSON array of 3 to 6 concise lowercase topic tags. No explanation.' }, { role: 'user', content }], model, apiKey)) },
   summarize: (content: string, model: string | undefined, apiKey?: string) => chat([{ role: 'system', content: 'Summarize the note concisely with Markdown headings: Summary, Key points, Important information, Action items.' }, { role: 'user', content }], model, apiKey),
   async extractTasks(content: string, model: string | undefined, apiKey?: string) { return jsonArray(await chat([{ role: 'system', content: 'Extract actionable tasks. Return only a JSON string array. Each item must be a concise imperative task.' }, { role: 'user', content }], model, apiKey)) },
   rewrite: (content: string, mode: string, model: string | undefined, apiKey?: string) => chat([{ role: 'system', content: `Rewrite the text in ${mode} mode. Return only the rewritten text. Preserve meaning. Images inside the note are marked as [IMAGE n], each standing exactly where an image belongs. Keep every [IMAGE n] token exactly where it is: never move, reorder, reword, translate, merge, or drop a marker, and never change its number. The number of markers in your output must equal the number in the input. Rewrite only the words around the markers.` }, { role: 'user', content }], model, apiKey),
-  async generateEmbedding(content: string) { const data = await ollamaLocal('/api/embed', { model: env.OLLAMA_EMBEDDING_MODEL, input: content.slice(0, 8000) }); const vector = data.embeddings?.[0] || data.embedding; if (!Array.isArray(vector)) throw new Error('Ollama returned no embedding'); return vector as number[] },
+  async generateEmbedding(content: string) {
+    const model = await getEmbeddingModel()
+    const data = await ollamaLocal('/api/embed', { model, input: content.slice(0, 8000) })
+    const vector = data.embeddings?.[0] || data.embedding
+    if (!Array.isArray(vector)) throw new Error('Ollama returned no embedding')
+    return vector as number[]
+  },
   askCurrentNote: (question: string, note: string, history: HistoryItem[] = [], model?: string, apiKey?: string) => chat(conversation(
     'You are a precise reading assistant. Answer the question using the supplied note as your primary source and reason about it before replying. Use the conversation history to follow up on earlier questions. If the note does not contain enough to answer, state exactly what is missing, then answer from general knowledge — clearly label what comes from the note versus what is inferred. Be direct and structured.',
     `NOTE:\n${note}`, question, history), model, apiKey),
@@ -82,7 +244,14 @@ export const ai = {
 }
 
 async function ollamaLocal(path: string, body: unknown) {
-  const response = await fetch(`${env.OLLAMA_EMBEDDING_BASE_URL.replace(/\/$/, '')}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  if (!response.ok) throw new Error(`Ollama embedding request failed: ${response.status}`)
+  const response = await fetch(`${OLLAMA_LOCAL_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    throw new Error(`Ollama embedding request failed: ${response.status}${text ? ` - ${text}` : ''}`)
+  }
   return response.json() as Promise<any>
 }
