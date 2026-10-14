@@ -7,7 +7,7 @@ export interface AnalyticsSummary {
   vaultEncryptedRatio: number;
 }
 
-const DEFAULT_DATA: AnalyticsSummary = {
+export const DEFAULT_DATA: AnalyticsSummary = {
   activitySeries: [
     { label: 'Mon', notes: 4, tasksCompleted: 6 },
     { label: 'Tue', notes: 7, tasksCompleted: 5 },
@@ -70,7 +70,17 @@ export const AnalyticsVisuals: React.FC<{ data?: AnalyticsSummary }> = ({ data =
   return (
     <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem', margin: '1.25rem 0' }}>
       <div style={{ background: 'rgba(17, 24, 39, 0.75)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '1.25rem', color: '#f9fafb' }}>
-        <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: 600 }}>Weekly Velocity (Notes vs Tasks)</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>Weekly Velocity (Notes vs Tasks)</h3>
+          <div style={{ display: 'flex', gap: '0.85rem', fontSize: '0.75rem', color: '#9ca3af' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#6366f1', display: 'inline-block' }} /> Notes
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} /> Tasks
+            </span>
+          </div>
+        </div>
         <svg viewBox="0 0 460 150" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
           <path d={notesCurve.areaPath} fill="rgba(99, 102, 241, 0.2)" />
           <path d={tasksCurve.areaPath} fill="rgba(16, 185, 129, 0.18)" />
@@ -78,11 +88,40 @@ export const AnalyticsVisuals: React.FC<{ data?: AnalyticsSummary }> = ({ data =
           <path d={tasksCurve.dPath} fill="none" stroke="#10b981" strokeWidth="2.5" />
           {notesCurve.pts.map((pt, i) => (
             <g key={pt.label} onMouseEnter={() => setHoveredIndex(i)} onMouseLeave={() => setHoveredIndex(null)} style={{ cursor: 'pointer' }}>
-              <circle cx={pt.x} cy={pt.y} r={hoveredIndex === i ? 5 : 3.5} fill="#6366f1" />
-              <circle cx={tasksCurve.pts[i].x} cy={tasksCurve.pts[i].y} r={hoveredIndex === i ? 5 : 3.5} fill="#10b981" />
-              <text x={pt.x} y={144} textAnchor="middle" fill="#9ca3af" fontSize="10">{pt.label}</text>
+              <title>{`${pt.label}: ${data.activitySeries[i].notes} notes, ${data.activitySeries[i].tasksCompleted} tasks completed`}</title>
+              {hoveredIndex === i && (
+                <line x1={pt.x} y1={12} x2={pt.x} y2={126} stroke="rgba(255,255,255,0.2)" strokeDasharray="3 3" />
+              )}
+              <circle cx={pt.x} cy={pt.y} r={hoveredIndex === i ? 5.5 : 3.5} fill="#6366f1" stroke="#ffffff" strokeWidth={hoveredIndex === i ? 1.5 : 0} />
+              <circle cx={tasksCurve.pts[i].x} cy={tasksCurve.pts[i].y} r={hoveredIndex === i ? 5.5 : 3.5} fill="#10b981" stroke="#ffffff" strokeWidth={hoveredIndex === i ? 1.5 : 0} />
+              <text x={pt.x} y={144} textAnchor="middle" fill={hoveredIndex === i ? '#ffffff' : '#9ca3af'} fontSize="10" fontWeight={hoveredIndex === i ? 700 : 400}>{pt.label}</text>
             </g>
           ))}
+          {hoveredIndex !== null && (() => {
+            const pt = notesCurve.pts[hoveredIndex];
+            const item = data.activitySeries[hoveredIndex];
+            const tooltipX = Math.min(Math.max(pt.x, 70), 390);
+            return (
+              <g transform={`translate(${tooltipX}, 26)`} style={{ pointerEvents: 'none' }}>
+                <rect
+                  x="-65"
+                  y="-22"
+                  width="130"
+                  height="42"
+                  rx="6"
+                  fill="rgba(15, 23, 42, 0.95)"
+                  stroke="rgba(255, 255, 255, 0.18)"
+                  strokeWidth="1"
+                />
+                <text x="0" y="-7" textAnchor="middle" fill="#c7d2fe" fontSize="10" fontWeight="600">
+                  {item.label} · {item.notes} notes
+                </text>
+                <text x="0" y="9" textAnchor="middle" fill="#a7f3d0" fontSize="10" fontWeight="600">
+                  {item.tasksCompleted} tasks done
+                </text>
+              </g>
+            );
+          })()}
         </svg>
       </div>
 

@@ -289,6 +289,9 @@
 .tasks-muse{display:flex;align-items:center;gap:8px;background:#e9f6f2;color:#18775f;border:1px solid #c8eadd;border-radius:9px;padding:10px 13px;font-size:13px;font-weight:600;transition:.15s}
 .tasks-muse:hover{background:#dbf0e9}
 [data-theme=dark] .tasks-muse{background:#18362d;color:#7ee2c6;border-color:#29594b}
+.analytics-muse{display:flex;align-items:center;gap:8px;background:#f3f0ff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:9px;padding:10px 13px;font-size:13px;font-weight:600;transition:.15s}
+.analytics-muse:hover{background:#ede9fe}
+[data-theme=dark] .analytics-muse{background:#2e1f4d;color:#c4b5fd;border-color:#4c2889}
 
 /* Editor Detect Button */
 .schedule-detect-button{display:flex;align-items:center;gap:6px;font-size:12px;border-radius:7px;padding:8px 10px;font-weight:600;background:#fdf6ea;color:#a16212;border:1px solid #f6e2b8;transition:.15s}
@@ -2625,4 +2628,40 @@
   color: #7ce3a6;
 }
 
+/* ==========================================================================
+   Analytics View Styles
+   ========================================================================== */
+.analytics-page {
+  min-height: 100vh;
+  background: #faf9fc;
+  display: flex;
+  flex-direction: column;
+}
+[data-theme=dark] .analytics-page {
+  background: #151419;
+  color: #edeaf4;
+}
 
+.analytics-topbar {
+  height: 68px;
+  padding: 0 36px;
+  border-bottom: 1px solid #ecebf1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+[data-theme=dark] .analytics-topbar {
+  background: #1b1a20;
+  border-color: #2b2931;
+}
+
+.analytics-container {
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 32px 36px;
+}

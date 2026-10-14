@@ -1,4 +1,4 @@
-import { Archive, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, PanelLeftClose, Plus, RotateCcw, Search, Settings, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
+import { Archive, BarChart3, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, PanelLeftClose, Plus, RotateCcw, Search, Settings, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import type { Note } from '../types'
@@ -23,6 +23,7 @@ export function Dashboard({
   graph,
   calendar,
   tasks,
+  analytics,
   settings,
   userEmail,
   userName,
@@ -49,6 +50,7 @@ export function Dashboard({
   graph: () => void
   calendar: () => void
   tasks: () => void
+  analytics: () => void
   settings: () => void
   userEmail: string
   userName: string
@@ -120,6 +122,7 @@ export function Dashboard({
         <div className="sidebar-tools">
           <button title="Calendar" onClick={calendar}><Calendar size={17}/><span> Calendar</span></button>
           <button title="Tasks" onClick={tasks}><CheckSquare size={17}/><span> Tasks</span></button>
+          <button title="Analytics" onClick={analytics}><BarChart3 size={17}/><span> Analytics</span></button>
         </div>
         <div className="sidebar-footer">
           <button title="Collections" onClick={collections}><FolderOpen size={17}/><span> Collections</span></button>
@@ -163,6 +166,7 @@ export function Dashboard({
             <div className="hero-actions">
               <button className="calendar-muse" onClick={calendar}><Calendar size={17}/> Calendar</button>
               <button className="tasks-muse" onClick={tasks}><CheckSquare size={17}/> Tasks</button>
+              <button className="analytics-muse" onClick={analytics}><BarChart3 size={17}/> Analytics</button>
               <button className="specialized-muse" onClick={specialized}><Layers3 size={17}/> Specialized</button>
               <button className="research-muse" onClick={research}><Globe size={17}/> Research</button>
             </div>
