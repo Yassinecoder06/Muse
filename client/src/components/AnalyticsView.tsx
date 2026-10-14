@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, BarChart3, CheckSquare, Database, FileText, Layers, RefreshCw, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react'
+import { ArrowLeft, BarChart3, CheckSquare, FileText, RefreshCw, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react'
 import { api } from '../services/api'
 import { AnalyticsVisuals, DEFAULT_DATA, type AnalyticsSummary } from './AnalyticsVisuals'
 
@@ -24,18 +24,17 @@ export function AnalyticsView({ onBack }: { onBack: () => void }) {
     const specializedCount = allNotes.filter(n => n.kind === 'specialized').length
     const completedTasksCount = allTasks.filter(t => t.completed).length
 
-    // Categorization distribution
+    // Categorization distribution without legacy vault labels
     const noteDistribution = [
-      { category: 'Standard Notes', count: Math.max(standardCount, standardCount === 0 && allNotes.length === 0 ? 0 : standardCount), color: '#6366f1' },
+      { category: 'Standard Notes', count: standardCount, color: '#6366f1' },
       { category: 'AI Research', count: researchCount, color: '#8b5cf6' },
       { category: 'Specialized Notes', count: specializedCount, color: '#ec4899' },
-      { category: 'Secure Vault', count: Math.max(0, allNotes.length - researchCount - specializedCount), color: '#10b981' },
+      { category: 'Archived Notes', count: Math.max(0, allNotes.length - standardCount - researchCount - specializedCount), color: '#10b981' },
     ]
 
-    // If there are real notes/tasks, calculate a 7-day activity series
+    // Calculate 7-day activity series
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     const activitySeries = days.map((day, idx) => {
-      // Map notes and tasks created across days or distribute proportionally
       const dayNotes = allNotes.filter(n => {
         const d = new Date(n.created_at || Date.now())
         const dayIdx = (d.getDay() + 6) % 7 // Monday = 0
@@ -59,12 +58,12 @@ export function AnalyticsView({ onBack }: { onBack: () => void }) {
       activitySeries,
       noteDistribution,
       pipelineSteps: [
-        { id: 'scan', label: 'Local SQLite Document Index', status: 'done' },
-        { id: 'embed', label: 'Semantic Context Vectors', status: allNotes.length > 0 ? 'done' : 'active' },
-        { id: 'graph', label: 'Interactive Knowledge Graph', status: 'active' },
-        { id: 'report', label: 'AI Synthesis & Action Engine', status: researchCount > 0 ? 'done' : 'active' },
+        { id: 'scan', label: 'Local Document Indexing', status: 'done' },
+        { id: 'embed', label: 'Qdrant Vector Indexing', status: allNotes.length > 0 ? 'done' : 'active' },
+        { id: 'graph', label: 'Knowledge Graph Linking', status: 'active' },
+        { id: 'report', label: 'Modular Report Synthesis', status: researchCount > 0 ? 'done' : 'active' },
       ],
-      vaultEncryptedRatio: 100,
+      localPrivateRatio: 100,
     }
   }, [allNotes, allTasks])
 
@@ -140,8 +139,9 @@ export function AnalyticsView({ onBack }: { onBack: () => void }) {
               width: 32,
               height: 32,
               borderRadius: '8px',
-              border: '1px solid rgba(0,0,0,0.1)',
+              border: '1px solid rgba(124, 58, 237, 0.2)',
               background: 'transparent',
+              color: 'inherit',
               cursor: 'pointer'
             }}
           >
@@ -152,111 +152,63 @@ export function AnalyticsView({ onBack }: { onBack: () => void }) {
 
       <main className="analytics-container">
         {/* Metric summary banner */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '1rem',
-          marginBottom: '1.5rem'
-        }}>
-          <div style={{
-            background: 'var(--card-bg, #ffffff)',
-            border: '1px solid var(--border-color, #e5e7eb)',
-            borderRadius: '12px',
-            padding: '1rem 1.25rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '14px'
-          }}>
-            <div style={{ width: 40, height: 40, borderRadius: '10px', background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7c3aed' }}>
+        <div className="analytics-kpi-grid">
+          <div className="analytics-kpi-card">
+            <div style={{ width: 40, height: 40, borderRadius: '10px', background: 'rgba(124, 58, 237, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8b5cf6' }}>
               <FileText size={20} />
             </div>
             <div>
-              <span style={{ fontSize: '0.8rem', color: '#6b7280', fontWeight: 500 }}>Total Notes</span>
-              <h3 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700 }}>{totalNotes}</h3>
+              <span className="kpi-label">Total Notes</span>
+              <h3 className="kpi-value">{totalNotes}</h3>
             </div>
           </div>
 
-          <div style={{
-            background: 'var(--card-bg, #ffffff)',
-            border: '1px solid var(--border-color, #e5e7eb)',
-            borderRadius: '12px',
-            padding: '1rem 1.25rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '14px'
-          }}>
-            <div style={{ width: 40, height: 40, borderRadius: '10px', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
+          <div className="analytics-kpi-card">
+            <div style={{ width: 40, height: 40, borderRadius: '10px', background: 'rgba(16, 185, 129, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
               <CheckSquare size={20} />
             </div>
             <div>
-              <span style={{ fontSize: '0.8rem', color: '#6b7280', fontWeight: 500 }}>Completed Tasks</span>
-              <h3 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700 }}>{completedTasks} <small style={{ fontSize: '0.75rem', color: '#9ca3af' }}>/ {totalTasks}</small></h3>
+              <span className="kpi-label">Completed Tasks</span>
+              <h3 className="kpi-value">{completedTasks} <small style={{ fontSize: '0.75rem', opacity: 0.65 }}>/ {totalTasks}</small></h3>
             </div>
           </div>
 
-          <div style={{
-            background: 'var(--card-bg, #ffffff)',
-            border: '1px solid var(--border-color, #e5e7eb)',
-            borderRadius: '12px',
-            padding: '1rem 1.25rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '14px'
-          }}>
-            <div style={{ width: 40, height: 40, borderRadius: '10px', background: '#fce7f3', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#db2777' }}>
+          <div className="analytics-kpi-card">
+            <div style={{ width: 40, height: 40, borderRadius: '10px', background: 'rgba(236, 72, 153, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ec4899' }}>
               <Sparkles size={20} />
             </div>
             <div>
-              <span style={{ fontSize: '0.8rem', color: '#6b7280', fontWeight: 500 }}>AI Intelligence</span>
-              <h3 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700 }}>Active</h3>
+              <span className="kpi-label">AI Intelligence</span>
+              <h3 className="kpi-value">Active</h3>
             </div>
           </div>
 
-          <div style={{
-            background: 'var(--card-bg, #ffffff)',
-            border: '1px solid var(--border-color, #e5e7eb)',
-            borderRadius: '12px',
-            padding: '1rem 1.25rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '14px'
-          }}>
-            <div style={{ width: 40, height: 40, borderRadius: '10px', background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
+          <div className="analytics-kpi-card">
+            <div style={{ width: 40, height: 40, borderRadius: '10px', background: 'rgba(59, 130, 246, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6' }}>
               <ShieldCheck size={20} />
             </div>
             <div>
-              <span style={{ fontSize: '0.8rem', color: '#6b7280', fontWeight: 500 }}>Vault Security</span>
-              <h3 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 700 }}>SSRF Protected</h3>
+              <span className="kpi-label">Privacy & Security</span>
+              <h3 className="kpi-value" style={{ fontSize: '1.05rem', marginTop: '2px' }}>SSRF & Local Guard</h3>
             </div>
           </div>
         </div>
 
-        {/* The Core Analytics Visuals Component requested by user */}
+        {/* The Core Analytics Visuals Component */}
         <AnalyticsVisuals data={activeData} />
 
         {/* Informational Footer Card */}
-        <div style={{
-          marginTop: '1.5rem',
-          padding: '1.25rem',
-          borderRadius: '12px',
-          background: 'rgba(124, 58, 237, 0.04)',
-          border: '1px solid rgba(124, 58, 237, 0.15)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '12px'
-        }}>
+        <div className="analytics-footer-banner">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <TrendingUp size={20} color="#7c3aed" />
             <div>
               <strong style={{ fontSize: '0.9rem', color: '#7c3aed' }}>Real-time Throughput Tracking</strong>
-              <p style={{ margin: '2px 0 0', fontSize: '0.8rem', color: '#6b7280' }}>
+              <p style={{ margin: '2px 0 0', fontSize: '0.8rem', opacity: 0.75 }}>
                 Velocity curve renders smooth cubic bezier interpolation over your weekly notes created vs tasks checked off.
               </p>
             </div>
           </div>
-          <span style={{ fontSize: '0.78rem', color: '#9ca3af', fontStyle: 'italic' }}>
+          <span style={{ fontSize: '0.78rem', opacity: 0.65, fontStyle: 'italic' }}>
             Data source: {dataSource === 'live' ? 'Live Local SQLite Database' : 'Benchmark Telemetry'}
           </span>
         </div>
