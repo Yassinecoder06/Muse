@@ -9,6 +9,7 @@ import { Dashboard } from './pages/Dashboard'
 import { Editor } from './components/Editor'
 import { CalendarView } from './components/CalendarView'
 import { TasksView } from './components/TasksView'
+import { AnalyticsView } from './components/AnalyticsView'
 import { CommandPalette } from './components/CommandPalette'
 import { ChatPanel } from './components/ChatPanel'
 import { ResearchPanel } from './components/ResearchPanel'
@@ -217,6 +218,7 @@ function MuseApp() {
     graph={() => navigate('/graph')}
     calendar={() => navigate('/calendar')}
     tasks={() => navigate('/tasks')}
+    analytics={() => navigate('/analytics')}
     settings={() => setSettings(true)}
     userEmail=""
     userName={userName || 'Local User'}
@@ -235,6 +237,7 @@ function MuseApp() {
         <Route path="/graph" element={<GraphView onBack={() => navigate('/')} create={() => create.mutate()}/>}/>
         <Route path="/calendar" element={<CalendarView onBack={() => navigate('/')}/>}/>
         <Route path="/tasks" element={<TasksView onBack={() => navigate('/')}/>}/>
+        <Route path="/analytics" element={<AnalyticsView onBack={() => navigate('/')}/>}/>
         <Route path="*" element={dashboard}/>
       </Routes>
     )}
