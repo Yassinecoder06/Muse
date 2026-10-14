@@ -4,7 +4,7 @@ export interface AnalyticsSummary {
   activitySeries: { label: string; notes: number; tasksCompleted: number }[];
   noteDistribution: { category: string; count: number; color: string }[];
   pipelineSteps: { id: string; label: string; status: 'done' | 'active' | 'pending' }[];
-  vaultEncryptedRatio: number;
+  localPrivateRatio: number;
 }
 
 export const DEFAULT_DATA: AnalyticsSummary = {
@@ -21,15 +21,15 @@ export const DEFAULT_DATA: AnalyticsSummary = {
     { category: 'Standard Notes', count: 42, color: '#6366f1' },
     { category: 'AI Research', count: 28, color: '#8b5cf6' },
     { category: 'Specialized Notes', count: 19, color: '#ec4899' },
-    { category: 'Secure Vault', count: 15, color: '#10b981' },
+    { category: 'Archived Notes', count: 15, color: '#10b981' },
   ],
   pipelineSteps: [
-    { id: 'scan', label: 'Document Scan & Extraction', status: 'done' },
+    { id: 'scan', label: 'Local Document Indexing', status: 'done' },
     { id: 'embed', label: 'Qdrant Vector Indexing', status: 'done' },
     { id: 'graph', label: 'Knowledge Graph Linking', status: 'active' },
     { id: 'report', label: 'Modular Report Synthesis', status: 'pending' },
   ],
-  vaultEncryptedRatio: 88,
+  localPrivateRatio: 100,
 };
 
 export const AnalyticsVisuals: React.FC<{ data?: AnalyticsSummary }> = ({ data = DEFAULT_DATA }) => {
@@ -69,10 +69,11 @@ export const AnalyticsVisuals: React.FC<{ data?: AnalyticsSummary }> = ({ data =
 
   return (
     <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem', margin: '1.25rem 0' }}>
-      <div style={{ background: 'rgba(17, 24, 39, 0.75)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '1.25rem', color: '#f9fafb' }}>
+      {/* 1. Weekly Velocity Curve Chart */}
+      <div className="analytics-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>Weekly Velocity (Notes vs Tasks)</h3>
-          <div style={{ display: 'flex', gap: '0.85rem', fontSize: '0.75rem', color: '#9ca3af' }}>
+          <h3>Weekly Velocity (Notes vs Tasks)</h3>
+          <div style={{ display: 'flex', gap: '0.85rem', fontSize: '0.75rem', opacity: 0.8 }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#6366f1', display: 'inline-block' }} /> Notes
             </span>
@@ -82,19 +83,19 @@ export const AnalyticsVisuals: React.FC<{ data?: AnalyticsSummary }> = ({ data =
           </div>
         </div>
         <svg viewBox="0 0 460 150" style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
-          <path d={notesCurve.areaPath} fill="rgba(99, 102, 241, 0.2)" />
-          <path d={tasksCurve.areaPath} fill="rgba(16, 185, 129, 0.18)" />
+          <path d={notesCurve.areaPath} fill="rgba(99, 102, 241, 0.16)" />
+          <path d={tasksCurve.areaPath} fill="rgba(16, 185, 129, 0.16)" />
           <path d={notesCurve.dPath} fill="none" stroke="#6366f1" strokeWidth="2.5" />
           <path d={tasksCurve.dPath} fill="none" stroke="#10b981" strokeWidth="2.5" />
           {notesCurve.pts.map((pt, i) => (
             <g key={pt.label} onMouseEnter={() => setHoveredIndex(i)} onMouseLeave={() => setHoveredIndex(null)} style={{ cursor: 'pointer' }}>
               <title>{`${pt.label}: ${data.activitySeries[i].notes} notes, ${data.activitySeries[i].tasksCompleted} tasks completed`}</title>
               {hoveredIndex === i && (
-                <line x1={pt.x} y1={12} x2={pt.x} y2={126} stroke="rgba(255,255,255,0.2)" strokeDasharray="3 3" />
+                <line x1={pt.x} y1={12} x2={pt.x} y2={126} stroke="currentColor" strokeOpacity={0.25} strokeDasharray="3 3" />
               )}
               <circle cx={pt.x} cy={pt.y} r={hoveredIndex === i ? 5.5 : 3.5} fill="#6366f1" stroke="#ffffff" strokeWidth={hoveredIndex === i ? 1.5 : 0} />
               <circle cx={tasksCurve.pts[i].x} cy={tasksCurve.pts[i].y} r={hoveredIndex === i ? 5.5 : 3.5} fill="#10b981" stroke="#ffffff" strokeWidth={hoveredIndex === i ? 1.5 : 0} />
-              <text x={pt.x} y={144} textAnchor="middle" fill={hoveredIndex === i ? '#ffffff' : '#9ca3af'} fontSize="10" fontWeight={hoveredIndex === i ? 700 : 400}>{pt.label}</text>
+              <text x={pt.x} y={144} textAnchor="middle" fill="currentColor" fillOpacity={hoveredIndex === i ? 1 : 0.6} fontSize="10" fontWeight={hoveredIndex === i ? 700 : 400}>{pt.label}</text>
             </g>
           ))}
           {hoveredIndex !== null && (() => {
@@ -109,8 +110,8 @@ export const AnalyticsVisuals: React.FC<{ data?: AnalyticsSummary }> = ({ data =
                   width="130"
                   height="42"
                   rx="6"
-                  fill="rgba(15, 23, 42, 0.95)"
-                  stroke="rgba(255, 255, 255, 0.18)"
+                  fill="#1f1e26"
+                  stroke="rgba(255, 255, 255, 0.2)"
                   strokeWidth="1"
                 />
                 <text x="0" y="-7" textAnchor="middle" fill="#c7d2fe" fontSize="10" fontWeight="600">
@@ -125,8 +126,9 @@ export const AnalyticsVisuals: React.FC<{ data?: AnalyticsSummary }> = ({ data =
         </svg>
       </div>
 
-      <div style={{ background: 'rgba(17, 24, 39, 0.75)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '1.25rem', color: '#f9fafb' }}>
-        <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: 600 }}>Knowledge Base Breakdown ({totalNotes})</h3>
+      {/* 2. Knowledge Base Breakdown */}
+      <div className="analytics-card">
+        <h3 style={{ marginBottom: '1rem' }}>Knowledge Base Breakdown ({totalNotes})</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
           {data.noteDistribution.map((item) => {
             const pct = Math.round((item.count / Math.max(totalNotes, 1)) * 100);
@@ -134,10 +136,10 @@ export const AnalyticsVisuals: React.FC<{ data?: AnalyticsSummary }> = ({ data =
               <div key={item.category}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
                   <span>{item.category}</span>
-                  <span style={{ color: '#9ca3af' }}>{item.count} ({pct}%)</span>
+                  <span className="analytics-card-subtitle">{item.count} ({pct}%)</span>
                 </div>
-                <div style={{ width: '100%', height: '7px', background: 'rgba(255,255,255,0.07)', borderRadius: '999px', overflow: 'hidden' }}>
-                  <div style={{ width: `${pct}%`, height: '100%', background: item.color, borderRadius: '999px' }} />
+                <div className="analytics-progress-track">
+                  <div style={{ width: `${pct}%`, height: '100%', background: item.color, borderRadius: '999px', transition: 'width 0.4s ease' }} />
                 </div>
               </div>
             );
@@ -145,13 +147,14 @@ export const AnalyticsVisuals: React.FC<{ data?: AnalyticsSummary }> = ({ data =
         </div>
       </div>
 
-      <div style={{ background: 'rgba(17, 24, 39, 0.75)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '14px', padding: '1.25rem', color: '#f9fafb' }}>
-        <h3 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: 600 }}>AI & Vault Pipeline Schema ({data.vaultEncryptedRatio}% Encrypted)</h3>
+      {/* 3. AI & Knowledge Engine Pipeline */}
+      <div className="analytics-card">
+        <h3 style={{ marginBottom: '1rem' }}>AI & Knowledge Engine Pipeline</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           {data.pipelineSteps.map((step, idx) => (
-            <div key={step.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0.75rem', borderRadius: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)' }}>
-              <span style={{ fontSize: '0.82rem' }}>{idx + 1}. {step.label}</span>
-              <span style={{ fontSize: '0.72rem', color: '#a5b4fc', textTransform: 'uppercase' }}>{step.status}</span>
+            <div key={step.id} className="pipeline-item">
+              <span>{idx + 1}. {step.label}</span>
+              <span className={`pipeline-status pipeline-status-${step.status}`}>{step.status}</span>
             </div>
           ))}
         </div>
