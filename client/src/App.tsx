@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom'
-import { Bot, Cpu, KeyRound, Mic, Moon, RefreshCw, Settings, Sun, User, Volume2, X } from 'lucide-react'
+import { Bot, Cpu, KeyRound, Mic, Moon, RefreshCw, Settings, Smartphone, Sun, User, Volume2, X } from 'lucide-react'
 import { api, type AiUsage, type SettingsResponse } from './services/api'
 import { chatModel, setChatModel } from './services/settings'
 import { robotAudio, loadVoiceSettings, saveVoiceSettings } from './services/robot-audio.service'
@@ -20,6 +20,7 @@ import { GraphView } from './components/GraphView'
 import { Toast } from './components/Toast'
 import { SpecializedNotePanel } from './components/SpecializedNotePanel'
 import { RobotCompanion } from './components/RobotCompanion/RobotCompanion'
+import { RemotePairingModal } from './components/RemotePairingModal'
 import type { CustomTemplate } from './services/templates'
 
 function MuseApp() {
@@ -35,6 +36,7 @@ function MuseApp() {
   const [specialized, setSpecialized] = useState(false)
   const [collections, setCollections] = useState(false)
   const [settings, setSettings] = useState(false)
+  const [remoteModalOpen, setRemoteModalOpen] = useState(false)
   const [toast, setToast] = useState('')
   const [models, setModels] = useState<string[]>([])
   const [apiKeyState, setApiKeyState] = useState<SettingsResponse | null>(null)
@@ -337,6 +339,7 @@ function MuseApp() {
     tasks={() => navigate('/tasks')}
     analytics={() => navigate('/analytics')}
     settings={() => setSettings(true)}
+    linkPhone={() => setRemoteModalOpen(true)}
     userEmail=""
     userName={userName || 'Local User'}
     emptyTrash={() => emptyTrash.mutate()}
@@ -751,6 +754,25 @@ function MuseApp() {
             </button>
           </div>
 
+          <div className="setting-row">
+            <span>
+              <Smartphone size={17}/>
+              <span>
+                <strong>Mobile Companion</strong>
+                <small>Pair your Android phone to access notes, tasks, and talk with Bip remotely.</small>
+              </span>
+            </span>
+            <button
+              className="setting-toggle"
+              onClick={() => {
+                setSettings(false)
+                setRemoteModalOpen(true)
+              }}
+            >
+              Pair Phone / Devices
+            </button>
+          </div>
+
           <button className="sign-out" onClick={() => {
             localStorage.removeItem('muse-user-name')
             setNamePrompt(true)
@@ -759,6 +781,7 @@ function MuseApp() {
         </section>
       </div>
     )}
+    <RemotePairingModal isOpen={remoteModalOpen} onClose={() => setRemoteModalOpen(false)}/>
     {showBip && (
       <RobotCompanion
         onCreateNote={input => create.mutate(input)}

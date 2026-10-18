@@ -380,7 +380,16 @@ export const api = {
       throw new Error(body.error || 'Audio transcription failed')
     }
     return response.json()
-  }
+  },
+
+  // Remote Mobile Companion
+  getNetworkInfo: () => request<NetworkInfo>('/remote/network-info'),
+  createPairingSession: (serverUrl?: string) =>
+    request<PairingSession>('/remote/pairing/create', { method: 'POST', body: JSON.stringify({ serverUrl }) }),
+  checkPairingStatus: (token: string) =>
+    request<{ claimed: boolean; device?: { name: string; model: string; platform: string } }>(`/remote/pairing/status?token=${encodeURIComponent(token)}`),
+  listRemoteDevices: () => request<RemoteDevice[]>('/remote/devices'),
+  revokeRemoteDevice: (id: string) => request<{ success: boolean }>(`/remote/devices/${id}`, { method: 'DELETE' })
 }
 
 export type SettingsResponse = {
@@ -409,3 +418,31 @@ export type ResearchDocument = { id: string; filename: string; mime: string; siz
 export type VaultStatus = { userId: string; email: string | null; configured: boolean; vaultCheck: string | null; encryptionVersion: number; migrationStatus: 'legacy' | 'copying' | 'verified' | 'failed'; migrationVerifiedAt: string | null; passkeyCount: number }
 export type Passkey = { id: string; name: string; device_type: string | null; backed_up: boolean; created_at: string; last_used_at: string | null; revoked_at: string | null }
 export type LegacyVaultExport = { notes: Note[]; documents: Record<string, unknown>[]; artifacts: Record<string, unknown>[]; reports: Record<string, unknown>[]; attachments: Record<string, unknown>[] }
+
+export type NetworkInfo = {
+  localIp: string
+  tailscaleIp: string | null
+  port: number
+  localUrl: string
+  tailscaleUrl: string | null
+  currentOriginUrl: string
+  hostname: string
+}
+
+export type PairingSession = {
+  token: string
+  pinCode: string
+  serverUrl: string
+  expiresAt: string
+  qrData: string
+}
+
+export type RemoteDevice = {
+  id: string
+  device_name: string
+  device_model?: string | null
+  platform: 'android' | 'ios'
+  last_seen_at: string
+  created_at: string
+}
+
