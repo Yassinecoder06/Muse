@@ -350,7 +350,28 @@ export const api = {
   listMemories: () => request<UserMemory[]>('/chat/memories'),
   createMemory: (data: { fact: string; category?: string }) =>
     request<UserMemory>('/chat/memories', { method: 'POST', body: JSON.stringify(data) }),
-  deleteMemory: (id: string) => request<void>(`/chat/memories/${id}`, { method: 'DELETE' })
+  deleteMemory: (id: string) => request<void>(`/chat/memories/${id}`, { method: 'DELETE' }),
+
+  // Voice Transcribe Fallback
+  transcribeAudio: async (audioBlob: Blob): Promise<{ text: string }> => {
+    const userName = localStorage.getItem('muse-user-name') || 'Local User'
+    const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
+    const response = await fetch(`${root}/voice/transcribe`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': audioBlob.type || 'audio/webm',
+        'X-Muse-User-Name': encodeURIComponent(userName),
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+      },
+      body: audioBlob
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.error || 'Audio transcription failed')
+    }
+    return response.json()
+  }
 }
 
 export type SettingsResponse = {

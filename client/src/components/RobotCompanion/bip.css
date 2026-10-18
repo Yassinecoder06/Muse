@@ -696,3 +696,118 @@
   0% { transform: translateY(0); opacity: 0.3; }
   100% { transform: translateY(-4px); opacity: 1; }
 }
+
+@keyframes bipPulseMic {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45); transform: scale(1); }
+  50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.15); transform: scale(1.08); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); transform: scale(1); }
+}
+
+@keyframes bipPulseSpeaker {
+  0% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.85; }
+}
+
+/* Audio & Voice UI in Bip */
+.bip-dialog-actions button.sound-active {
+  color: #7c5ce9;
+}
+
+[data-theme='dark'] .bip-dialog-actions button.sound-active {
+  color: #a78bfa;
+}
+
+.bip-message-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 5px;
+}
+
+.bip-read-aloud-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 12px;
+  border: 1px solid rgba(124, 92, 233, 0.22);
+  background: rgba(124, 92, 233, 0.06);
+  color: #7c5ce9;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bip-read-aloud-btn:hover {
+  background: rgba(124, 92, 233, 0.16);
+  border-color: rgba(124, 92, 233, 0.4);
+}
+
+.bip-read-aloud-btn.speaking {
+  background: #7c5ce9;
+  color: #ffffff;
+  border-color: #6d28d9;
+  animation: bipPulseSpeaker 1.2s infinite ease-in-out;
+}
+
+[data-theme='dark'] .bip-read-aloud-btn {
+  border-color: rgba(167, 139, 250, 0.25);
+  background: rgba(167, 139, 250, 0.1);
+  color: #c4b5fd;
+}
+
+[data-theme='dark'] .bip-read-aloud-btn:hover {
+  background: rgba(167, 139, 250, 0.2);
+}
+
+[data-theme='dark'] .bip-read-aloud-btn.speaking {
+  background: #8b5cf6;
+  color: #ffffff;
+}
+
+.bip-mic-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid #e2deea;
+  background: #f7f6fb;
+  color: #6c667d;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.bip-mic-btn:hover:not(:disabled) {
+  background: #edeaf5;
+  color: #7c5ce9;
+  border-color: #c9bcf0;
+}
+
+.bip-mic-btn.listening {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #dc2626;
+  animation: bipPulseMic 1.2s infinite ease-in-out;
+}
+
+[data-theme='dark'] .bip-mic-btn {
+  background: #2a253a;
+  border-color: #3e3654;
+  color: #b3a9c7;
+}
+
+[data-theme='dark'] .bip-mic-btn:hover:not(:disabled) {
+  background: #352f49;
+  color: #c4b5fd;
+  border-color: #554877;
+}
+
+[data-theme='dark'] .bip-mic-btn.listening {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #dc2626;
+}

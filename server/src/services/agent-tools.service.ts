@@ -232,9 +232,18 @@ export async function executeAgentTool(
   try {
     switch (name) {
       case 'create_note': {
-        const title = String(args.title || 'Untitled Note').trim()
+        let title = String(args.title || '').trim()
         const content = String(args.content || '')
         const tags = Array.isArray(args.tags) ? args.tags.map(String) : []
+
+        if (!title || title.toLowerCase() === 'untitled note' || title.toLowerCase() === 'untitled') {
+          const headerMatch = content.match(/^\s*#\s+([^\n#]+)/)
+          if (headerMatch) {
+            title = headerMatch[1].replace(/[*_`]/g, '').trim()
+          } else {
+            title = 'Untitled Note'
+          }
+        }
         const created = await notes.create(userId, { title, content, tags }, 'note')
         try {
           await vectors.upsertVector(created)

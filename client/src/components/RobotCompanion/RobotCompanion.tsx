@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Maximize2, RotateCcw, Sparkles, X } from 'lucide-react'
+import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Maximize2, Mic, MicOff, RotateCcw, Sparkles, Square, Volume2, VolumeX, X } from 'lucide-react'
 import { BipFigure, type BipMood } from './BipFigure'
 import { FormattedMessage } from '../FormattedMessage'
 import { ActionCards } from '../ActionCards'
 import { api } from '../../services/api'
 import { chatModel } from '../../services/settings'
+import { robotAudio, loadVoiceSettings, saveVoiceSettings } from '../../services/robot-audio.service'
+import { tts } from '../../services/tts.service'
+import { stt } from '../../services/stt.service'
 import type { ActionCard } from '../../types'
 import './bip.css'
 
@@ -51,6 +54,11 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
   const [messages, setMessages] = useState<Message[]>([DEFAULT_GREETING])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [isListening, setIsListening] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null)
+  const [soundEnabled, setSoundEnabled] = useState(() => loadVoiceSettings().soundEffectsEnabled)
+  const lastHoverSoundRef = useRef<number>(0)
   const [sessionId, setSessionId] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem('muse-bip-session-id')
@@ -179,6 +187,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return
+    robotAudio.play('whoosh')
     dragRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -224,6 +233,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     dragRef.current.pointerId = null
 
     if (moved) {
+      robotAudio.play('boop')
       setPos(current => {
         const clamped = clampPosition(current.x, current.y)
         try {
@@ -255,9 +265,78 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
 
   function handleFigureClick() {
     if (dragRef.current.hasMoved || isDragging) return
+    robotAudio.play(isOpen ? 'boop' : 'chirp')
     setIsOpen(prev => !prev)
     setMood(isOpen ? 'idle' : 'happy')
     setHint(null)
+  }
+
+  const handleToggleSound = () => {
+    const next = !soundEnabled
+    setSoundEnabled(next)
+    saveVoiceSettings({ soundEffectsEnabled: next })
+    if (next) {
+      robotAudio.play('blip')
+    }
+  }
+
+  const handleSpeakMessage = (index: number, text: string) => {
+    if (speakingIndex === index && isSpeaking) {
+      tts.stop()
+      setIsSpeaking(false)
+      setSpeakingIndex(null)
+      return
+    }
+
+    tts.stop()
+    setIsSpeaking(true)
+    setSpeakingIndex(index)
+    setMood('excited')
+
+    tts.speak(text, {
+      onStart: () => {
+        setIsSpeaking(true)
+        setSpeakingIndex(index)
+      },
+      onEnd: () => {
+        setIsSpeaking(false)
+        setSpeakingIndex(null)
+        setMood('idle')
+      },
+      onError: () => {
+        setIsSpeaking(false)
+        setSpeakingIndex(null)
+        setMood('idle')
+      }
+    })
+  }
+
+  const handleToggleMic = () => {
+    if (isListening) {
+      stt.stopListening()
+      setIsListening(false)
+      return
+    }
+
+    robotAudio.play('blip')
+    setIsListening(true)
+    stt.startListening({
+      onInterim: interim => {
+        setInput(interim)
+      },
+      onFinal: final => {
+        setInput(final)
+        setIsListening(false)
+      },
+      onStateChange: state => {
+        setIsListening(state === 'listening')
+      },
+      onError: err => {
+        setIsListening(false)
+        setHint(err)
+        window.setTimeout(() => setHint(null), 4000)
+      }
+    })
   }
 
   async function ensureSession(): Promise<string> {
@@ -277,10 +356,17 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     const query = (textToSend || input).trim()
     if (!query || loading) return
 
+    if (isListening) {
+      stt.stopListening()
+      setIsListening(false)
+    }
+
+    robotAudio.play('blip')
     setInput('')
     setMessages(prev => [...prev, { role: 'user', text: query }])
     setLoading(true)
     setMood('thinking')
+    robotAudio.startThinkingLoop()
 
     try {
       const activeId = await ensureSession()
@@ -289,18 +375,33 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
         model: chatModel() || undefined
       })
 
+      robotAudio.stopThinkingLoop()
       const hasActions = (res.assistantMessage.action_cards?.length || 0) > 0
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          text: res.assistantMessage.content,
-          action_cards: res.assistantMessage.action_cards
+      robotAudio.play(hasActions ? 'excited' : 'success')
+
+      const newMsg: Message = {
+        role: 'assistant',
+        text: res.assistantMessage.content,
+        action_cards: res.assistantMessage.action_cards
+      }
+
+      setMessages(prev => {
+        const nextList = [...prev, newMsg]
+        // Auto-read aloud if enabled in settings
+        const currentVoiceSettings = loadVoiceSettings()
+        if (currentVoiceSettings.autoReadAloud) {
+          setTimeout(() => {
+            handleSpeakMessage(nextList.length - 1, newMsg.text)
+          }, 200)
         }
-      ])
+        return nextList
+      })
+
       setMood(hasActions ? 'excited' : 'happy')
       window.setTimeout(() => setMood('idle'), 3500)
     } catch (err) {
+      robotAudio.stopThinkingLoop()
+      robotAudio.play('error')
       setMessages(prev => [
         ...prev,
         {
@@ -315,6 +416,10 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
   }
 
   const handleReset = () => {
+    robotAudio.play('boop')
+    tts.stop()
+    setIsSpeaking(false)
+    setSpeakingIndex(null)
     sessionStorage.removeItem('muse-bip-session-id')
     setSessionId(null)
     setMessages([DEFAULT_GREETING])
@@ -323,6 +428,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
   }
 
   function handleQuickAction(action: 'new-note' | 'tasks' | 'calendar' | 'idea') {
+    robotAudio.play('blip')
     if (action === 'new-note') {
       onCreateNote?.()
       setMood('excited')
@@ -371,6 +477,13 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
               <span>Bip · Little Helper</span>
             </div>
             <div className="bip-dialog-actions">
+              <button
+                title={soundEnabled ? 'Sound effects on (click to mute)' : 'Sound effects muted (click to enable)'}
+                onClick={handleToggleSound}
+                className={soundEnabled ? 'sound-active' : ''}
+              >
+                {soundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+              </button>
               <button
                 title="Expand to Full Assistant Workspace"
                 onClick={() => {
@@ -422,6 +535,19 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
                     onCreateNote={onCreateNote ? note => onCreateNote(note) : undefined}
                   />
                 </div>
+                {msg.role === 'assistant' && (
+                  <div className="bip-message-footer">
+                    <button
+                      type="button"
+                      className={`bip-read-aloud-btn ${speakingIndex === i ? 'speaking' : ''}`}
+                      onClick={() => handleSpeakMessage(i, msg.text)}
+                      title={speakingIndex === i ? 'Stop speaking' : 'Read aloud with English voice'}
+                    >
+                      {speakingIndex === i ? <Square size={11} fill="currentColor" /> : <Volume2 size={11} />}
+                      <span>{speakingIndex === i ? 'Stop' : 'Read'}</span>
+                    </button>
+                  </div>
+                )}
                 {msg.action_cards && msg.action_cards.length > 0 && (
                   <ActionCards
                     cards={msg.action_cards}
@@ -459,10 +585,19 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
               void handleSend()
             }}
           >
+            <button
+              type="button"
+              className={`bip-mic-btn ${isListening ? 'listening' : ''}`}
+              onClick={handleToggleMic}
+              disabled={loading}
+              title={isListening ? 'Listening… click to finish' : 'Dictate with your microphone (English)'}
+            >
+              {isListening ? <MicOff size={15} /> : <Mic size={15} />}
+            </button>
             <input
               className="bip-input"
               type="text"
-              placeholder="Ask me anything..."
+              placeholder={isListening ? 'Listening to your voice…' : 'Ask me anything…'}
               value={input}
               onChange={e => setInput(e.target.value)}
               disabled={loading}
@@ -486,12 +621,20 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
         eyeOffset={eyeOffset}
         isHovered={isHovered}
         isDragging={isDragging}
+        isSpeaking={isSpeaking}
         onClick={handleFigureClick}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
-        onMouseEnter={() => setIsHovered(true)}
+        onMouseEnter={() => {
+          setIsHovered(true)
+          const now = Date.now()
+          if (now - lastHoverSoundRef.current > 3000) {
+            lastHoverSoundRef.current = now
+            robotAudio.play('blip')
+          }
+        }}
         onMouseLeave={() => setIsHovered(false)}
         size={76}
       />

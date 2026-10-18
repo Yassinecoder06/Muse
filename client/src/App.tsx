@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom'
-import { Bot, Cpu, KeyRound, Moon, RefreshCw, Settings, Sun, User, X } from 'lucide-react'
+import { Bot, Cpu, KeyRound, Moon, RefreshCw, Settings, Sun, User, Volume2, X } from 'lucide-react'
 import { api, type AiUsage, type SettingsResponse } from './services/api'
 import { chatModel, setChatModel } from './services/settings'
+import { robotAudio, loadVoiceSettings, saveVoiceSettings } from './services/robot-audio.service'
+import { tts } from './services/tts.service'
 import type { Note, NoteInput, SpecializedCategory } from './types'
 import { Dashboard } from './pages/Dashboard'
 import { Editor } from './components/Editor'
@@ -48,6 +50,21 @@ function MuseApp() {
   const [namePrompt, setNamePrompt] = useState(() => !localStorage.getItem('muse-user-name'))
   const [nameInput, setNameInput] = useState('')
   const [aiWorking, setAiWorking] = useState('')
+  const [voiceSettings, setVoiceSettings] = useState(() => loadVoiceSettings())
+  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([])
+
+  useEffect(() => {
+    if (settings) {
+      setVoiceSettings(loadVoiceSettings())
+      const english = tts.getEnglishVoices()
+      setAvailableVoices(english.length > 0 ? english : tts.getVoices())
+    }
+  }, [settings])
+
+  const updateVoicePref = (updates: Partial<typeof voiceSettings>) => {
+    const next = saveVoiceSettings(updates)
+    setVoiceSettings(next)
+  }
 
   const notesQuery = useQuery({ queryKey: ['notes', scope], queryFn: () => api.listNotes(scope) })
   const allQuery = useQuery({ queryKey: ['notes', 'all'], queryFn: () => api.listNotes('all') })
@@ -521,6 +538,135 @@ function MuseApp() {
             <span><Bot size={17}/><span><strong>Bip the Robot Helper</strong><small>Cute companion that moves around and helps you.</small></span></span>
             <button className="setting-toggle" onClick={() => setShowBip(!showBip)}>{showBip ? 'Enabled' : 'Hidden'}</button>
           </div>
+
+          {/* Voice & Sound Settings */}
+          <div className="setting-section-header">
+            <span><Volume2 size={16}/> Voice & Sound</span>
+          </div>
+
+          <div className="setting-row">
+            <span>
+              <Volume2 size={17}/>
+              <span>
+                <strong>English Speech Voice</strong>
+                <small>Voice used for reading notes and Bip responses.</small>
+              </span>
+            </span>
+            <select
+              className="setting-select"
+              value={voiceSettings.voiceURI}
+              onChange={e => updateVoicePref({ voiceURI: e.target.value })}
+            >
+              <option value="">Default (Auto-select best English voice)</option>
+              {availableVoices.map(v => (
+                <option key={v.voiceURI} value={v.voiceURI}>
+                  {v.name} ({v.lang})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="setting-row">
+            <span>
+              <Cpu size={17}/>
+              <span>
+                <strong>Speech Speed ({voiceSettings.rate.toFixed(1)}x)</strong>
+                <small>Pace of voice read-aloud playback.</small>
+              </span>
+            </span>
+            <div className="setting-slider-wrap">
+              <input
+                type="range"
+                min="0.8"
+                max="1.4"
+                step="0.05"
+                value={voiceSettings.rate}
+                onChange={e => updateVoicePref({ rate: parseFloat(e.target.value) })}
+              />
+            </div>
+          </div>
+
+          <div className="setting-row">
+            <span>
+              <Volume2 size={17}/>
+              <span>
+                <strong>Auto-read Bip replies aloud</strong>
+                <small>Automatically speak Bip's answers when they arrive.</small>
+              </span>
+            </span>
+            <button
+              className="setting-toggle"
+              onClick={() => updateVoicePref({ autoReadAloud: !voiceSettings.autoReadAloud })}
+            >
+              {voiceSettings.autoReadAloud ? 'Enabled' : 'Off'}
+            </button>
+          </div>
+
+          <div className="setting-row">
+            <span>
+              <Bot size={17}/>
+              <span>
+                <strong>Bip Robotic Sound Effects</strong>
+                <small>Chirps, boops, thinking pulses, and drag reactions.</small>
+              </span>
+            </span>
+            <button
+              className="setting-toggle"
+              onClick={() => {
+                const next = !voiceSettings.soundEffectsEnabled
+                updateVoicePref({ soundEffectsEnabled: next })
+                if (next) robotAudio.play('chirp')
+              }}
+            >
+              {voiceSettings.soundEffectsEnabled ? 'Enabled' : 'Muted'}
+            </button>
+          </div>
+
+          {voiceSettings.soundEffectsEnabled && (
+            <div className="setting-row">
+              <span>
+                <Volume2 size={17}/>
+                <span>
+                  <strong>Sound Effects Volume ({Math.round(voiceSettings.soundEffectsVolume * 100)}%)</strong>
+                  <small>Loudness of Bip's interactive sounds.</small>
+                </span>
+              </span>
+              <div className="setting-slider-wrap">
+                <input
+                  type="range"
+                  min="0.1"
+                  max="1.0"
+                  step="0.05"
+                  value={voiceSettings.soundEffectsVolume}
+                  onChange={e => {
+                    const vol = parseFloat(e.target.value)
+                    updateVoicePref({ soundEffectsVolume: vol })
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="setting-actions-row">
+            <button
+              className="setting-test-btn"
+              onClick={() => {
+                robotAudio.play('chirp')
+                tts.speak("Hello! I'm Bip, your Muse AI assistant. Voice synthesis is ready!")
+              }}
+            >
+              <Volume2 size={14}/> Test Voice
+            </button>
+            <button
+              className="setting-test-btn"
+              onClick={() => {
+                robotAudio.play('excited')
+              }}
+            >
+              <Bot size={14}/> Test Robot Sound
+            </button>
+          </div>
+
           <button className="sign-out" onClick={() => {
             localStorage.removeItem('muse-user-name')
             setNamePrompt(true)
