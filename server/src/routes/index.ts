@@ -7,6 +7,7 @@ import * as vault from '../controllers/vault.controller.js'
 import * as calendar from '../controllers/calendar.controller.js'
 import * as tasks from '../controllers/tasks.controller.js'
 import * as detection from '../controllers/detection.controller.js'
+import * as chat from '../controllers/chat.controller.js'
 import { requireAuth } from '../middleware/auth.js'
 import { graph } from '../services/graph.service.js'
 
@@ -67,3 +68,16 @@ router.post('/ai/stream', ai.secureStream)
 router.post('/ai/jobs', ai.enqueue).get('/ai/jobs/:id', ai.getJob).get('/ai/jobs/:id/artifacts', ai.getArtifacts).get('/ai/active', ai.active).get('/models', ai.listModels).get('/ai/usage', ai.usage)
 router.post('/chat/note', ai.askNote).post('/chat/search', ai.askSearch)
 router.get('/settings', settings.getSettings).put('/settings', settings.saveApiKey).delete('/settings', settings.deleteApiKey)
+
+// Chat Sessions & Bip Agent
+router.get('/chat/sessions', chat.listSessions)
+router.post('/chat/sessions', chat.createSession)
+router.get('/chat/sessions/:id', chat.getSession)
+router.patch('/chat/sessions/:id', chat.updateSession)
+router.delete('/chat/sessions/:id', chat.deleteSession)
+router.post('/chat/sessions/:id/messages', chat.sendMessage)
+
+// Memories
+router.get('/chat/memories', chat.listMemories)
+router.post('/chat/memories', chat.createMemory)
+router.delete('/chat/memories/:id', chat.deleteMemory)

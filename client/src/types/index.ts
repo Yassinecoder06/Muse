@@ -13,3 +13,68 @@ export type DetectionResult = {
   events: { title: string; start_time: string; end_time?: string | null; all_day?: boolean; location?: string }[]
   tasks: { text: string; due_date?: string | null; priority?: string }[]
 }
+
+export interface NoteActionCard {
+  type: 'note'
+  id: string
+  title: string
+  contentSnippet: string
+  tags?: string[]
+}
+
+export interface TaskActionCard {
+  type: 'task'
+  id: string
+  text: string
+  completed: boolean
+  dueDate?: string | null
+  priority?: string
+}
+
+export interface EventActionCard {
+  type: 'event'
+  id: string
+  title: string
+  startTime: string
+  endTime?: string | null
+  location?: string
+}
+
+export interface MemoryActionCard {
+  type: 'memory'
+  id: string
+  fact: string
+  category: string
+}
+
+export type ActionCard = NoteActionCard | TaskActionCard | EventActionCard | MemoryActionCard
+
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  tool_calls?: any[]
+  tool_results?: any[]
+  action_cards?: ActionCard[]
+  created_at: string
+}
+
+export interface ChatSession {
+  id: string
+  user_id: string
+  title: string
+  context_type: string
+  context_id?: string | null
+  created_at: string
+  updated_at: string
+  messages?: ChatMessage[]
+}
+
+export interface UserMemory {
+  id: string
+  user_id: string
+  fact: string
+  category: string
+  created_at: string
+  updated_at: string
+}

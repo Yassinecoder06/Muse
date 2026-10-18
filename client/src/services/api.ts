@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { chatModel } from './settings'
-import type { AiJob, GraphData, Note, NoteInput, Task, CalendarEvent, DetectionResult } from '../types'
+import type { AiJob, GraphData, Note, NoteInput, Task, CalendarEvent, DetectionResult, ChatSession, ChatMessage, UserMemory } from '../types'
 import type { SpecializedCategory } from '../types'
 import { activeVaultUser, decryptNote, encryptNote, encryptRecord, newSecureNote } from './vault'
 import type { VaultRecord, SecureNote } from './vault'
@@ -329,7 +329,28 @@ export const api = {
   authenticationOptions: () => publicRequest<{ options: PublicKeyCredentialRequestOptionsJSON; challengeId: string }>('/auth/passkeys/authentication/options', { method: 'POST' }),
   verifyAuthentication: (challengeId: string, response: unknown) => publicRequest<{ authenticated: boolean; userId: string; email: string | null }>('/auth/passkeys/authentication/verify', { method: 'POST', body: JSON.stringify({ challengeId, response }) }),
   listPasskeys: () => request<Passkey[]>('/auth/passkeys'),
-  revokePasskey: (id: string) => request<void>(`/auth/passkeys/${id}`, { method: 'DELETE' })
+  revokePasskey: (id: string) => request<void>(`/auth/passkeys/${id}`, { method: 'DELETE' }),
+
+  // Chat Sessions & Bip Autonomous Agent
+  listChatSessions: () => request<ChatSession[]>('/chat/sessions'),
+  createChatSession: (data?: { title?: string; context_type?: string; context_id?: string | null }) =>
+    request<ChatSession>('/chat/sessions', { method: 'POST', body: JSON.stringify(data || {}) }),
+  getChatSession: (id: string) => request<ChatSession & { messages: ChatMessage[] }>(`/chat/sessions/${id}`),
+  updateChatSession: (id: string, data: { title: string }) =>
+    request<ChatSession>(`/chat/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteChatSession: (id: string) => request<void>(`/chat/sessions/${id}`, { method: 'DELETE' }),
+  sendChatMessage: (sessionId: string, data: { message: string; model?: string }) =>
+    request<{
+      userMessage: ChatMessage
+      assistantMessage: ChatMessage
+      sessionTitle?: string
+    }>(`/chat/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // User Memories
+  listMemories: () => request<UserMemory[]>('/chat/memories'),
+  createMemory: (data: { fact: string; category?: string }) =>
+    request<UserMemory>('/chat/memories', { method: 'POST', body: JSON.stringify(data) }),
+  deleteMemory: (id: string) => request<void>(`/chat/memories/${id}`, { method: 'DELETE' })
 }
 
 export type SettingsResponse = {

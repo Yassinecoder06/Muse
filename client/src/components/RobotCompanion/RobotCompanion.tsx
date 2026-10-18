@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, RotateCcw, Sparkles, X } from 'lucide-react'
+import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Maximize2, RotateCcw, Sparkles, X } from 'lucide-react'
 import { BipFigure, type BipMood } from './BipFigure'
 import { FormattedMessage } from '../FormattedMessage'
+import { ActionCards } from '../ActionCards'
 import { api } from '../../services/api'
+import { chatModel } from '../../services/settings'
+import type { ActionCard } from '../../types'
 import './bip.css'
 
 interface RobotCompanionProps {
@@ -15,11 +18,12 @@ interface Message {
   role: 'assistant' | 'user'
   text: string
   sources?: { id: string; title: string }[]
+  action_cards?: ActionCard[]
 }
 
 const DEFAULT_GREETING: Message = {
   role: 'assistant',
-  text: "Beep boop! 🤖 I'm Bip! What can I help you find or create today?"
+  text: "Beep boop! 🤖 I'm Bip, your autonomous helper! I can create notes, add tasks, schedule events, and remember facts — just ask!"
 }
 
 const BIP_WIDTH = 76
@@ -47,6 +51,13 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
   const [messages, setMessages] = useState<Message[]>([DEFAULT_GREETING])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem('muse-bip-session-id')
+    } catch {
+      return null
+    }
+  })
 
   // Position management with automatic boundary clamping
   const [pos, setPos] = useState(() => {
@@ -249,6 +260,19 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     setHint(null)
   }
 
+  async function ensureSession(): Promise<string> {
+    if (sessionId) return sessionId
+    const stored = sessionStorage.getItem('muse-bip-session-id')
+    if (stored) {
+      setSessionId(stored)
+      return stored
+    }
+    const created = await api.createChatSession({ title: 'Bip Helper' })
+    sessionStorage.setItem('muse-bip-session-id', created.id)
+    setSessionId(created.id)
+    return created.id
+  }
+
   async function handleSend(textToSend?: string) {
     const query = (textToSend || input).trim()
     if (!query || loading) return
@@ -259,43 +283,43 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     setMood('thinking')
 
     try {
-      const history = messages.slice(-5).map(({ role, text }) => ({ role, text }))
-      let job = await api.askNotes(query, history)
+      const activeId = await ensureSession()
+      const res = await api.sendChatMessage(activeId, {
+        message: query,
+        model: chatModel() || undefined
+      })
 
-      while (job.status === 'queued' || job.status === 'processing') {
-        await new Promise(r => setTimeout(r, 1200))
-        job = await api.getAiJob(job.id)
-      }
-
-      if (job.status === 'failed') {
-        throw new Error(job.error || 'Bip had trouble thinking of an answer.')
-      }
-
-      const result = job.result as { answer?: string; sources?: { id: string; title: string }[] } | null
-      const answerText = result?.answer || "Beep! I couldn't find an answer for that."
-
+      const hasActions = (res.assistantMessage.action_cards?.length || 0) > 0
       setMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          text: answerText,
-          sources: result?.sources
+          text: res.assistantMessage.content,
+          action_cards: res.assistantMessage.action_cards
         }
       ])
-      setMood('happy')
-      window.setTimeout(() => setMood('idle'), 3000)
+      setMood(hasActions ? 'excited' : 'happy')
+      window.setTimeout(() => setMood('idle'), 3500)
     } catch (err) {
       setMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          text: err instanceof Error ? `*Beep* ${err.message}` : "I couldn't reach the AI brain right now."
+          text: err instanceof Error ? `*Beep* ⚠️ ${err.message}` : "I couldn't reach the agent brain right now."
         }
       ])
       setMood('curious')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleReset = () => {
+    sessionStorage.removeItem('muse-bip-session-id')
+    setSessionId(null)
+    setMessages([DEFAULT_GREETING])
+    setMood('happy')
+    window.setTimeout(() => setMood('idle'), 1500)
   }
 
   function handleQuickAction(action: 'new-note' | 'tasks' | 'calendar' | 'idea') {
@@ -311,7 +335,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       onNavigate?.('/calendar')
       setMood('happy')
     } else if (action === 'idea') {
-      handleSend('Give me a creative prompt or thought spark to write about today!')
+      void handleSend('Give me a creative prompt or thought spark to write about today!')
     }
   }
 
@@ -348,8 +372,17 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
             </div>
             <div className="bip-dialog-actions">
               <button
+                title="Expand to Full Assistant Workspace"
+                onClick={() => {
+                  setIsOpen(false)
+                  onNavigate?.('/assistant')
+                }}
+              >
+                <Maximize2 size={13} />
+              </button>
+              <button
                 title="Reset conversation"
-                onClick={() => setMessages([DEFAULT_GREETING])}
+                onClick={handleReset}
               >
                 <RotateCcw size={13} />
               </button>
@@ -389,6 +422,13 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
                     onCreateNote={onCreateNote ? note => onCreateNote(note) : undefined}
                   />
                 </div>
+                {msg.action_cards && msg.action_cards.length > 0 && (
+                  <ActionCards
+                    cards={msg.action_cards}
+                    onNavigate={onNavigate}
+                    onOpenNote={id => onNavigate?.(`/note/${id}`)}
+                  />
+                )}
                 {msg.sources && msg.sources.length > 0 && (
                   <div className="bip-sources">
                     <span>Used: </span>
