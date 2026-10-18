@@ -23,7 +23,7 @@ export const GEMINI_FAST_MODEL = 'gemini-3.5-flash-lite'
 export const geminiModels = [...GEMINI_MODEL_HIERARCHY]
 
 export const LOCAL_MODEL = 'gemma4-ab-qat:e4b'
-export const curatedModels = ['beam:cloud', 'beam', 'gpt-oss:120b-cloud', 'nemotron-3-super:cloud', 'gemma4:31b-cloud']
+export const curatedModels = ['beam:cloud', 'gpt-oss:120b-cloud', 'nemotron-3-super:cloud', 'gemma4:31b-cloud']
 export const ALLOWED_MODELS = [...geminiModels, ...curatedModels]
 
 export function getCascadeCandidates(requestedModel?: string): string[] {
