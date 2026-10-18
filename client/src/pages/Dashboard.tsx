@@ -1,4 +1,4 @@
-import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, PanelLeftClose, Plus, RotateCcw, Search, Settings, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
+import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, Plus, RotateCcw, Search, Settings, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import type { Note } from '../types'
@@ -95,9 +95,6 @@ export function Dashboard({
       <aside className="sidebar">
         <div className="brand">
           <i><span/></i> Muse
-          <button className="sidebar-toggle" onClick={toggleSidebar} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-            {collapsed ? <PanelLeft size={18}/> : <PanelLeftClose size={18}/>}
-          </button>
         </div>
         <button className="new-note" onClick={create} title="New note (Ctrl+M / ⌘M)">
           <Plus size={17}/>New note <kbd>⌘ M</kbd>
