@@ -345,6 +345,9 @@ export const api = {
       assistantMessage: ChatMessage
       sessionTitle?: string
     }>(`/chat/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify(data) }),
+  updateChatMessage: (id: string, data: { content: string }) =>
+    request<ChatMessage>(`/chat/messages/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteChatMessage: (id: string) => request<void>(`/chat/messages/${id}`, { method: 'DELETE' }),
 
   // User Memories
   listMemories: () => request<UserMemory[]>('/chat/memories'),

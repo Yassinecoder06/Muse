@@ -20,7 +20,9 @@ import {
   Mic,
   MicOff,
   Volume2,
-  Square
+  Square,
+  Pencil,
+  RotateCcw
 } from 'lucide-react'
 import { api } from '../services/api'
 import { chatModel } from '../services/settings'
@@ -59,6 +61,9 @@ export function AssistantWorkspace({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('muse-assistant-sidebar') === 'collapsed')
   const [isListening, setIsListening] = useState(false)
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null)
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
 
   const handleToggleMic = () => {
     if (isListening) {
@@ -313,6 +318,46 @@ export function AssistantWorkspace({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       void handleSend()
+    }
+  }
+
+  const handleStartEdit = (msg: ChatMessage) => {
+    setEditingMessageId(msg.id)
+    setEditDraft(msg.content)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingMessageId(null)
+    setEditDraft('')
+  }
+
+  const handleSaveEdit = async (msg: ChatMessage, resend = false) => {
+    const newContent = editDraft.trim()
+    if (!newContent) return
+    setIsSavingEdit(true)
+    try {
+      const updated = await api.updateChatMessage(msg.id, { content: newContent })
+      setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, content: updated.content } : m))
+      setEditingMessageId(null)
+      setEditDraft('')
+      robotAudio.play('blip')
+      if (resend) {
+        void handleSend(newContent)
+      }
+    } catch (err) {
+      console.error('Failed to update message:', err)
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
+  const handleDeleteMessage = async (msgId: string) => {
+    try {
+      await api.deleteChatMessage(msgId)
+      setMessages(prev => prev.filter(m => m.id !== msgId))
+      robotAudio.play('boop')
+    } catch (err) {
+      console.error('Failed to delete message:', err)
     }
   }
 
@@ -604,43 +649,105 @@ export function AssistantWorkspace({
                   )}
 
                   <div className="assistant-bubble-content">
-                    <div className="assistant-message-bubble">
-                      <FormattedMessage
-                        text={msg.content}
-                        role={msg.role}
-                        onCreateNote={onCreateNote ? note => onCreateNote(note) : undefined}
-                      />
-                    </div>
+                    {editingMessageId === msg.id ? (
+                      <div className="assistant-message-edit-box">
+                        <textarea
+                          className="assistant-message-edit-input"
+                          value={editDraft}
+                          onChange={e => setEditDraft(e.target.value)}
+                          rows={Math.min(10, Math.max(3, editDraft.split('\n').length + 1))}
+                          autoFocus
+                          placeholder="Edit message..."
+                        />
+                        <div className="assistant-message-edit-actions">
+                          <button
+                            type="button"
+                            className="assistant-edit-cancel-btn"
+                            onClick={handleCancelEdit}
+                            disabled={isSavingEdit}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="assistant-edit-save-btn"
+                            onClick={() => handleSaveEdit(msg, false)}
+                            disabled={isSavingEdit || !editDraft.trim()}
+                          >
+                            {isSavingEdit ? 'Saving...' : 'Save'}
+                          </button>
+                          {msg.role === 'user' && (
+                            <button
+                              type="button"
+                              className="assistant-edit-resend-btn"
+                              onClick={() => handleSaveEdit(msg, true)}
+                              disabled={isSavingEdit || loading || !editDraft.trim()}
+                              title="Save changes and ask Bip to re-answer"
+                            >
+                              <RotateCcw size={12} />
+                              <span>Save & Resend</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="assistant-message-bubble">
+                          <FormattedMessage
+                            text={msg.content}
+                            role={msg.role}
+                            onCreateNote={onCreateNote ? note => onCreateNote(note) : undefined}
+                          />
+                        </div>
 
-                    {/* Interactive Action Cards */}
-                    {msg.action_cards && msg.action_cards.length > 0 && (
-                      <ActionCards
-                        cards={msg.action_cards}
-                        onNavigate={onNavigate}
-                        onOpenNote={id => (onNavigate ? onNavigate(`/note/${id}`) : undefined)}
-                      />
+                        {/* Interactive Action Cards */}
+                        {msg.action_cards && msg.action_cards.length > 0 && (
+                          <ActionCards
+                            cards={msg.action_cards}
+                            onNavigate={onNavigate}
+                            onOpenNote={id => (onNavigate ? onNavigate(`/note/${id}`) : undefined)}
+                          />
+                        )}
+
+                        <div className="assistant-bubble-meta">
+                          <span className="assistant-msg-time">
+                            <Clock size={10} />
+                            {new Date(msg.created_at).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                          <button
+                            type="button"
+                            className="assistant-msg-action-btn"
+                            onClick={() => handleStartEdit(msg)}
+                            title="Edit message"
+                          >
+                            <Pencil size={11} />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="assistant-msg-action-btn danger"
+                            onClick={() => handleDeleteMessage(msg.id)}
+                            title="Delete message"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                          {msg.role === 'assistant' && (
+                            <button
+                              type="button"
+                              className={`assistant-read-aloud-btn ${speakingMessageId === msg.id ? 'speaking' : ''}`}
+                              onClick={() => handleSpeakMessage(msg.id, msg.content)}
+                              title={speakingMessageId === msg.id ? 'Stop speaking' : 'Read aloud with English voice'}
+                            >
+                              {speakingMessageId === msg.id ? <Square size={11} fill="currentColor" /> : <Volume2 size={12} />}
+                              <span>{speakingMessageId === msg.id ? 'Stop' : 'Read aloud'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </>
                     )}
-
-                    <div className="assistant-bubble-meta">
-                      <span className="assistant-msg-time">
-                        <Clock size={10} />
-                        {new Date(msg.created_at).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
-                      {msg.role === 'assistant' && (
-                        <button
-                          type="button"
-                          className={`assistant-read-aloud-btn ${speakingMessageId === msg.id ? 'speaking' : ''}`}
-                          onClick={() => handleSpeakMessage(msg.id, msg.content)}
-                          title={speakingMessageId === msg.id ? 'Stop speaking' : 'Read aloud with English voice'}
-                        >
-                          {speakingMessageId === msg.id ? <Square size={11} fill="currentColor" /> : <Volume2 size={12} />}
-                          <span>{speakingMessageId === msg.id ? 'Stop' : 'Read aloud'}</span>
-                        </button>
-                      )}
-                    </div>
                   </div>
                 </div>
               ))}

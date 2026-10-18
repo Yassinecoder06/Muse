@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Maximize2, Mic, MicOff, RotateCcw, Sparkles, Square, Volume2, VolumeX, X } from 'lucide-react'
+import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Maximize2, Mic, MicOff, Pencil, RotateCcw, Sparkles, Square, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { BipFigure, type BipMood } from './BipFigure'
 import { FormattedMessage } from '../FormattedMessage'
 import { ActionCards } from '../ActionCards'
@@ -18,6 +18,7 @@ interface RobotCompanionProps {
 }
 
 interface Message {
+  id?: string
   role: 'assistant' | 'user'
   text: string
   sources?: { id: string; title: string }[]
@@ -57,6 +58,9 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
   const [isListening, setIsListening] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null)
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const [companionEditDraft, setCompanionEditDraft] = useState('')
+  const [isSavingCompanionEdit, setIsSavingCompanionEdit] = useState(false)
   const [soundEnabled, setSoundEnabled] = useState(() => loadVoiceSettings().soundEffectsEnabled)
   const lastHoverSoundRef = useRef<number>(0)
   const [sessionId, setSessionId] = useState<string | null>(() => {
@@ -368,7 +372,8 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
 
     robotAudio.play('blip')
     setInput('')
-    setMessages(prev => [...prev, { role: 'user', text: query }])
+    const tempId = `temp-${Date.now()}`
+    setMessages(prev => [...prev, { id: tempId, role: 'user', text: query }])
     setLoading(true)
     setMood('thinking')
     robotAudio.startThinkingLoop()
@@ -385,13 +390,15 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       robotAudio.play(hasActions ? 'excited' : 'success')
 
       const newMsg: Message = {
+        id: res.assistantMessage.id,
         role: 'assistant',
         text: res.assistantMessage.content,
         action_cards: res.assistantMessage.action_cards
       }
 
       setMessages(prev => {
-        const nextList = [...prev, newMsg]
+        const updated = prev.map(m => m.id === tempId ? { ...m, id: res.userMessage.id } : m)
+        const nextList = [...updated, newMsg]
         // Auto-read aloud if enabled in settings
         const currentVoiceSettings = loadVoiceSettings()
         if (currentVoiceSettings.autoReadAloud) {
@@ -420,6 +427,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       setMessages(prev => [
         ...prev,
         {
+          id: `err-${Date.now()}`,
           role: 'assistant',
           text: `*Beep* ⚠️ ${cleanMsg}`
         }
@@ -427,6 +435,52 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       setMood('curious')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleStartEdit = (index: number, currentText: string) => {
+    setEditingIndex(index)
+    setCompanionEditDraft(currentText)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingIndex(null)
+    setCompanionEditDraft('')
+  }
+
+  const handleSaveEdit = async (index: number, resend = false) => {
+    const newText = companionEditDraft.trim()
+    if (!newText) return
+    const targetMsg = messages[index]
+    setIsSavingCompanionEdit(true)
+    try {
+      if (targetMsg?.id && !targetMsg.id.startsWith('temp-') && !targetMsg.id.startsWith('err-')) {
+        await api.updateChatMessage(targetMsg.id, { content: newText })
+      }
+      setMessages(prev => prev.map((m, i) => i === index ? { ...m, text: newText } : m))
+      setEditingIndex(null)
+      setCompanionEditDraft('')
+      robotAudio.play('blip')
+      if (resend) {
+        void handleSend(newText)
+      }
+    } catch (err) {
+      console.error('Failed to update companion message:', err)
+    } finally {
+      setIsSavingCompanionEdit(false)
+    }
+  }
+
+  const handleDeleteMessage = async (index: number) => {
+    const targetMsg = messages[index]
+    try {
+      if (targetMsg?.id && !targetMsg.id.startsWith('temp-') && !targetMsg.id.startsWith('err-')) {
+        await api.deleteChatMessage(targetMsg.id)
+      }
+      setMessages(prev => prev.filter((_, i) => i !== index))
+      robotAudio.play('boop')
+    } catch (err) {
+      console.error('Failed to delete companion message:', err)
     }
   }
 
@@ -540,28 +594,92 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
           <div className="bip-messages">
             {messages.map((msg, i) => (
               <div
-                key={i}
+                key={msg.id || i}
                 className={`bip-message ${msg.role === 'user' ? 'bip-msg-user' : 'bip-msg-assistant'}`}
               >
-                <div className="bip-message-text">
-                  <FormattedMessage
-                    text={msg.text}
-                    role={msg.role}
-                    onCreateNote={onCreateNote ? note => onCreateNote(note) : undefined}
-                  />
-                </div>
-                {msg.role === 'assistant' && (
-                  <div className="bip-message-footer">
-                    <button
-                      type="button"
-                      className={`bip-read-aloud-btn ${speakingIndex === i ? 'speaking' : ''}`}
-                      onClick={() => handleSpeakMessage(i, msg.text)}
-                      title={speakingIndex === i ? 'Stop speaking' : 'Read aloud with English voice'}
-                    >
-                      {speakingIndex === i ? <Square size={11} fill="currentColor" /> : <Volume2 size={11} />}
-                      <span>{speakingIndex === i ? 'Stop' : 'Read'}</span>
-                    </button>
+                {editingIndex === i ? (
+                  <div className="bip-message-edit-box">
+                    <textarea
+                      className="bip-message-edit-input"
+                      value={companionEditDraft}
+                      onChange={e => setCompanionEditDraft(e.target.value)}
+                      rows={Math.min(8, Math.max(2, companionEditDraft.split('\n').length + 1))}
+                      autoFocus
+                      placeholder="Edit message..."
+                    />
+                    <div className="bip-message-edit-actions">
+                      <button
+                        type="button"
+                        className="bip-edit-cancel-btn"
+                        onClick={handleCancelEdit}
+                        disabled={isSavingCompanionEdit}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="bip-edit-save-btn"
+                        onClick={() => handleSaveEdit(i, false)}
+                        disabled={isSavingCompanionEdit || !companionEditDraft.trim()}
+                      >
+                        {isSavingCompanionEdit ? 'Saving...' : 'Save'}
+                      </button>
+                      {msg.role === 'user' && (
+                        <button
+                          type="button"
+                          className="bip-edit-resend-btn"
+                          onClick={() => handleSaveEdit(i, true)}
+                          disabled={isSavingCompanionEdit || loading || !companionEditDraft.trim()}
+                          title="Save changes and re-ask Bip"
+                        >
+                          <RotateCcw size={10} />
+                          <span>Save & Resend</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    <div className="bip-message-text">
+                      <FormattedMessage
+                        text={msg.text}
+                        role={msg.role}
+                        onCreateNote={onCreateNote ? note => onCreateNote(note) : undefined}
+                      />
+                    </div>
+                    <div className="bip-message-footer">
+                      <button
+                        type="button"
+                        className="bip-msg-action-btn"
+                        onClick={() => handleStartEdit(i, msg.text)}
+                        title="Edit message"
+                      >
+                        <Pencil size={10} />
+                        <span>Edit</span>
+                      </button>
+                      {msg.id && !msg.id.startsWith('err-') && (
+                        <button
+                          type="button"
+                          className="bip-msg-action-btn danger"
+                          onClick={() => handleDeleteMessage(i)}
+                          title="Delete message"
+                        >
+                          <Trash2 size={10} />
+                        </button>
+                      )}
+                      {msg.role === 'assistant' && (
+                        <button
+                          type="button"
+                          className={`bip-read-aloud-btn ${speakingIndex === i ? 'speaking' : ''}`}
+                          onClick={() => handleSpeakMessage(i, msg.text)}
+                          title={speakingIndex === i ? 'Stop speaking' : 'Read aloud with English voice'}
+                        >
+                          {speakingIndex === i ? <Square size={11} fill="currentColor" /> : <Volume2 size={11} />}
+                          <span>{speakingIndex === i ? 'Stop' : 'Read'}</span>
+                        </button>
+                      )}
+                    </div>
+                  </>
                 )}
                 {msg.action_cards && msg.action_cards.length > 0 && (
                   <ActionCards

@@ -811,3 +811,130 @@
   color: #ffffff;
   border-color: #dc2626;
 }
+
+/* Bip Companion Message Editing */
+.bip-msg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #8b839f;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bip-msg-action-btn:hover {
+  background: rgba(124, 92, 233, 0.1);
+  color: #7c5ce9;
+}
+
+.bip-msg-action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+[data-theme='dark'] .bip-msg-action-btn {
+  color: #a49cb8;
+}
+
+[data-theme='dark'] .bip-msg-action-btn:hover {
+  background: rgba(167, 139, 250, 0.15);
+  color: #c4b5fd;
+}
+
+[data-theme='dark'] .bip-msg-action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+.bip-message-edit-box {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #7c5ce9;
+  border-radius: 10px;
+}
+
+[data-theme='dark'] .bip-message-edit-box {
+  background: #241f33;
+  border-color: #a78bfa;
+}
+
+.bip-message-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #e2def0;
+  border-radius: 6px;
+  resize: vertical;
+  outline: none;
+}
+
+.bip-message-edit-input:focus {
+  border-color: #7c5ce9;
+}
+
+[data-theme='dark'] .bip-message-edit-input {
+  border-color: #3f3657;
+}
+
+.bip-message-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.bip-edit-cancel-btn {
+  padding: 3px 9px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid #dcd7ea;
+  background: transparent;
+  color: #6b6380;
+  cursor: pointer;
+}
+
+[data-theme='dark'] .bip-edit-cancel-btn {
+  border-color: #4b4266;
+  color: #aba2c2;
+}
+
+.bip-edit-save-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: none;
+  background: #7c5ce9;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.bip-edit-resend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #7c5ce9;
+  background: rgba(124, 92, 233, 0.08);
+  color: #7c5ce9;
+  cursor: pointer;
+}
+
