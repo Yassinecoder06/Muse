@@ -23,7 +23,7 @@ export const GEMINI_FAST_MODEL = 'gemini-3.5-flash-lite'
 export const geminiModels = [...GEMINI_MODEL_HIERARCHY]
 
 export const LOCAL_MODEL = 'gemma4-ab-qat:e4b'
-export const curatedModels = ['gpt-oss:120b-cloud', 'nemotron-3-super:cloud', 'gemma4:31b-cloud']
+export const curatedModels = ['beam:cloud', 'beam', 'gpt-oss:120b-cloud', 'nemotron-3-super:cloud', 'gemma4:31b-cloud']
 export const ALLOWED_MODELS = [...geminiModels, ...curatedModels]
 
 export function getCascadeCandidates(requestedModel?: string): string[] {
@@ -104,7 +104,7 @@ export function isGeminiKey(key: string | undefined): boolean {
 
 export function isCloudModel(name: string | undefined): boolean {
   if (!name) return false
-  return isGeminiModel(name) || curatedModels.includes(name) || name.endsWith('-cloud') || name.endsWith(':cloud')
+  return isGeminiModel(name) || curatedModels.includes(name) || name.endsWith('-cloud') || name.endsWith(':cloud') || name === 'beam'
 }
 
 type Message = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string }
