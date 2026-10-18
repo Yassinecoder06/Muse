@@ -168,6 +168,60 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
   }
 }
 
+const updateMessageSchema = z.object({
+  content: z.string().trim().min(1, 'Message cannot be empty')
+})
+
+export async function updateMessage(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params
+    const body = updateMessageSchema.parse(req.body)
+
+    const { data: existing, error: findErr } = await supabase
+      .from('chat_messages')
+      .select('id, user_id, session_id, role')
+      .eq('id', id)
+      .eq('user_id', req.userId!)
+      .single()
+
+    if (findErr || !existing) {
+      res.status(404).json({ error: 'Message not found' })
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .update({
+        content: body.content
+      })
+      .eq('id', id)
+      .eq('user_id', req.userId!)
+      .select()
+      .single()
+
+    if (error) throw error
+    res.json(data)
+  } catch (error) {
+    next(error)
+  }
+}
+
+export async function deleteMessage(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params
+    const { error } = await supabase
+      .from('chat_messages')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', req.userId!)
+
+    if (error) throw error
+    res.json({ success: true })
+  } catch (error) {
+    next(error)
+  }
+}
+
 export async function listMemories(req: Request, res: Response, next: NextFunction) {
   try {
     const { data, error } = await supabase

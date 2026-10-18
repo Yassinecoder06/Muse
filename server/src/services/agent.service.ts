@@ -82,7 +82,8 @@ ${memorySection}
    - Highlight the created items with clear bullet points.
    - Format cleanly in Markdown with bold titles and neat lists.
    - If the user asks a knowledge question or chats with you, answer directly and use the \`search_notes\` tool if their notes might hold relevant information.
-   - If the user shares an important lasting preference or fact about themselves, call \`save_memory\` so you remember it in future sessions.`
+   - If the user shares an important lasting preference or fact about themselves, call \`save_memory\` so you remember it in future sessions.
+   - In LaTeX math blocks ($...$ or $$...$$), always escape percent signs as \\% (e.g. \\mathbf{83.3\\%}) so braces are not commented out.`
 }
 
 // Convert declarations into GoogleGenAI tool format

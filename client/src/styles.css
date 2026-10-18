@@ -4358,4 +4358,186 @@
   border-color: #5d5377;
 }
 
+/* ==========================================================================
+   Message Editing & KaTeX Math Styling
+   ========================================================================== */
+
+/* KaTeX formula display improvements */
+.katex-display {
+  margin: 0.8em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+}
+
+.katex {
+  font-size: 1.08em;
+}
+
+/* Assistant Message Editing in AssistantWorkspace */
+.assistant-msg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground, #71717a);
+  cursor: pointer;
+  opacity: 0.75;
+  transition: all 0.15s ease;
+}
+
+.assistant-msg-action-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--foreground, #18181b);
+}
+
+.assistant-msg-action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+[data-theme=dark] .assistant-msg-action-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+}
+
+[data-theme=dark] .assistant-msg-action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+.assistant-message-edit-box {
+  width: 100%;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme=dark] .assistant-message-edit-box {
+  background: #1e1b29;
+  border-color: rgba(167, 139, 250, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.assistant-message-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border-color, #e4e4e7);
+  border-radius: 6px;
+  resize: vertical;
+  outline: none;
+}
+
+.assistant-message-edit-input:focus {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15);
+}
+
+[data-theme=dark] .assistant-message-edit-input {
+  border-color: #3b354d;
+}
+
+[data-theme=dark] .assistant-message-edit-input:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.25);
+}
+
+.assistant-message-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.assistant-edit-cancel-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #d4d4d8);
+  background: transparent;
+  color: var(--muted-foreground, #71717a);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.assistant-edit-cancel-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme=dark] .assistant-edit-cancel-btn {
+  border-color: #4c4463;
+  color: #a1a1aa;
+}
+
+.assistant-edit-save-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: none;
+  background: #7c3aed;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.assistant-edit-save-btn:hover:not(:disabled) {
+  background: #6d28d9;
+}
+
+.assistant-edit-resend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+  color: #7c3aed;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.assistant-edit-resend-btn:hover:not(:disabled) {
+  background: #7c3aed;
+  color: #ffffff;
+}
+
+[data-theme=dark] .assistant-edit-save-btn {
+  background: #8b5cf6;
+}
+
+[data-theme=dark] .assistant-edit-resend-btn {
+  border-color: #a78bfa;
+  background: rgba(167, 139, 250, 0.12);
+  color: #c4b5fd;
+}
+
+[data-theme=dark] .assistant-edit-resend-btn:hover:not(:disabled) {
+  background: #8b5cf6;
+  color: #ffffff;
+}
+
+
 

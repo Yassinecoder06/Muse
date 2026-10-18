@@ -77,6 +77,8 @@ router.get('/chat/sessions/:id', chat.getSession)
 router.patch('/chat/sessions/:id', chat.updateSession)
 router.delete('/chat/sessions/:id', chat.deleteSession)
 router.post('/chat/sessions/:id/messages', chat.sendMessage)
+router.patch('/chat/messages/:id', chat.updateMessage)
+router.delete('/chat/messages/:id', chat.deleteMessage)
 
 // Voice Transcribe Fallback
 router.post('/voice/transcribe', express.raw({ type: () => true, limit: '15mb' }), voice.transcribeAudio)
