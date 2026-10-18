@@ -46,6 +46,8 @@ function MuseApp() {
   const [ollamaKeyError, setOllamaKeyError] = useState('')
   const [usage, setUsage] = useState<AiUsage | null>(null)
   const [usageError, setUsageError] = useState('')
+  const [activeModel, setActiveModel] = useState<string>(() => chatModel())
+  const [usageProviderTab, setUsageProviderTab] = useState<'auto' | 'gemini' | 'ollama'>('auto')
   const [userName, setUserName] = useState(() => localStorage.getItem('muse-user-name') || '')
   const [namePrompt, setNamePrompt] = useState(() => !localStorage.getItem('muse-user-name'))
   const [nameInput, setNameInput] = useState('')
@@ -145,6 +147,7 @@ function MuseApp() {
     const current = chatModel()
     if (current && current.toLowerCase().includes('gemma') && !current.includes('cloud')) {
       setChatModel('')
+      setActiveModel('')
     }
   }, [])
 
@@ -159,6 +162,8 @@ function MuseApp() {
     if (!settings) return
     let cancelled = false
     setGeminiKeyError(''); setOllamaKeyError(''); setUsageError('')
+    const currentM = chatModel()
+    setActiveModel(currentM)
     void api.getSettings().then(state => {
       if (!cancelled) {
         setApiKeyState(state)
@@ -166,13 +171,24 @@ function MuseApp() {
         if (!state.hasOllamaKey) setOllamaKeyDraft('')
       }
     }).catch(() => { if (!cancelled) setApiKeyState(null) })
-    void api.getAiUsage().then(value => { if (!cancelled) setUsage(value) }).catch(error => { if (!cancelled) { setUsage(null); setUsageError(error instanceof Error ? error.message : 'Usage could not be loaded.') } })
+    void api.getAiUsage({
+      model: currentM || undefined,
+      provider: usageProviderTab === 'auto' ? undefined : usageProviderTab
+    }).then(value => { if (!cancelled) setUsage(value) }).catch(error => { if (!cancelled) { setUsage(null); setUsageError(error instanceof Error ? error.message : 'Usage could not be loaded.') } })
     return () => { cancelled = true }
-  }, [settings])
+  }, [settings, usageProviderTab])
 
-  async function refreshUsage() {
+  async function refreshUsage(customModel?: string, customProvider?: 'gemini' | 'ollama' | 'auto') {
     setUsageError('')
-    try { setUsage(await api.getAiUsage()) }
+    try {
+      const modelToUse = customModel !== undefined ? customModel : (activeModel || chatModel())
+      const providerTabToUse = customProvider !== undefined ? customProvider : usageProviderTab
+      const providerParam = providerTabToUse === 'auto' ? undefined : providerTabToUse
+      setUsage(await api.getAiUsage({
+        model: modelToUse || undefined,
+        provider: providerParam
+      }))
+    }
     catch (error) { setUsage(null); setUsageError(error instanceof Error ? error.message : 'Usage could not be loaded.') }
   }
 
@@ -484,8 +500,43 @@ function MuseApp() {
                     : (usage?.provider === 'ollama' ? 'Session and weekly limits from your plan.' : 'Usage statistics and limits.')}
                 </small>
               </span>
-              {usage?.configured ? <button onClick={() => void refreshUsage()}><RefreshCw size={14}/> Refresh</button> : null}
+              {usage?.configured ? <button onClick={() => void refreshUsage(activeModel, usageProviderTab)}><RefreshCw size={14}/> Refresh</button> : null}
             </header>
+            {apiKeyState?.hasGeminiKey && apiKeyState?.hasOllamaKey ? (
+              <div className="usage-provider-tabs">
+                <button
+                  type="button"
+                  className={`usage-provider-tab ${usageProviderTab === 'auto' ? 'active' : ''}`}
+                  onClick={() => {
+                    setUsageProviderTab('auto')
+                    void refreshUsage(activeModel, 'auto')
+                  }}
+                  title="Automatically show quota for active chat model"
+                >
+                  Auto ({activeModel ? (activeModel.startsWith('gemini') ? 'Gemini' : 'Ollama') : 'Gemini'})
+                </button>
+                <button
+                  type="button"
+                  className={`usage-provider-tab ${usageProviderTab === 'gemini' ? 'active' : ''}`}
+                  onClick={() => {
+                    setUsageProviderTab('gemini')
+                    void refreshUsage(activeModel, 'gemini')
+                  }}
+                >
+                  Gemini (1,500 RPD)
+                </button>
+                <button
+                  type="button"
+                  className={`usage-provider-tab ${usageProviderTab === 'ollama' ? 'active' : ''}`}
+                  onClick={() => {
+                    setUsageProviderTab('ollama')
+                    void refreshUsage(activeModel, 'ollama')
+                  }}
+                >
+                  Ollama Cloud
+                </button>
+              </div>
+            ) : null}
             {usage?.configured ? (
               <div className="usage-bars">
                 {usage.provider === 'gemini' ? (
@@ -520,7 +571,17 @@ function MuseApp() {
           </div>
           <div className="setting-row">
             <span><Cpu size={17}/><span><strong>Chat model</strong><small>AI model used for this app's requests.</small></span></span>
-            <select className="setting-select" value={chatModel()} onChange={e => { setChatModel(e.target.value); setToast(e.target.value ? `Chat model: ${e.target.value}` : 'Chat model: Default (Auto · Waterfall Cascade)') }}>
+            <select
+              className="setting-select"
+              value={activeModel}
+              onChange={e => {
+                const newModel = e.target.value
+                setChatModel(newModel)
+                setActiveModel(newModel)
+                setToast(newModel ? `Chat model: ${newModel}` : 'Chat model: Default (Auto · Waterfall Cascade)')
+                void refreshUsage(newModel, usageProviderTab)
+              }}
+            >
               {[{ value: '', label: 'Default (Auto · Waterfall Cascade)' }, ...(Array.isArray(models) ? models : [])
                 .filter(name => name !== 'beam' && !(name.toLowerCase().includes('gemma') && !name.includes('cloud')))
                 .map(name => {

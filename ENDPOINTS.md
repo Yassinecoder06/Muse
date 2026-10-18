@@ -451,7 +451,33 @@ All API endpoints are mounted under `/api` (e.g. `http://localhost:8080/api`).
   * Local Ollama models (`gemma4-ab-qat:e4b`).
 
 ### `GET /api/ai/usage`
-* **Description:** Returns real-time API quota counters, requests used today, and token usage limits.
+* **Description:** Returns real-time API quota counters, requests used today, and token usage limits. Dynamically routes to the active model or provider.
+* **Query Parameters:**
+  * `?model=<model_name>`: (Optional) Model name to inspect (e.g. `beam:cloud` for Ollama Cloud, or `gemini-3.7-flash` for Gemini).
+  * `?provider=gemini|ollama`: (Optional) Explicitly inspect quota for Google Gemini or Ollama Cloud.
+* **Response (Gemini):**
+```json
+{
+  "configured": true,
+  "provider": "gemini",
+  "plan": "Google AI Studio · Free Tier",
+  "dailyLimit": 1500,
+  "requestsToday": 42,
+  "totalTokens": 125000,
+  "session": { "usedPct": 2.8, "models": [{ "name": "gemini-3.7-flash", "requests": 42, "tokens": 125000 }] },
+  "weekly": { "usedPct": 12.5, "models": [] }
+}
+```
+* **Response (Ollama Cloud):**
+```json
+{
+  "configured": true,
+  "provider": "ollama",
+  "plan": "Ollama Cloud",
+  "session": { "usedPct": 15.0, "models": [{ "name": "beam:cloud", "requests": 8 }] },
+  "weekly": { "usedPct": 22.4, "models": [{ "name": "beam:cloud", "requests": 8 }] }
+}
+```
 
 ---
 
