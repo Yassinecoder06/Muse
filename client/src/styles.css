@@ -4553,6 +4553,32 @@
 }
 
 /* Remote Companion Pairing Modal */
+.remote-pairing-overlay,
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(14, 12, 20, 0.65);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: remoteFadeIn 0.15s ease-out;
+}
+
+@keyframes remoteFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .remote-modal-card {
   background: #ffffff;
   border-radius: 16px;

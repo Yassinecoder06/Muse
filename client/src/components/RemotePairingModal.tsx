@@ -116,7 +116,7 @@ export function RemotePairingModal({ isOpen, onClose }: RemotePairingModalProps)
   if (!isOpen) return null
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="remote-pairing-overlay modal-backdrop" onClick={onClose}>
       <div className="remote-modal-card" onClick={e => e.stopPropagation()}>
         <header className="remote-modal-header">
           <div className="remote-modal-title">
