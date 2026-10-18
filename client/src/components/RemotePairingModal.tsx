@@ -136,7 +136,7 @@ export function RemotePairingModal({ isOpen, onClose }: RemotePairingModalProps)
           <div className="remote-network-bar">
             <span className="remote-network-indicator">
               <Wifi size={15} />
-              <span>Network: <strong>Local Wi-Fi</strong> ({network?.localIp || '192.168.100.136'})</span>
+              <span>Network</span>
             </span>
             <div className="remote-url-controls">
               {isEditingUrl ? (
