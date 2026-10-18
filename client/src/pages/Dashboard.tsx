@@ -165,10 +165,6 @@ export function Dashboard({
               <span>A quiet space for your thoughts.</span>
             </div>
             <div className="hero-actions">
-              <button className="ask-muse" onClick={ask}><Bot size={17}/> AI Assistant</button>
-              <button className="calendar-muse" onClick={calendar}><Calendar size={17}/> Calendar</button>
-              <button className="tasks-muse" onClick={tasks}><CheckSquare size={17}/> Tasks</button>
-              <button className="analytics-muse" onClick={analytics}><BarChart3 size={17}/> Analytics</button>
               <button className="specialized-muse" onClick={specialized}><Layers3 size={17}/> Specialized</button>
               <button className="research-muse" onClick={research}><Globe size={17}/> Research</button>
             </div>
