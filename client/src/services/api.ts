@@ -6,7 +6,7 @@ import { activeVaultUser, decryptNote, encryptNote, encryptRecord, newSecureNote
 import type { VaultRecord, SecureNote } from './vault'
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
 
-const root = import.meta.env.VITE_API_URL || 'http://localhost:3002/api'
+const root = import.meta.env.VITE_API_URL || '/api'
 function apiOrigin() { return /^https?:\/\//.test(root) ? new URL(root).origin : window.location.origin }
 export function resolveApiImageSrc(src: string) { return src.startsWith('/api/images/') ? `${apiOrigin()}${src}` : src }
 export function relativizeApiImageSrc(src: string) {

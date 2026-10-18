@@ -115,12 +115,15 @@ export async function claimPairingSession(req: Request, res: Response, next: Nex
     const body = z.object({
       token: z.string().optional(),
       pinCode: z.string().optional(),
+      pin: z.string().optional(),
       deviceName: z.string().min(1).max(100),
       deviceModel: z.string().optional(),
       platform: z.enum(['android', 'ios']).default('android')
     }).parse(req.body)
 
-    if (!body.token && !body.pinCode) {
+    const effectivePin = body.pinCode || body.pin
+
+    if (!body.token && !effectivePin) {
       return res.status(400).json({ error: 'Either a pairing token or PIN code is required.' })
     }
 
@@ -132,8 +135,8 @@ export async function claimPairingSession(req: Request, res: Response, next: Nex
 
     if (body.token) {
       query = query.eq('token', body.token)
-    } else if (body.pinCode) {
-      query = query.eq('pin_code', body.pinCode)
+    } else if (effectivePin) {
+      query = query.eq('pin_code', effectivePin)
     }
 
     const { data: tokenRow, error: findError } = await query.maybeSingle()
