@@ -14,6 +14,7 @@ export function Dashboard({
   setQuery,
   create,
   open,
+  toggleFavorite,
   dark,
   toggleTheme,
   ask,
@@ -41,6 +42,7 @@ export function Dashboard({
   setQuery: (value: string) => void
   create: () => void
   open: (note: Note) => void
+  toggleFavorite?: (id: string, current: boolean) => void
   dark: boolean
   toggleTheme: () => void
   ask: () => void
@@ -102,14 +104,19 @@ export function Dashboard({
         <nav>
           {nav.map(item => {
             const Icon = item.icon
+            const isFav = item.id === 'favorites'
             return (
               <button
                 key={item.id}
                 title={item.name}
-                className={scope === item.id ? 'active' : ''}
+                className={`${scope === item.id ? 'active' : ''} ${isFav ? 'nav-item-favorites' : ''}`}
                 onClick={() => setScope(item.id)}
               >
-                <Icon size={17}/>
+                <Icon
+                  size={17}
+                  className={isFav ? 'fav-star-icon' : undefined}
+                  fill={isFav && scope === 'favorites' ? 'currentColor' : 'none'}
+                />
                 <span>{item.name}</span>
                 <em>{counts[item.id as keyof Counts]}</em>
               </button>
@@ -265,8 +272,23 @@ export function Dashboard({
                           </button>
                         </div>
                       ) : (
-                        <button onClick={event => { event.stopPropagation(); open(note) }}>
-                          <Star size={16} fill={note.favorite ? 'currentColor' : 'none'}/>
+                        <button
+                          className={`note-favorite-btn ${note.favorite ? 'is-favorite' : ''}`}
+                          title={note.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                          onClick={event => {
+                            event.stopPropagation()
+                            if (toggleFavorite) {
+                              toggleFavorite(note.id, note.favorite)
+                            } else {
+                              open(note)
+                            }
+                          }}
+                        >
+                          <Star
+                            size={16}
+                            className={`star-icon ${note.favorite ? 'fav-star-icon is-favorite' : ''}`}
+                            fill={note.favorite ? 'currentColor' : 'none'}
+                          />
                         </button>
                       )}
                     </div>
@@ -282,12 +304,12 @@ export function Dashboard({
               })}
             </div>
           ) : (
-            <div className="empty">
-              <div>
+            <div className={`empty ${scope === 'favorites' ? 'empty-favorites' : ''}`}>
+              <div className={scope === 'favorites' ? 'empty-icon-favorites' : undefined}>
                 {scope === 'trash' ? (
                   <Trash2 size={24}/>
                 ) : scope === 'favorites' ? (
-                  <Star size={24}/>
+                  <Star size={24} className="fav-star-icon is-favorite" fill="currentColor"/>
                 ) : scope === 'archive' ? (
                   <Archive size={24}/>
                 ) : (

@@ -25,16 +25,61 @@ interface ActionCardsProps {
   onNavigate?: (path: string) => void
 }
 
+function normalizeCard(raw: any): ActionCard {
+  const d = raw?.data || {}
+  const type = raw?.type || d?.type || 'note'
+
+  if (type === 'note' || type === 'note_updated') {
+    return {
+      type: 'note',
+      id: raw.id || d.id || '',
+      title: raw.title || d.title || 'Untitled Note',
+      contentSnippet: raw.contentSnippet || raw.snippet || d.contentSnippet || d.snippet || '',
+      tags: raw.tags || d.tags || []
+    }
+  }
+  if (type === 'task' || type === 'task_updated') {
+    return {
+      type: 'task',
+      id: raw.id || d.id || '',
+      text: raw.text || d.text || 'Untitled Task',
+      completed: typeof raw.completed === 'boolean' ? raw.completed : !!d.completed,
+      dueDate: raw.dueDate || raw.due_date || d.dueDate || d.due_date || null,
+      priority: raw.priority || d.priority
+    }
+  }
+  if (type === 'event') {
+    return {
+      type: 'event',
+      id: raw.id || d.id || '',
+      title: raw.title || d.title || 'Untitled Event',
+      startTime: raw.startTime || raw.start_time || d.startTime || d.start_time || '',
+      endTime: raw.endTime || raw.end_time || d.endTime || d.end_time || null,
+      location: raw.location || d.location || ''
+    }
+  }
+  if (type === 'memory') {
+    return {
+      type: 'memory',
+      id: raw.id || d.id || '',
+      fact: raw.fact || d.fact || '',
+      category: raw.category || d.category || 'general'
+    }
+  }
+  return raw
+}
+
 export function ActionCards({ cards, onOpenNote, onNavigate }: ActionCardsProps) {
   if (!cards || cards.length === 0) return null
 
   return (
     <div className="action-cards-container">
-      {cards.map((card, idx) => {
+      {cards.map((rawCard, idx) => {
+        const card = normalizeCard(rawCard)
         if (card.type === 'note') {
           return (
             <NoteCard
-              key={`note-${card.id}-${idx}`}
+              key={`note-${card.id || idx}-${idx}`}
               card={card}
               onOpenNote={onOpenNote}
               onNavigate={onNavigate}
@@ -42,13 +87,13 @@ export function ActionCards({ cards, onOpenNote, onNavigate }: ActionCardsProps)
           )
         }
         if (card.type === 'task') {
-          return <TaskCard key={`task-${card.id}-${idx}`} card={card} />
+          return <TaskCard key={`task-${card.id || idx}-${idx}`} card={card} />
         }
         if (card.type === 'event') {
-          return <EventCard key={`event-${card.id}-${idx}`} card={card} onNavigate={onNavigate} />
+          return <EventCard key={`event-${card.id || idx}-${idx}`} card={card} onNavigate={onNavigate} />
         }
         if (card.type === 'memory') {
-          return <MemoryCard key={`memory-${card.id}-${idx}`} card={card} />
+          return <MemoryCard key={`memory-${card.id || idx}-${idx}`} card={card} />
         }
         return null
       })}
@@ -65,7 +110,12 @@ function NoteCard({
   onOpenNote?: (id: string) => void
   onNavigate?: (path: string) => void
 }) {
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!card.id) {
+      console.warn('[ActionCards] NoteCard clicked with empty id:', card)
+      return
+    }
     if (onOpenNote) {
       onOpenNote(card.id)
     } else if (onNavigate) {

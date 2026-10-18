@@ -2862,10 +2862,22 @@
   flex-direction: column;
   flex-shrink: 0;
   height: 100vh;
+  transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.18s ease;
 }
 [data-theme=dark] .assistant-sidebar {
   background: #1e1d23;
   border-color: #2b2933;
+}
+.assistant-workspace-layout.sidebar-collapsed .assistant-sidebar {
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+  padding: 0;
+  margin: 0;
+  border-right: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 .assistant-sidebar-top {
   padding: 18px 16px 10px;
@@ -2877,6 +2889,23 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.assistant-collapse-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: #767382;
+  transition: .15s;
+}
+.assistant-collapse-btn:hover {
+  background: #e6e4ee;
+  color: #23212b;
+}
+[data-theme=dark] .assistant-collapse-btn:hover {
+  background: #2b2836;
+  color: #fff;
 }
 .assistant-brand-title {
   display: flex;
@@ -3152,6 +3181,26 @@
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.assistant-stage-toggle-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  color: #767382;
+  transition: .15s;
+}
+.assistant-stage-toggle-btn:hover {
+  background: #f0eff4;
+  color: #23212b;
+}
+[data-theme=dark] .assistant-stage-toggle-btn {
+  color: #a5a2b0;
+}
+[data-theme=dark] .assistant-stage-toggle-btn:hover {
+  background: #282633;
+  color: #fff;
 }
 .active-session-title {
   margin: 0;
@@ -3987,4 +4036,136 @@
   align-items: center;
   gap: 10px;
 }
+
+/* ==========================================================================
+   Gold Favorite Star Styling
+   ========================================================================== */
+
+.fav-star-icon {
+  color: #eab308;
+  transition: color 0.18s ease, fill 0.18s ease, transform 0.18s ease, filter 0.18s ease;
+}
+
+.fav-star-icon.is-favorite {
+  color: #f59e0b;
+  fill: #f59e0b;
+  filter: drop-shadow(0 1px 3px rgba(245, 158, 11, 0.4));
+}
+
+.note-favorite-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: #aaa8b1;
+  transition: all 0.18s ease;
+}
+
+.note-favorite-btn:hover {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  transform: scale(1.1);
+}
+
+.note-favorite-btn.is-favorite {
+  color: #f59e0b;
+}
+
+.note-favorite-btn.is-favorite:hover {
+  background: rgba(245, 158, 11, 0.18);
+  color: #d97706;
+  transform: scale(1.1);
+}
+
+.sidebar nav button.nav-item-favorites .fav-star-icon {
+  color: #eab308;
+}
+
+.sidebar nav button.nav-item-favorites:hover .fav-star-icon,
+.sidebar nav button.nav-item-favorites.active .fav-star-icon {
+  color: #f59e0b;
+  fill: #f59e0b;
+  filter: drop-shadow(0 1px 3px rgba(245, 158, 11, 0.4));
+}
+
+.header-icon.favorite-toggle-btn {
+  transition: all 0.18s ease;
+}
+
+.header-icon.favorite-toggle-btn:hover {
+  background: rgba(245, 158, 11, 0.12);
+  color: #eab308;
+}
+
+.header-icon.favorite-toggle-btn.is-favorite {
+  color: #f59e0b;
+}
+
+.header-icon.favorite-toggle-btn.is-favorite:hover {
+  background: rgba(245, 158, 11, 0.18);
+  color: #d97706;
+}
+
+.empty-icon-favorites {
+  background: #fef3c7 !important;
+  color: #d97706 !important;
+}
+
+/* Dark mode adjustments for gold star */
+[data-theme=dark] .fav-star-icon {
+  color: #fbbf24;
+}
+
+[data-theme=dark] .fav-star-icon.is-favorite {
+  color: #fbbf24;
+  fill: #fbbf24;
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.55));
+}
+
+[data-theme=dark] .note-favorite-btn:hover {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fcd34d;
+}
+
+[data-theme=dark] .note-favorite-btn.is-favorite {
+  color: #fbbf24;
+}
+
+[data-theme=dark] .note-favorite-btn.is-favorite:hover {
+  background: rgba(251, 191, 36, 0.24);
+  color: #fef08a;
+}
+
+[data-theme=dark] .sidebar nav button.nav-item-favorites .fav-star-icon {
+  color: #fbbf24;
+}
+
+[data-theme=dark] .sidebar nav button.nav-item-favorites:hover .fav-star-icon,
+[data-theme=dark] .sidebar nav button.nav-item-favorites.active .fav-star-icon {
+  color: #fbbf24;
+  fill: #fbbf24;
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.55));
+}
+
+[data-theme=dark] .header-icon.favorite-toggle-btn:hover {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fcd34d;
+}
+
+[data-theme=dark] .header-icon.favorite-toggle-btn.is-favorite {
+  color: #fbbf24;
+}
+
+[data-theme=dark] .header-icon.favorite-toggle-btn.is-favorite:hover {
+  background: rgba(251, 191, 36, 0.24);
+  color: #fef08a;
+}
+
+[data-theme=dark] .empty-icon-favorites {
+  background: #392b11 !important;
+  color: #fbbf24 !important;
+}
+
 

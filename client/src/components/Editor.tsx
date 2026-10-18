@@ -431,7 +431,17 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
     <header className="editor-header">
       <button className="back-button" onClick={() => void finishNote()}><ArrowLeft size={18}/> All notes</button>
       <div className="editor-status">{working ? <><i className="pulse"/> Muse is thinking</> : <><Check size={14}/> Saved</>}</div>
-      <button className="header-icon" title={note.favorite ? 'Remove from favorites' : 'Add to favorites'} onClick={() => void save({ favorite: !note.favorite })}><Star size={18} fill={note.favorite ? 'currentColor' : 'none'}/></button>
+      <button
+        className={`header-icon favorite-toggle-btn ${note.favorite ? 'is-favorite' : ''}`}
+        title={note.favorite ? 'Remove from favorites' : 'Add to favorites'}
+        onClick={() => void save({ favorite: !note.favorite })}
+      >
+        <Star
+          size={18}
+          className={`star-icon ${note.favorite ? 'fav-star-icon is-favorite' : ''}`}
+          fill={note.favorite ? 'currentColor' : 'none'}
+        />
+      </button>
       <div className="note-menu-wrap"><button className="header-icon" title="Note actions" onClick={() => setMenu(!menu)}><MoreHorizontal size={19}/></button>{menu && <div className="note-menu">{note.deleted_at ? <><button onClick={() => void manage(restore, 'Note restored.')}>Restore note</button><button className="danger" onClick={() => void manage(permanentlyDelete, 'Note permanently deleted.')}>Delete permanently</button></> : <><button onClick={() => void manage(async () => { await save({ archived: !note.archived }) }, note.archived ? 'Note unarchived.' : 'Note archived.')}>{note.archived ? 'Unarchive note' : 'Archive note'}</button><button className="danger" onClick={() => void manage(trash, 'Note moved to trash.')}>Move to trash</button></>}</div>}</div>
     </header>
     <div className={`editor-canvas${isResearch ? ' research-canvas' : ''}${isSpecialized ? ` specialized-canvas specialized-color-${specializedNote?.color || 'blue'}` : ''}`}>
