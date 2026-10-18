@@ -525,7 +525,8 @@ function MuseApp() {
                 .filter(name => !(name.toLowerCase().includes('gemma') && !name.includes('cloud')))
                 .map(name => {
                   let label = name
-                  if (name === 'gemini-3.8-flash') label = `${name} (Top Intelligence · 20 Req/Day Limit)`
+                  if (name === 'beam:cloud' || name === 'beam') label = 'beam:cloud (Reflection AI · 501B MoE · Cloud)'
+                  else if (name === 'gemini-3.8-flash') label = `${name} (Top Intelligence · 20 Req/Day Limit)`
                   else if (name === 'gemini-3.7-flash') label = `${name} (Advanced Reasoning)`
                   else if (name === 'gemini-3.6-flash') label = `${name} (High Capability)`
                   else if (name === 'gemini-3.5-flash') label = `${name} (Standard · High Quota)`

@@ -13,6 +13,7 @@ import {
   isRetryableGeminiError,
   formatFriendlyAgentQuotaError,
   isGeminiModel,
+  cloudModelName,
   OLLAMA_CLOUD_URL,
   OLLAMA_LOCAL_URL
 } from './ai.service.js'
@@ -313,6 +314,9 @@ export async function runAgentConversation({
         }
       }
 
+      const rawFallback = fallbackModel || (ollamaKey ? env.OLLAMA_CHAT_MODEL || 'beam:cloud' : 'gemma4-ab-qat:e4b')
+      const targetModel = ollamaKey ? cloudModelName(rawFallback) : rawFallback
+
       let turns = 0
       while (turns < 4) {
         turns++
@@ -320,7 +324,7 @@ export async function runAgentConversation({
           method: 'POST',
           headers,
           body: JSON.stringify({
-            model: fallbackModel || (ollamaKey ? env.OLLAMA_CHAT_MODEL || 'gemma4:31b-cloud' : 'gemma4-ab-qat:e4b'),
+            model: targetModel,
             stream: false,
             messages: ollamaMessages,
             tools: formatOllamaTools(),
