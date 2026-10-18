@@ -1,21 +1,59 @@
+import { GoogleGenAI } from '@google/genai'
 import { env } from '../utils/env.js'
+import { settings } from './settings.repository.js'
 
 export const OLLAMA_CLOUD_URL = 'https://ollama.com'
 export const OLLAMA_LOCAL_URL = (env.OLLAMA_EMBEDDING_BASE_URL || 'http://localhost:11434').replace(/\/$/, '')
-export const AI_KEY_REQUIRED = 'Add your Ollama API key in Settings to use AI features.'
+export const AI_KEY_REQUIRED = 'Add your Gemini API key (or Ollama API key) in Settings to use AI features.'
+
+export const GEMINI_CHAT_MODEL = 'gemini-3.8-flash'
+export const GEMINI_FAST_MODEL = 'gemini-3.5-flash-lite'
+export const GEMINI_RESEARCH_MODEL = 'gemini-3.1-pro-preview'
+export const geminiModels = [GEMINI_CHAT_MODEL, GEMINI_FAST_MODEL, GEMINI_RESEARCH_MODEL]
+
 export const LOCAL_MODEL = 'gemma4-ab-qat:e4b'
 export const curatedModels = ['gpt-oss:120b-cloud', 'nemotron-3-super:cloud', 'gemma4:31b-cloud']
-export const ALLOWED_MODELS = [LOCAL_MODEL, ...curatedModels]
+export const ALLOWED_MODELS = [...geminiModels, ...curatedModels]
+
 export const cloudModelName = (name: string) => name?.replace(/-cloud$/, '').replace(/:cloud$/, '') || name
+
+export function isGeminiModel(name: string | undefined): boolean {
+  if (!name) return false
+  return name.startsWith('gemini-') || geminiModels.includes(name)
+}
+
+export function isGeminiKey(key: string | undefined): boolean {
+  if (!key) return false
+  return key.startsWith('AIzaSy') || (key.length >= 35 && !key.includes(':') && !key.includes('/') && !key.includes(' '))
+}
 
 export function isCloudModel(name: string | undefined): boolean {
   if (!name) return false
-  return curatedModels.includes(name) || name.endsWith('-cloud') || name.endsWith(':cloud')
+  return isGeminiModel(name) || curatedModels.includes(name) || name.endsWith('-cloud') || name.endsWith(':cloud')
 }
 
 type Message = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string }
 export type ToolCall = { id: string; function: { name: string; arguments: string | object } }
 export type HistoryItem = { role: 'user' | 'assistant'; text: string }
+
+export type KeyContext = string | {
+  geminiKey?: string | null
+  ollamaKey?: string | null
+  userId?: string
+}
+
+export function extractKeys(keyContext?: KeyContext): { geminiKey?: string; ollamaKey?: string; userId?: string } {
+  if (!keyContext) return {}
+  if (typeof keyContext === 'string') {
+    if (isGeminiKey(keyContext)) return { geminiKey: keyContext }
+    return { ollamaKey: keyContext }
+  }
+  return {
+    geminiKey: keyContext.geminiKey || undefined,
+    ollamaKey: keyContext.ollamaKey || undefined,
+    userId: keyContext.userId
+  }
+}
 
 export async function getDefaultLocalModel(): Promise<string> {
   return LOCAL_MODEL
@@ -36,7 +74,7 @@ export async function resolveModelAndEndpoint(
 
   if (isCloudModel(selected)) {
     if (!apiKey) {
-      throw new Error('Add your Ollama API key in Settings to use cloud AI models.')
+      throw new Error('Add your API key in Settings to use cloud AI models.')
     }
     return {
       modelName: cloudModelName(selected),
@@ -67,7 +105,7 @@ async function queryOllama(path: string, body: unknown, apiKey?: string, method 
       headers,
       body: method === 'GET' ? undefined : JSON.stringify(body)
     })
-  } catch (err) {
+  } catch {
     if (!isCloud) {
       throw new Error(`Muse could not reach local Ollama at ${baseUrl}. Ensure Ollama is running.`)
     }
@@ -92,8 +130,87 @@ async function queryOllama(path: string, body: unknown, apiKey?: string, method 
   return response.json() as Promise<any>
 }
 
-async function chat(messages: Message[], model: string | undefined, apiKey: string | undefined) {
-  const { modelName, isCloud, apiKey: resolvedKey } = await resolveModelAndEndpoint(model, apiKey)
+async function callGemini(
+  model: string,
+  messages: Message[],
+  apiKey: string,
+  userId?: string,
+  taskType = 'general'
+): Promise<string> {
+  const client = new GoogleGenAI({ apiKey })
+
+  const systemMsg = messages.find(m => m.role === 'system')?.content
+  const nonSystem = messages.filter(m => m.role !== 'system')
+
+  const contents = nonSystem.length > 0
+    ? nonSystem.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      }))
+    : [{ role: 'user', parts: [{ text: '' }] }]
+
+  const response = await client.models.generateContent({
+    model,
+    contents,
+    config: systemMsg ? { systemInstruction: systemMsg } : undefined
+  })
+
+  const usage = response.usageMetadata
+  if (userId && usage) {
+    void settings.logAiUsage({
+      userId,
+      provider: 'gemini',
+      model,
+      taskType,
+      promptTokens: usage.promptTokenCount || 0,
+      candidateTokens: usage.candidatesTokenCount || 0,
+      totalTokens: usage.totalTokenCount || 0
+    })
+  }
+
+  return String(response.text || '').trim()
+}
+
+export type TaskType = 'lightweight' | 'chat' | 'rewrite' | 'report' | 'general'
+
+export function getAutoRoutedGeminiModel(taskType: TaskType, requestedModel?: string): string {
+  if (requestedModel && isGeminiModel(requestedModel)) {
+    return requestedModel
+  }
+  switch (taskType) {
+    case 'lightweight':
+      return GEMINI_FAST_MODEL // gemini-3.5-flash-lite: highest RPM/RPD on free tier
+    case 'report':
+      return GEMINI_CHAT_MODEL // gemini-3.8-flash: intelligent and balanced
+    case 'chat':
+    case 'rewrite':
+    default:
+      return GEMINI_CHAT_MODEL // gemini-3.8-flash: premier conversational model
+  }
+}
+
+async function chat(
+  messages: Message[],
+  model: string | undefined,
+  keyContext: KeyContext | undefined,
+  taskType: TaskType = 'general'
+): Promise<string> {
+  const { geminiKey, ollamaKey, userId } = extractKeys(keyContext)
+
+  // 1. Try Gemini first if key is present (Gemini Priority)
+  if (geminiKey) {
+    const targetGeminiModel = getAutoRoutedGeminiModel(taskType, model)
+    try {
+      return await callGemini(targetGeminiModel, messages, geminiKey, userId, taskType)
+    } catch (err: any) {
+      console.warn(`[AI Engine] Gemini API (${targetGeminiModel}) call failed, falling back to Ollama:`, err?.message || err)
+      // Fallback below
+    }
+  }
+
+  // 2. Fallback to Ollama (cloud or local)
+  const fallbackModel = isGeminiModel(model) ? undefined : model
+  const { modelName, isCloud, apiKey: resolvedOllamaKey } = await resolveModelAndEndpoint(fallbackModel, ollamaKey)
 
   const data = await queryOllama(
     '/api/chat',
@@ -103,18 +220,43 @@ async function chat(messages: Message[], model: string | undefined, apiKey: stri
       messages,
       options: { num_ctx: env.OLLAMA_NUM_CTX }
     },
-    isCloud ? resolvedKey : undefined
+    isCloud ? resolvedOllamaKey : undefined
   )
   return String(data.message?.content || '').trim()
 }
 
-export async function complete(system: string, prompt: string, model?: string, apiKey?: string) {
-  return chat([{ role: 'system', content: system }, { role: 'user', content: prompt }], model, apiKey)
+export async function complete(
+  system: string,
+  prompt: string,
+  model?: string,
+  keyContext?: KeyContext,
+  taskType: TaskType = 'general'
+): Promise<string> {
+  return chat([{ role: 'system', content: system }, { role: 'user', content: prompt }], model, keyContext, taskType)
 }
 
 type ToolMessage = { content: string; tool_calls?: ToolCall[] }
-export async function chatWithTools(messages: Message[], tools: unknown, model?: string, apiKey?: string): Promise<ToolMessage> {
-  const { modelName, isCloud, apiKey: resolvedKey } = await resolveModelAndEndpoint(model, apiKey)
+export async function chatWithTools(
+  messages: Message[],
+  tools: unknown,
+  model?: string,
+  keyContext?: KeyContext
+): Promise<ToolMessage> {
+  const { geminiKey, ollamaKey, userId } = extractKeys(keyContext)
+
+  // Try Gemini if configured
+  if (geminiKey) {
+    const targetModel = getAutoRoutedGeminiModel('chat', model)
+    try {
+      const content = await callGemini(targetModel, messages, geminiKey, userId, 'chat')
+      return { content }
+    } catch (err) {
+      console.warn('[AI Engine] Gemini chatWithTools fallback to Ollama:', err)
+    }
+  }
+
+  const fallbackModel = isGeminiModel(model) ? undefined : model
+  const { modelName, isCloud, apiKey: resolvedKey } = await resolveModelAndEndpoint(fallbackModel, ollamaKey)
 
   const data = await queryOllama(
     '/api/chat',
@@ -155,7 +297,28 @@ export async function listModels(): Promise<string[]> {
   return ALLOWED_MODELS
 }
 
+export async function validateGeminiApiKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const client = new GoogleGenAI({ apiKey })
+    await client.models.generateContent({
+      model: GEMINI_FAST_MODEL,
+      contents: 'ping'
+    })
+    return { valid: true }
+  } catch (err: any) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('401') || msg.includes('403')) {
+      return { valid: false, error: 'That Gemini API key was rejected by Google. Verify it at aistudio.google.com/apikey.' }
+    }
+    return { valid: false, error: msg || 'Could not validate Gemini API key.' }
+  }
+}
+
 export async function validateApiKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
+  if (isGeminiKey(apiKey)) {
+    return validateGeminiApiKey(apiKey)
+  }
+
   try {
     await queryOllama('/api/usage', undefined, apiKey, 'GET')
     return { valid: true }
@@ -223,11 +386,23 @@ export async function getEmbeddingModel(): Promise<string> {
 }
 
 export const ai = {
-  generateTitle: (content: string, model: string | undefined, apiKey?: string) => chat([{ role: 'system', content: 'Return only a short, meaningful note title. No punctuation around it.' }, { role: 'user', content }], model, apiKey),
-  async generateTags(content: string, model: string | undefined, apiKey?: string) { return jsonArray(await chat([{ role: 'system', content: 'Return exactly a JSON array of 3 to 6 concise lowercase topic tags. No explanation.' }, { role: 'user', content }], model, apiKey)) },
-  summarize: (content: string, model: string | undefined, apiKey?: string) => chat([{ role: 'system', content: 'Summarize the note concisely with Markdown headings: Summary, Key points, Important information, Action items.' }, { role: 'user', content }], model, apiKey),
-  async extractTasks(content: string, model: string | undefined, apiKey?: string) { return jsonArray(await chat([{ role: 'system', content: 'Extract actionable tasks. Return only a JSON string array. Each item must be a concise imperative task.' }, { role: 'user', content }], model, apiKey)) },
-  rewrite: (content: string, mode: string, model: string | undefined, apiKey?: string) => chat([{ role: 'system', content: `Rewrite the text in ${mode} mode. Return only the rewritten text. Preserve meaning. Images inside the note are marked as [IMAGE n], each standing exactly where an image belongs. Keep every [IMAGE n] token exactly where it is: never move, reorder, reword, translate, merge, or drop a marker, and never change its number. The number of markers in your output must equal the number in the input. Rewrite only the words around the markers.` }, { role: 'user', content }], model, apiKey),
+  generateTitle: (content: string, model: string | undefined, keyContext?: KeyContext) =>
+    chat([{ role: 'system', content: 'Return only a short, meaningful note title. No punctuation around it.' }, { role: 'user', content }], model, keyContext, 'lightweight'),
+  
+  async generateTags(content: string, model: string | undefined, keyContext?: KeyContext) {
+    return jsonArray(await chat([{ role: 'system', content: 'Return exactly a JSON array of 3 to 6 concise lowercase topic tags. No explanation.' }, { role: 'user', content }], model, keyContext, 'lightweight'))
+  },
+  
+  summarize: (content: string, model: string | undefined, keyContext?: KeyContext) =>
+    chat([{ role: 'system', content: 'Summarize the note concisely with Markdown headings: Summary, Key points, Important information, Action items.' }, { role: 'user', content }], model, keyContext, 'lightweight'),
+  
+  async extractTasks(content: string, model: string | undefined, keyContext?: KeyContext) {
+    return jsonArray(await chat([{ role: 'system', content: 'Extract actionable tasks. Return only a JSON string array. Each item must be a concise imperative task.' }, { role: 'user', content }], model, keyContext, 'lightweight'))
+  },
+  
+  rewrite: (content: string, mode: string, model: string | undefined, keyContext?: KeyContext) =>
+    chat([{ role: 'system', content: `Rewrite the text in ${mode} mode. Return only the rewritten text. Preserve meaning. Images inside the note are marked as [IMAGE n], each standing exactly where an image belongs. Keep every [IMAGE n] token exactly where it is: never move, reorder, reword, translate, merge, or drop a marker, and never change its number. The number of markers in your output must equal the number in the input. Rewrite only the words around the markers.` }, { role: 'user', content }], model, keyContext, 'rewrite'),
+  
   async generateEmbedding(content: string) {
     const model = await getEmbeddingModel()
     const data = await ollamaLocal('/api/embed', { model, input: content.slice(0, 8000) })
@@ -235,12 +410,16 @@ export const ai = {
     if (!Array.isArray(vector)) throw new Error('Ollama returned no embedding')
     return vector as number[]
   },
-  askCurrentNote: (question: string, note: string, history: HistoryItem[] = [], model?: string, apiKey?: string) => chat(conversation(
-    'You are a precise reading assistant. Answer the question using the supplied note as your primary source and reason about it before replying. Use the conversation history to follow up on earlier questions. If the note does not contain enough to answer, state exactly what is missing, then answer from general knowledge — clearly label what comes from the note versus what is inferred. Be direct and structured.',
-    `NOTE:\n${note}`, question, history), model, apiKey),
-  askMyNotes: (question: string, context: string, history: HistoryItem[] = [], model?: string, apiKey?: string) => chat(conversation(
-    'You are a research assistant. Use the retrieved notes below as the primary evidence and reason across them, using the conversation history to continue. Mention the titles of the notes you used. If the notes are insufficient or the question goes beyond them, say so, then fill gaps from general knowledge — always label what comes from your notes versus what is inferred or general. If no notes were retrieved, say so and answer from general knowledge. Be conversational, concise, and precise.',
-    `RETRIEVED NOTES:\n${context}`, question, history), model, apiKey)
+  
+  askCurrentNote: (question: string, note: string, history: HistoryItem[] = [], model?: string, keyContext?: KeyContext) =>
+    chat(conversation(
+      'You are a precise reading assistant. Answer the question using the supplied note as your primary source and reason about it before replying. Use the conversation history to follow up on earlier questions. If the note does not contain enough to answer, state what is missing in one brief sentence, then answer from general knowledge. Format your response cleanly using concise Markdown with clear section headers (###), bold key terms, and compact bullet lists.',
+      `NOTE:\n${note}`, question, history), model, keyContext, 'chat'),
+  
+  askMyNotes: (question: string, context: string, history: HistoryItem[] = [], model?: string, keyContext?: KeyContext) =>
+    chat(conversation(
+      'You are an intelligent, articulate research assistant. Use the retrieved notes below as primary evidence. If the retrieved notes are insufficient or do not contain information to answer the question, state that briefly in one friendly sentence (mentioning which notes were checked), then provide a well-structured, comprehensive answer from general knowledge. Format your response cleanly using modern Markdown: use clear section headers (###), compact bullet lists with bold label prefixes (e.g. * **Key:** Details), and highlight key facts. Keep it readable, elegant, and informative.',
+      `RETRIEVED NOTES:\n${context}`, question, history), model, keyContext, 'chat')
 }
 
 async function ollamaLocal(path: string, body: unknown) {

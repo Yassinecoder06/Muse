@@ -6,7 +6,7 @@ import { activeVaultUser, decryptNote, encryptNote, encryptRecord, newSecureNote
 import type { VaultRecord, SecureNote } from './vault'
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
 
-const root = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
+const root = import.meta.env.VITE_API_URL || 'http://localhost:3002/api'
 function apiOrigin() { return /^https?:\/\//.test(root) ? new URL(root).origin : window.location.origin }
 export function resolveApiImageSrc(src: string) { return src.startsWith('/api/images/') ? `${apiOrigin()}${src}` : src }
 export function relativizeApiImageSrc(src: string) {
@@ -226,9 +226,9 @@ export const api = {
   async uploadImage(file: File, noteId?: string) { if (activeVaultUser()) return secureUploadImage(file, noteId); const response = await fetch(`${root}/uploads${noteId ? `?noteId=${noteId}` : ''}`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file }); if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Image upload failed') } return response.json() as Promise<{ url: string }> },
   askNote: (noteId: string, question: string, history?: { role: 'user' | 'assistant'; text: string }[]) => request<AiJob>('/chat/note', { method: 'POST', body: JSON.stringify({ noteId, question, history, ...(chatModel() && { model: chatModel() }) }) }),
   askNotes: (question: string, history?: { role: 'user' | 'assistant'; text: string }[]) => request<AiJob>('/chat/search', { method: 'POST', body: JSON.stringify({ question, history, ...(chatModel() && { model: chatModel() }) }) }),
-  getSettings: () => request<{ hasApiKey: boolean }>('/settings'),
-  saveApiKey: (apiKey: string) => request<{ hasApiKey: boolean }>('/settings', { method: 'PUT', body: JSON.stringify({ apiKey }) }),
-  deleteApiKey: () => request<{ hasApiKey: boolean }>('/settings', { method: 'DELETE' }),
+  getSettings: () => request<SettingsResponse>('/settings'),
+  saveApiKey: (apiKey: string, provider?: 'gemini' | 'ollama') => request<SettingsResponse>('/settings', { method: 'PUT', body: JSON.stringify({ apiKey, provider }) }),
+  deleteApiKey: (provider?: 'gemini' | 'ollama') => request<SettingsResponse>(`/settings${provider ? `?provider=${provider}` : ''}`, { method: 'DELETE' }),
   getAiUsage: () => request<AiUsage>('/ai/usage'),
   getAiActive: () => request<{ running: boolean; type?: string }>('/ai/active'),
   getGraph: () => activeVaultUser() ? secureGraph() : request<GraphData>('/graph'),
@@ -332,7 +332,28 @@ export const api = {
   revokePasskey: (id: string) => request<void>(`/auth/passkeys/${id}`, { method: 'DELETE' })
 }
 
-export type AiUsage = { configured: boolean; plan?: string | null; session?: { usedPct: number; models: { name: string; requests: number }[] }; weekly?: { usedPct: number; models: { name: string; requests: number }[] } }
+export type SettingsResponse = {
+  hasApiKey: boolean
+  hasGeminiKey: boolean
+  hasOllamaKey: boolean
+  activeProvider?: 'gemini' | 'ollama' | 'local' | null
+}
+export type AiUsage = {
+  configured: boolean
+  provider?: 'gemini' | 'ollama'
+  plan?: string | null
+  dailyLimit?: number
+  requestsToday?: number
+  totalTokens?: number
+  session?: {
+    usedPct: number
+    models: { name: string; requests: number; tokens?: number }[]
+  }
+  weekly?: {
+    usedPct: number
+    models: { name: string; requests: number; tokens?: number }[]
+  }
+}
 export type ResearchDocument = { id: string; filename: string; mime: string; size: number; created_at: string }
 export type VaultStatus = { userId: string; email: string | null; configured: boolean; vaultCheck: string | null; encryptionVersion: number; migrationStatus: 'legacy' | 'copying' | 'verified' | 'failed'; migrationVerifiedAt: string | null; passkeyCount: number }
 export type Passkey = { id: string; name: string; device_type: string | null; backed_up: boolean; created_at: string; last_used_at: string | null; revoked_at: string | null }

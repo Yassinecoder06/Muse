@@ -82,7 +82,7 @@ function reportVisuals(ir: ReportIR) {
 }
 export type EngineProgress = (stage: string, label: string, artifact: string, stats?: { input: number; output: number; status: 'complete' | 'failed' | 'skipped'; error?: string }) => Promise<void>
 
-export async function generateReport(request: ReportRequest, documents: ResearchDocument[], model: string | undefined, apiKey: string | undefined, progress: EngineProgress) {
+export async function generateReport(request: ReportRequest, documents: ResearchDocument[], model: string | undefined, apiKey: any, progress: EngineProgress) {
   const reportType = request.reportType || 'research'; const preset = presets[reportType]; const selected = request.enabledSkills?.length ? preset.skills.filter(skill => request.enabledSkills!.includes(skill)) : preset.skills
   const executionOrder: SkillName[] = ['research', 'information_extraction', 'data_analysis', 'financial_analysis', 'critical_reasoning', 'recommendation', 'visualization', 'report_structure', 'citation_management', 'professional_writing', 'quality_control']
   const enabled = executionOrder.filter(skill => selected.includes(skill))

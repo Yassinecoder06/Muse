@@ -10,6 +10,7 @@
     "test": "tsx --test src/services/vault-security.test.ts src/services/reporting/analytics.test.ts src/services/calendar-tasks.test.ts"
   },
   "dependencies": {
+    "@google/genai": "^2.30.0",
     "@qdrant/js-client-rest": "^1.13.0",
     "@simplewebauthn/server": "^13.3.2",
     "@supabase/supabase-js": "^2.49.1",

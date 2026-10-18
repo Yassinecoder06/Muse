@@ -56,7 +56,8 @@ export async function detectFromNote(req: Request, res: Response, next: NextFunc
 
     // 1. Always attempt AI extraction (works with local Ollama or cloud key)
     const model = typeof req.body.model === 'string' ? req.body.model : undefined
-    const apiKey = await settings.getKey(req.userId!).catch(() => null)
+    const { geminiKey, ollamaKey } = await settings.getEffectiveAiKeys(req.userId!)
+    const keyContext = { geminiKey, ollamaKey, userId: req.userId! }
     let aiSucceeded = false
 
     try {
@@ -97,7 +98,8 @@ Reply strictly with valid JSON:
         'You are an executive assistant extracting calendar events and tasks from personal notes. Reply only with valid JSON.',
         prompt,
         model,
-        apiKey || undefined
+        keyContext,
+        'lightweight'
       )
 
       // Clean markdown code blocks and reasoning tags

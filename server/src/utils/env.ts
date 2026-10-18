@@ -15,7 +15,7 @@ const schema = z.object({
   OLLAMA_NUM_CTX: z.coerce.number().int().min(2048).max(131072).default(32768),
   RAG_TOP_K: z.coerce.number().int().min(1).max(50).default(10),
   PUBLIC_URL: z.string().url().default('http://localhost:8080'),
-  PORT: z.coerce.number().default(3001),
+  PORT: z.coerce.number().default(3002),
   // DATA_ENCRYPTION_KEY remains required while legacy rows are available for
   // migration. New secure-vault records never use it.
   DATA_ENCRYPTION_KEY: z.string().regex(/^[0-9a-f]{64}$/i, 'DATA_ENCRYPTION_KEY must be 64 hex chars (32 random bytes)'),

@@ -24,7 +24,7 @@ const imageTypes = new Map([
 ])
 const mimeByExtension = new Map([['.jpg', 'image/jpeg'], ['.png', 'image/png'], ['.gif', 'image/gif'], ['.webp', 'image/webp'], ['.avif', 'image/avif']])
 await mkdir(uploadsDirectory, { recursive: true })
-const allowedOrigins = [...new Set([...webauthn.origins, ...(process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5173', 'http://127.0.0.1:5173'])])]
+const allowedOrigins = [...new Set([...webauthn.origins, ...(process.env.NODE_ENV === 'production' ? [] : ['http://localhost:5174', 'http://127.0.0.1:5174'])])]
 // Encrypted attachments are base64 wrapped before they reach the vault. Keep
 // this below a deliberately bounded limit, but high enough for the existing
 // 5 MB attachment ceiling during the additive legacy migration.

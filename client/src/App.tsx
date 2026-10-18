@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom'
-import { Cpu, KeyRound, Moon, RefreshCw, Settings, Sun, User, X } from 'lucide-react'
-import { api, type AiUsage } from './services/api'
+import { Bot, Cpu, KeyRound, Moon, RefreshCw, Settings, Sun, User, X } from 'lucide-react'
+import { api, type AiUsage, type SettingsResponse } from './services/api'
 import { chatModel, setChatModel } from './services/settings'
 import type { Note, NoteInput, SpecializedCategory } from './types'
 import { Dashboard } from './pages/Dashboard'
@@ -16,6 +16,7 @@ import { ResearchPanel } from './components/ResearchPanel'
 import { GraphView } from './components/GraphView'
 import { Toast } from './components/Toast'
 import { SpecializedNotePanel } from './components/SpecializedNotePanel'
+import { RobotCompanion } from './components/RobotCompanion/RobotCompanion'
 import type { CustomTemplate } from './services/templates'
 
 function MuseApp() {
@@ -23,6 +24,7 @@ function MuseApp() {
   const queryClient = useQueryClient()
   const [scope, setScope] = useState('all')
   const [query, setQuery] = useState('')
+  const [showBip, setShowBip] = useState(() => localStorage.getItem('muse-show-bip') !== 'false')
   const [dark, setDark] = useState(localStorage.getItem('muse-theme') === 'dark')
   const [command, setCommand] = useState(false)
   const [ask, setAsk] = useState(false)
@@ -32,10 +34,13 @@ function MuseApp() {
   const [settings, setSettings] = useState(false)
   const [toast, setToast] = useState('')
   const [models, setModels] = useState<string[]>([])
-  const [apiKeyState, setApiKeyState] = useState<{ hasApiKey: boolean } | null>(null)
-  const [apiKeyDraft, setApiKeyDraft] = useState('')
-  const [apiKeySaving, setApiKeySaving] = useState(false)
-  const [apiKeyError, setApiKeyError] = useState('')
+  const [apiKeyState, setApiKeyState] = useState<SettingsResponse | null>(null)
+  const [geminiKeyDraft, setGeminiKeyDraft] = useState('')
+  const [ollamaKeyDraft, setOllamaKeyDraft] = useState('')
+  const [geminiKeySaving, setGeminiKeySaving] = useState(false)
+  const [ollamaKeySaving, setOllamaKeySaving] = useState(false)
+  const [geminiKeyError, setGeminiKeyError] = useState('')
+  const [ollamaKeyError, setOllamaKeyError] = useState('')
   const [usage, setUsage] = useState<AiUsage | null>(null)
   const [usageError, setUsageError] = useState('')
   const [userName, setUserName] = useState(() => localStorage.getItem('muse-user-name') || '')
@@ -50,8 +55,13 @@ function MuseApp() {
   const trashQuery = useQuery({ queryKey: ['notes', 'trash'], queryFn: () => api.listNotes('trash') })
 
   const create = useMutation({
-    mutationFn: () => api.createNote({ title: '', content: '' }),
-    onSuccess: note => { queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate(`/note/${note.id}`) },
+    mutationFn: (input?: { title?: string; content?: string } | void) =>
+      api.createNote({ title: input?.title || '', content: input?.content || '' }),
+    onSuccess: note => {
+      setScope('all')
+      queryClient.invalidateQueries({ queryKey: ['notes'] })
+      navigate(`/note/${note.id}`)
+    },
     onError: () => setToast('Could not create a note. Is the API running?')
   })
 
@@ -65,7 +75,12 @@ function MuseApp() {
       } : { color: color || 'blue' }
       return api.createSpecializedNote(category, templatePayload)
     },
-    onSuccess: note => { setSpecialized(false); queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate(`/note/${note.id}`) },
+    onSuccess: note => {
+      setScope('all')
+      setSpecialized(false)
+      queryClient.invalidateQueries({ queryKey: ['notes'] })
+      navigate(`/note/${note.id}`)
+    },
     onError: error => setToast(error instanceof Error ? error.message : 'Could not create this specialized note.')
   })
 
@@ -99,6 +114,17 @@ function MuseApp() {
   }, [dark])
 
   useEffect(() => {
+    localStorage.setItem('muse-show-bip', showBip ? 'true' : 'false')
+  }, [showBip])
+
+  useEffect(() => {
+    const current = chatModel()
+    if (current && current.toLowerCase().includes('gemma') && !current.includes('cloud')) {
+      setChatModel('')
+    }
+  }, [])
+
+  useEffect(() => {
     if (!settings) return
     let cancelled = false
     void api.listModels().then(list => { if (!cancelled) setModels(Array.isArray(list) ? list : []) }).catch(() => { if (!cancelled) setModels([]) })
@@ -108,8 +134,14 @@ function MuseApp() {
   useEffect(() => {
     if (!settings) return
     let cancelled = false
-    setApiKeyError(''); setUsageError('')
-    void api.getSettings().then(state => { if (!cancelled) { setApiKeyState(state); if (!state.hasApiKey) setApiKeyDraft('') } }).catch(() => { if (!cancelled) setApiKeyState(null) })
+    setGeminiKeyError(''); setOllamaKeyError(''); setUsageError('')
+    void api.getSettings().then(state => {
+      if (!cancelled) {
+        setApiKeyState(state)
+        if (!state.hasGeminiKey) setGeminiKeyDraft('')
+        if (!state.hasOllamaKey) setOllamaKeyDraft('')
+      }
+    }).catch(() => { if (!cancelled) setApiKeyState(null) })
     void api.getAiUsage().then(value => { if (!cancelled) setUsage(value) }).catch(error => { if (!cancelled) { setUsage(null); setUsageError(error instanceof Error ? error.message : 'Usage could not be loaded.') } })
     return () => { cancelled = true }
   }, [settings])
@@ -120,18 +152,62 @@ function MuseApp() {
     catch (error) { setUsage(null); setUsageError(error instanceof Error ? error.message : 'Usage could not be loaded.') }
   }
 
-  async function saveKey() {
-    setApiKeySaving(true); setApiKeyError('')
-    try { setApiKeyState(await api.saveApiKey(apiKeyDraft.trim())); setApiKeyDraft(''); setToast('Ollama API key saved.') }
-    catch (error) { setApiKeyError(error instanceof Error ? error.message : 'Could not save the API key.') }
-    finally { setApiKeySaving(false) }
+  async function saveGeminiKey() {
+    setGeminiKeySaving(true); setGeminiKeyError('')
+    try {
+      const state = await api.saveApiKey(geminiKeyDraft.trim(), 'gemini')
+      setApiKeyState(state)
+      setGeminiKeyDraft('')
+      setToast('Google Gemini API key saved! Auto-routing is active.')
+      void refreshUsage()
+    } catch (error) {
+      setGeminiKeyError(error instanceof Error ? error.message : 'Could not save Gemini key.')
+    } finally {
+      setGeminiKeySaving(false)
+    }
   }
 
-  async function removeKey() {
-    setApiKeySaving(true); setApiKeyError('')
-    try { setApiKeyState(await api.deleteApiKey()); setUsage(null); setToast('Ollama API key removed.') }
-    catch (error) { setApiKeyError(error instanceof Error ? error.message : 'Could not remove the API key.') }
-    finally { setApiKeySaving(false) }
+  async function removeGeminiKey() {
+    setGeminiKeySaving(true); setGeminiKeyError('')
+    try {
+      const state = await api.deleteApiKey('gemini')
+      setApiKeyState(state)
+      setToast('Google Gemini API key removed.')
+      void refreshUsage()
+    } catch (error) {
+      setGeminiKeyError(error instanceof Error ? error.message : 'Could not remove Gemini key.')
+    } finally {
+      setGeminiKeySaving(false)
+    }
+  }
+
+  async function saveOllamaKey() {
+    setOllamaKeySaving(true); setOllamaKeyError('')
+    try {
+      const state = await api.saveApiKey(ollamaKeyDraft.trim(), 'ollama')
+      setApiKeyState(state)
+      setOllamaKeyDraft('')
+      setToast('Ollama API key saved.')
+      void refreshUsage()
+    } catch (error) {
+      setOllamaKeyError(error instanceof Error ? error.message : 'Could not save Ollama key.')
+    } finally {
+      setOllamaKeySaving(false)
+    }
+  }
+
+  async function removeOllamaKey() {
+    setOllamaKeySaving(true); setOllamaKeyError('')
+    try {
+      const state = await api.deleteApiKey('ollama')
+      setApiKeyState(state)
+      setToast('Ollama API key removed.')
+      void refreshUsage()
+    } catch (error) {
+      setOllamaKeyError(error instanceof Error ? error.message : 'Could not remove Ollama key.')
+    } finally {
+      setOllamaKeySaving(false)
+    }
   }
 
   useEffect(() => {
@@ -242,7 +318,7 @@ function MuseApp() {
       </Routes>
     )}
     <CommandPalette open={command} close={() => setCommand(false)} create={() => create.mutate()} ask={() => setAsk(true)} theme={() => setDark(!dark)}/>
-    {ask && <ChatPanel mode="search" onClose={() => setAsk(false)}/>}
+    {ask && <ChatPanel mode="search" onClose={() => setAsk(false)} onCreateNote={input => create.mutate(input)}/>}
     {research && <ResearchPanel onClose={() => setResearch(false)} onDone={id => { setResearch(false); if (id) { queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate(`/note/${id}`) } }}/>}
     <Toast message={toast} onClose={() => setToast('')}/>
     {specialized && <SpecializedNotePanel onClose={() => setSpecialized(false)} onCreate={(category, customTemplate, color) => createSpecialized.mutate({ category, customTemplate, color })}/>}
@@ -279,28 +355,162 @@ function MuseApp() {
             <button className="setting-toggle" onClick={() => setDark(!dark)}>{dark ? <><Sun size={16}/> Light</> : <><Moon size={16}/> Dark</>}</button>
           </div>
           <div className="setting-row">
-            <span><KeyRound size={17}/><span><strong>Ollama Cloud key (Optional){apiKeyState?.hasApiKey ? <em className="saved-badge">Saved</em> : null}</strong><small>Local Ollama is already active without any key. Only add this if using Ollama Cloud.</small></span></span>
+            <span>
+              <KeyRound size={17}/>
+              <span>
+                <strong>
+                  Google Gemini API key (Free Tier)
+                  {apiKeyState?.hasGeminiKey ? <em className="saved-badge">Active · Priority</em> : null}
+                </strong>
+                <small>
+                  Priority provider with auto-routing (Gemini 3.8 & 3.5).{' '}
+                  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline', color: 'inherit' }}>
+                    Get free key at Google AI Studio ↗
+                  </a>
+                </small>
+              </span>
+            </span>
             <span className="api-key-controls">
-              <input type="password" className="setting-input" placeholder={apiKeyState?.hasApiKey ? 'Replace key…' : 'ollama-… (optional)'} value={apiKeyDraft} onChange={e => setApiKeyDraft(e.target.value)}/>
+              <input
+                type="password"
+                className="setting-input"
+                placeholder={apiKeyState?.hasGeminiKey ? 'Replace key…' : 'AIzaSy… (free key)'}
+                value={geminiKeyDraft}
+                onChange={e => setGeminiKeyDraft(e.target.value)}
+              />
               <span className="api-key-actions">
-                <button className="setting-save" onClick={() => void saveKey()} disabled={apiKeySaving || !apiKeyDraft.trim()}>{apiKeySaving ? 'Saving…' : 'Save'}</button>
-                {apiKeyState?.hasApiKey ? <button className="setting-remove" onClick={() => void removeKey()} disabled={apiKeySaving}>Remove</button> : null}
+                <button
+                  className="setting-save"
+                  onClick={() => void saveGeminiKey()}
+                  disabled={geminiKeySaving || !geminiKeyDraft.trim()}
+                >
+                  {geminiKeySaving ? 'Saving…' : 'Save'}
+                </button>
+                {apiKeyState?.hasGeminiKey ? (
+                  <button
+                    className="setting-remove"
+                    onClick={() => void removeGeminiKey()}
+                    disabled={geminiKeySaving}
+                  >
+                    Remove
+                  </button>
+                ) : null}
               </span>
             </span>
           </div>
-          {apiKeyError && <p className="setting-error">{apiKeyError}</p>}
+          {geminiKeyError && <p className="setting-error">{geminiKeyError}</p>}
+          <div className="setting-row">
+            <span>
+              <KeyRound size={17}/>
+              <span>
+                <strong>
+                  Ollama Cloud key (Optional Fallback)
+                  {apiKeyState?.hasOllamaKey ? <em className="saved-badge">Saved</em> : null}
+                </strong>
+                <small>
+                  Fallback when Gemini is unavailable. Local Ollama needs no key.{' '}
+                  <a href="https://ollama.com/settings/keys" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline', color: 'inherit' }}>
+                    Get key at ollama.com ↗
+                  </a>
+                </small>
+              </span>
+            </span>
+            <span className="api-key-controls">
+              <input
+                type="password"
+                className="setting-input"
+                placeholder={apiKeyState?.hasOllamaKey ? 'Replace key…' : 'ollama-… (optional)'}
+                value={ollamaKeyDraft}
+                onChange={e => setOllamaKeyDraft(e.target.value)}
+              />
+              <span className="api-key-actions">
+                <button
+                  className="setting-save"
+                  onClick={() => void saveOllamaKey()}
+                  disabled={ollamaKeySaving || !ollamaKeyDraft.trim()}
+                >
+                  {ollamaKeySaving ? 'Saving…' : 'Save'}
+                </button>
+                {apiKeyState?.hasOllamaKey ? (
+                  <button
+                    className="setting-remove"
+                    onClick={() => void removeOllamaKey()}
+                    disabled={ollamaKeySaving}
+                  >
+                    Remove
+                  </button>
+                ) : null}
+              </span>
+            </span>
+          </div>
+          {ollamaKeyError && <p className="setting-error">{ollamaKeyError}</p>}
           <div className="usage-card">
-            <header><span><strong>Ollama Cloud usage</strong><small>Session and weekly limits from your plan.</small></span>{usage?.configured ? <button onClick={() => void refreshUsage()}><RefreshCw size={14}/> Refresh</button> : null}</header>
-            {usage?.configured ? <div className="usage-bars"><UsageBar label="Session · 5-hour window" value={usage.session?.usedPct} models={usage.session?.models || []}/><UsageBar label="Weekly · 7-day window" value={usage.weekly?.usedPct} models={usage.weekly?.models || []}/>{usage.plan ? <p className="usage-plan">Plan: <strong style={{ textTransform: 'capitalize' }}>{usage.plan}</strong></p> : null}</div> : <p className="usage-empty">{usageError || (apiKeyState?.hasApiKey ? 'Usage could not be loaded.' : 'Add your Ollama API key above to see your Ollama Cloud usage.')}</p>}
+            <header>
+              <span>
+                <strong>
+                  {usage?.provider === 'gemini'
+                    ? 'Google Gemini API Usage'
+                    : (usage?.provider === 'ollama' ? 'Ollama Cloud Usage' : 'AI Quota & Usage')}
+                </strong>
+                <small>
+                  {usage?.provider === 'gemini'
+                    ? 'Daily Free Tier requests (1,500 RPD) & token volume. Resets midnight UTC.'
+                    : (usage?.provider === 'ollama' ? 'Session and weekly limits from your plan.' : 'Usage statistics and limits.')}
+                </small>
+              </span>
+              {usage?.configured ? <button onClick={() => void refreshUsage()}><RefreshCw size={14}/> Refresh</button> : null}
+            </header>
+            {usage?.configured ? (
+              <div className="usage-bars">
+                {usage.provider === 'gemini' ? (
+                  <>
+                    <UsageBar
+                      label="Daily Requests · 1,500 limit"
+                      value={usage.session?.usedPct}
+                      sublabel={`${(usage.requestsToday || 0).toLocaleString()} / 1,500 (${(usage.session?.usedPct || 0).toFixed(1)}%)`}
+                      models={usage.session?.models || []}
+                    />
+                    <div className="usage-bar-top" style={{ marginTop: '6px', fontSize: '11.5px', color: '#8a8791' }}>
+                      <span>Total Tokens Today:</span>
+                      <strong style={{ color: 'inherit' }}>{(usage.totalTokens || 0).toLocaleString()} tokens</strong>
+                    </div>
+                    {usage.plan ? <p className="usage-plan">Plan: <strong>{usage.plan}</strong></p> : null}
+                  </>
+                ) : (
+                  <>
+                    <UsageBar label="Session · 5-hour window" value={usage.session?.usedPct} models={usage.session?.models || []}/>
+                    <UsageBar label="Weekly · 7-day window" value={usage.weekly?.usedPct} models={usage.weekly?.models || []}/>
+                    {usage.plan ? <p className="usage-plan">Plan: <strong style={{ textTransform: 'capitalize' }}>{usage.plan}</strong></p> : null}
+                  </>
+                )}
+              </div>
+            ) : (
+              <p className="usage-empty">
+                {usageError || (apiKeyState?.hasApiKey
+                  ? 'Usage could not be loaded.'
+                  : 'Add your Google Gemini API key above to view active quotas and token usage.')}
+              </p>
+            )}
           </div>
           <div className="setting-row">
             <span><Cpu size={17}/><span><strong>Chat model</strong><small>AI model used for this app's requests.</small></span></span>
-            <select className="setting-select" value={chatModel()} onChange={e => { setChatModel(e.target.value); setToast(e.target.value ? `Chat model: ${e.target.value}` : 'Chat model: default') }}>
-              {[{ value: '', label: 'Default (Auto)' }, ...(Array.isArray(models) ? models : []).map(name => ({
-                value: name,
-                label: name.includes('cloud') ? `${name} (Cloud)` : `${name} (Local)`
-              }))].map(option => <option key={option.value || 'default'} value={option.value}>{option.label}</option>)}
+            <select className="setting-select" value={chatModel()} onChange={e => { setChatModel(e.target.value); setToast(e.target.value ? `Chat model: ${e.target.value}` : 'Chat model: Default (Auto · Gemini Priority)') }}>
+              {[{ value: '', label: 'Default (Auto · Gemini Priority)' }, ...(Array.isArray(models) ? models : [])
+                .filter(name => !(name.toLowerCase().includes('gemma') && !name.includes('cloud')))
+                .map(name => {
+                  let label = name
+                  if (name.startsWith('gemini-3.8')) label = `${name} (Intelligent · Gemini)`
+                  else if (name.startsWith('gemini-3.5')) label = `${name} (Fastest · Gemini)`
+                  else if (name.startsWith('gemini-3.1')) label = `${name} (Deep Reasoning · Gemini)`
+                  else if (name.includes('cloud')) label = `${name} (Cloud)`
+                  else label = `${name} (Local)`
+                  return { value: name, label }
+                })].map(option => <option key={option.value || 'default'} value={option.value}>{option.label}</option>)}
             </select>
+          </div>
+          <div className="setting-row">
+            <span><Bot size={17}/><span><strong>Bip the Robot Helper</strong><small>Cute companion that moves around and helps you.</small></span></span>
+            <button className="setting-toggle" onClick={() => setShowBip(!showBip)}>{showBip ? 'Enabled' : 'Hidden'}</button>
           </div>
           <button className="sign-out" onClick={() => {
             localStorage.removeItem('muse-user-name')
@@ -310,13 +520,52 @@ function MuseApp() {
         </section>
       </div>
     )}
+    {showBip && (
+      <RobotCompanion
+        onCreateNote={input => create.mutate(input)}
+        onNavigate={path => navigate(path)}
+      />
+    )}
   </>
 }
 
-function UsageBar({ label, value, models }: { label: string; value?: number; models: { name: string; requests: number }[] }) {
+function UsageBar({
+  label,
+  value,
+  sublabel,
+  models
+}: {
+  label: string
+  value?: number
+  sublabel?: string
+  models: { name: string; requests: number; tokens?: number }[]
+}) {
   const pct = Math.min(typeof value === 'number' ? value : 0, 100)
   const list = Array.isArray(models) ? models : []
-  return <div className="usage-bar"><div className="usage-bar-top"><span>{label}</span><strong>{pct.toFixed(1)}%</strong></div><div className="usage-track"><i style={{ width: `${pct}%` }}/></div>{list.length ? <ul className="usage-models">{list.map(item => <li key={item.name}><span>{item.name}</span><em>{item.requests} requests</em></li>)}</ul> : null}</div>
+  return (
+    <div className="usage-bar">
+      <div className="usage-bar-top">
+        <span>{label}</span>
+        <strong>{sublabel || `${pct.toFixed(1)}%`}</strong>
+      </div>
+      <div className="usage-track">
+        <i style={{ width: `${pct}%` }}/>
+      </div>
+      {list.length ? (
+        <ul className="usage-models">
+          {list.map(item => (
+            <li key={item.name}>
+              <span>{item.name}</span>
+              <em>
+                {item.requests} {item.requests === 1 ? 'request' : 'requests'}
+                {typeof item.tokens === 'number' && item.tokens > 0 ? ` · ${item.tokens.toLocaleString()} tokens` : ''}
+              </em>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
 }
 
 function NoteRoute({ toast }: { toast: (message: string) => void }) {

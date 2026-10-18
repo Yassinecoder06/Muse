@@ -25,5 +25,5 @@ COPY server/package.json server/package.json
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/server/dist server/dist
 
-EXPOSE 3001
+EXPOSE 3002
 CMD ["node", "server/dist/index.js"]

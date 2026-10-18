@@ -84,7 +84,7 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
-      PORT: 3001
+      PORT: 3002
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
       SUPABASE_URL: http://kong:8000
       QDRANT_URL: http://qdrant:6333
@@ -94,7 +94,7 @@ services:
       qdrant: { condition: service_started }
     extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3001/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3002/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -109,7 +109,7 @@ services:
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres
       GOTRUE_SITE_URL: ${PUBLIC_URL:-http://localhost:8080}
-      GOTRUE_URI_ALLOW_LIST: ${PUBLIC_URL:-http://localhost:8080},http://localhost:5173
+      GOTRUE_URI_ALLOW_LIST: ${PUBLIC_URL:-http://localhost:8080},http://localhost:5174
       GOTRUE_JWT_SECRET: ${JWT_SECRET:-replace-this-with-a-32-character-minimum-secret}
       GOTRUE_JWT_EXP: 3600
       GOTRUE_DISABLE_SIGNUP: "${DISABLE_SIGNUP:-false}"
@@ -197,7 +197,7 @@ services:
     image: supabase/studio:20240729-ce42139
     restart: unless-stopped
     depends_on: [kong]
-    ports: ["127.0.0.1:3000:3000"]
+    ports: ["127.0.0.1:${STUDIO_PORT:-54323}:3000"]
     environment:
       STUDIO_PG_META_URL: http://meta:8080
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
