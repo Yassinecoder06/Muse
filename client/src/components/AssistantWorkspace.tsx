@@ -70,11 +70,16 @@ export function AssistantWorkspace({
     robotAudio.play('blip')
     setIsListening(true)
     stt.startListening({
+      continuous: true,
+      silenceTimeoutMs: 4000,
       onInterim: interim => {
         setInput(interim)
       },
       onFinal: final => {
-        setInput(prev => (prev && !prev.endsWith(' ') ? `${prev} ${final}` : final))
+        setInput(final)
+      },
+      onComplete: final => {
+        setInput(final)
         setIsListening(false)
       },
       onStateChange: state => {
