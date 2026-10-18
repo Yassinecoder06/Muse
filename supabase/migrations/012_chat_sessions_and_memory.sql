@@ -5,6 +5,8 @@ create table if not exists public.chat_sessions (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid not null references auth.users(id) on delete cascade,
   title text not null default 'New Conversation',
+  context_type text not null default 'general',
+  context_id uuid default null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -25,6 +27,7 @@ create table if not exists public.chat_messages (
   content text not null default '',
   tool_calls jsonb default '[]'::jsonb,
   tool_results jsonb default '[]'::jsonb,
+  action_cards jsonb default '[]'::jsonb,
   sources jsonb default '[]'::jsonb,
   created_at timestamptz not null default now()
 );
