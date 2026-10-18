@@ -12,6 +12,7 @@ import { TasksView } from './components/TasksView'
 import { AnalyticsView } from './components/AnalyticsView'
 import { CommandPalette } from './components/CommandPalette'
 import { ChatPanel } from './components/ChatPanel'
+import { AssistantWorkspace } from './components/AssistantWorkspace'
 import { ResearchPanel } from './components/ResearchPanel'
 import { GraphView } from './components/GraphView'
 import { Toast } from './components/Toast'
@@ -287,7 +288,7 @@ function MuseApp() {
     open={note => navigate(`/note/${note.id}`)}
     dark={dark}
     toggleTheme={() => setDark(!dark)}
-    ask={() => setAsk(true)}
+    ask={() => navigate('/assistant')}
     research={() => setResearch(true)}
     specialized={() => setSpecialized(true)}
     collections={() => setCollections(true)}
@@ -314,10 +315,11 @@ function MuseApp() {
         <Route path="/calendar" element={<CalendarView onBack={() => navigate('/')}/>}/>
         <Route path="/tasks" element={<TasksView onBack={() => navigate('/')}/>}/>
         <Route path="/analytics" element={<AnalyticsView onBack={() => navigate('/')}/>}/>
+        <Route path="/assistant" element={<AssistantWorkspace onBack={() => navigate('/')} onCreateNote={input => create.mutate(input)} onNavigate={path => navigate(path)}/>}/>
         <Route path="*" element={dashboard}/>
       </Routes>
     )}
-    <CommandPalette open={command} close={() => setCommand(false)} create={() => create.mutate()} ask={() => setAsk(true)} theme={() => setDark(!dark)}/>
+    <CommandPalette open={command} close={() => setCommand(false)} create={() => create.mutate()} ask={() => navigate('/assistant')} theme={() => setDark(!dark)}/>
     {ask && <ChatPanel mode="search" onClose={() => setAsk(false)} onCreateNote={input => create.mutate(input)}/>}
     {research && <ResearchPanel onClose={() => setResearch(false)} onDone={id => { setResearch(false); if (id) { queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate(`/note/${id}`) } }}/>}
     <Toast message={toast} onClose={() => setToast('')}/>

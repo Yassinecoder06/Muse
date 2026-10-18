@@ -1,4 +1,4 @@
-import { Archive, BarChart3, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, PanelLeftClose, Plus, RotateCcw, Search, Settings, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
+import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, PanelLeftClose, Plus, RotateCcw, Search, Settings, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import type { Note } from '../types'
@@ -120,6 +120,7 @@ export function Dashboard({
           })}
         </nav>
         <div className="sidebar-tools">
+          <button title="AI Assistant" onClick={ask}><Bot size={17}/><span> AI Assistant</span></button>
           <button title="Calendar" onClick={calendar}><Calendar size={17}/><span> Calendar</span></button>
           <button title="Tasks" onClick={tasks}><CheckSquare size={17}/><span> Tasks</span></button>
           <button title="Analytics" onClick={analytics}><BarChart3 size={17}/><span> Analytics</span></button>
@@ -152,7 +153,7 @@ export function Dashboard({
             </span>
           ) : null}
           <button className="theme" onClick={toggleTheme}>{dark ? <Sun size={18}/> : <Moon size={18}/>}</button>
-          <button className="ask-muse top-ask" onClick={ask} title="Ask Muse AI"><Sparkles size={17}/> <span>Ask Muse</span></button>
+          <button className="ask-muse top-ask" onClick={ask} title="Bip Autonomous AI Assistant"><Bot size={17}/> <span>Ask Muse</span></button>
           <button className="new-note top-new" onClick={create} title="New note (Ctrl+M / ⌘M)"><Plus size={17}/> <span>New note</span></button>
         </header>
 
@@ -164,6 +165,7 @@ export function Dashboard({
               <span>A quiet space for your thoughts.</span>
             </div>
             <div className="hero-actions">
+              <button className="ask-muse" onClick={ask}><Bot size={17}/> AI Assistant</button>
               <button className="calendar-muse" onClick={calendar}><Calendar size={17}/> Calendar</button>
               <button className="tasks-muse" onClick={tasks}><CheckSquare size={17}/> Tasks</button>
               <button className="analytics-muse" onClick={analytics}><BarChart3 size={17}/> Analytics</button>
