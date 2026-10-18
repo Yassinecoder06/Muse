@@ -7,6 +7,19 @@ import { stripImages } from '../utils/images.js'
 
 export interface AgentActionCard {
   type: 'note' | 'note_updated' | 'task' | 'task_updated' | 'event' | 'memory'
+  id?: string
+  title?: string
+  contentSnippet?: string
+  tags?: string[]
+  text?: string
+  completed?: boolean
+  dueDate?: string | null
+  priority?: string
+  startTime?: string
+  endTime?: string | null
+  location?: string
+  fact?: string
+  category?: string
   data: Record<string, unknown>
 }
 
@@ -234,6 +247,10 @@ export async function executeAgentTool(
           result: { success: true, id: created.id, title: created.title },
           actionCard: {
             type: 'note',
+            id: created.id,
+            title: created.title,
+            contentSnippet: stripImages(created.content).slice(0, 160),
+            tags: created.tags,
             data: {
               id: created.id,
               title: created.title,
@@ -266,6 +283,10 @@ export async function executeAgentTool(
           result: { success: true, id: updated.id, title: updated.title },
           actionCard: {
             type: 'note_updated',
+            id: updated.id,
+            title: updated.title,
+            contentSnippet: stripImages(updated.content).slice(0, 160),
+            tags: updated.tags,
             data: { id: updated.id, title: updated.title }
           }
         }
@@ -316,6 +337,11 @@ export async function executeAgentTool(
           result: { success: true, task: data },
           actionCard: {
             type: 'task',
+            id: data.id,
+            text: data.text,
+            completed: data.completed,
+            dueDate: data.due_date,
+            priority: data.priority,
             data: data
           }
         }
@@ -360,6 +386,11 @@ export async function executeAgentTool(
           result: { success: true, task: data },
           actionCard: {
             type: 'task_updated',
+            id: data.id,
+            text: data.text,
+            completed: data.completed,
+            dueDate: data.due_date,
+            priority: data.priority,
             data: data
           }
         }
@@ -405,6 +436,11 @@ export async function executeAgentTool(
           result: { success: true, event: data },
           actionCard: {
             type: 'event',
+            id: data.id,
+            title: data.title,
+            startTime: data.start_time,
+            endTime: data.end_time,
+            location: data.location,
             data: data
           }
         }
@@ -453,6 +489,9 @@ export async function executeAgentTool(
           result: { success: true, memory: data },
           actionCard: {
             type: 'memory',
+            id: data.id,
+            fact: data.fact,
+            category: data.category,
             data: data
           }
         }

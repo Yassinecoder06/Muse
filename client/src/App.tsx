@@ -109,6 +109,12 @@ function MuseApp() {
     onError: () => setToast('Could not restore the selected notes.')
   })
 
+  const toggleFavorite = useMutation({
+    mutationFn: ({ id, favorite }: { id: string; favorite: boolean }) => api.updateNote(id, { favorite }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['notes'] }) },
+    onError: () => setToast('Could not update favorite status.')
+  })
+
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
     localStorage.setItem('muse-theme', dark ? 'dark' : 'light')
@@ -286,6 +292,7 @@ function MuseApp() {
     setQuery={setQuery}
     create={() => create.mutate()}
     open={note => navigate(`/note/${note.id}`)}
+    toggleFavorite={(id, current) => toggleFavorite.mutate({ id, favorite: !current })}
     dark={dark}
     toggleTheme={() => setDark(!dark)}
     ask={() => navigate('/assistant')}

@@ -15,7 +15,8 @@ import {
   Trash2,
   Check,
   X,
-  Clock
+  Clock,
+  PanelLeft
 } from 'lucide-react'
 import { api } from '../services/api'
 import { chatModel } from '../services/settings'
@@ -48,6 +49,15 @@ export function AssistantWorkspace({
   const [titleDraft, setTitleDraft] = useState('')
   const [memoryModalOpen, setMemoryModalOpen] = useState(false)
   const [memoryCount, setMemoryCount] = useState(0)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('muse-assistant-sidebar') === 'collapsed')
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed(current => {
+      const next = !current
+      localStorage.setItem('muse-assistant-sidebar', next ? 'collapsed' : 'expanded')
+      return next
+    })
+  }
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -257,7 +267,7 @@ export function AssistantWorkspace({
   const grouped = groupSessions()
 
   return (
-    <div className="assistant-workspace-layout">
+    <div className={`assistant-workspace-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       {/* Sidebar: Session History & Memory */}
       <aside className="assistant-sidebar">
         <div className="assistant-sidebar-top">
@@ -271,11 +281,19 @@ export function AssistantWorkspace({
               <div className="assistant-bip-badge">
                 <Bot size={18} />
               </div>
-              <div>
+              <div className="assistant-brand-meta">
                 <h2>Bip Assistant</h2>
                 <small>Autonomous Agent</small>
               </div>
             </div>
+            <button
+              className="assistant-collapse-btn"
+              onClick={toggleSidebar}
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+            >
+              <PanelLeft size={16} />
+            </button>
           </div>
 
           <button className="assistant-new-chat-btn" onClick={handleNewSession}>
@@ -381,6 +399,14 @@ export function AssistantWorkspace({
         {/* Stage Header */}
         <header className="assistant-stage-header">
           <div className="header-left">
+            <button
+              className="assistant-stage-toggle-btn"
+              onClick={toggleSidebar}
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              <PanelLeft size={17} />
+            </button>
             <h3 className="active-session-title">
               {activeSession?.title || 'Conversation'}
             </h3>
