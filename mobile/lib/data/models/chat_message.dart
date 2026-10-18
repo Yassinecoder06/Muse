@@ -4,6 +4,7 @@ class BipMessage {
   final String text;
   final DateTime timestamp;
   final List<dynamic>? actionCards;
+  final List<dynamic>? toolCalls;
   final bool isThinking;
 
   BipMessage({
@@ -12,6 +13,7 @@ class BipMessage {
     required this.text,
     required this.timestamp,
     this.actionCards,
+    this.toolCalls,
     this.isThinking = false,
   });
 
@@ -24,6 +26,7 @@ class BipMessage {
           ? DateTime.tryParse(json['timestamp'].toString()) ?? DateTime.now()
           : DateTime.now(),
       actionCards: json['actionCards'] as List<dynamic>?,
+      toolCalls: json['toolCalls'] as List<dynamic>?,
     );
   }
 }

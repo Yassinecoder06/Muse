@@ -2,8 +2,29 @@ import { loadVoiceSettings } from './robot-audio.service'
 import type { TTSOptions } from './voice.types'
 
 /**
- * Strips Markdown syntax, HTML tags, links, and code blocks
- * so the synthetic voice reads natural, conversational prose.
+ * Unicode regex matching emojis, pictographs, flags, variation selectors,
+ * skin tone modifiers, zero-width joiners, and enclosed keycaps.
+ */
+export const EMOJI_REGEX = /[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu
+
+/**
+ * Strips all emojis and pictographic symbols from text so the speech
+ * synthesizer does not read out emoji descriptions (e.g., "robot face", "sparkles").
+ */
+export function stripEmojis(text: string): string {
+  if (!text) return ''
+  return text
+    .replace(EMOJI_REGEX, '')
+    // Remove empty brackets or parentheses left behind by stripped emojis
+    .replace(/\(\s*\)/g, '')
+    .replace(/\[\s*\]/g, '')
+    // Clean up spaces before punctuation marks created by emoji removal (e.g. "Hello !" -> "Hello!")
+    .replace(/\s+([.,!?;:])/g, '$1')
+}
+
+/**
+ * Strips Markdown syntax, HTML tags, links, emojis, and code blocks
+ * so the synthetic voice reads natural, conversational prose without reading out emoji descriptions.
  */
 export function cleanMarkdownForSpeech(text: string): string {
   if (!text) return ''
@@ -36,6 +57,15 @@ export function cleanMarkdownForSpeech(text: string): string {
     .replace(/<[^>]*>/g, ' ')
     // Remove action card markers or tool call artifacts
     .replace(/\[IMAGE \d+\]/gi, '')
+    // Remove emojis, pictographs, flags, variation selectors so TTS skips reading them
+    .replace(EMOJI_REGEX, '')
+    // Remove empty brackets or parentheses left behind
+    .replace(/\(\s*\)/g, '')
+    .replace(/\[\s*\]/g, '')
+    // Clean up spaces before punctuation marks created by emoji or markdown removal
+    .replace(/\s+([.,!?;:])/g, '$1')
+    // Insert natural sentence pause on line breaks without terminal punctuation
+    .replace(/([^.,!?;:])\s*\n+/g, '$1. ')
     // Collapse multiple whitespace
     .replace(/\s+/g, ' ')
     .trim()
