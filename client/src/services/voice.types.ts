@@ -17,8 +17,10 @@ export interface STTOptions {
   lang?: string
   continuous?: boolean
   interimResults?: boolean
+  silenceTimeoutMs?: number // Delay in ms after speech before auto-stopping (default: 3500ms, 0 for infinite)
   onInterim?: (interimText: string) => void
   onFinal?: (finalText: string) => void
+  onComplete?: (fullText: string) => void
   onError?: (error: string) => void
   onStateChange?: (state: STTState) => void
 }

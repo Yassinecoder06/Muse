@@ -16,6 +16,14 @@ class STTService {
   private mediaRecorder: MediaRecorder | null = null
   private audioChunks: Blob[] = []
   private accumulatedFinalText = ''
+  private silenceTimer: any = null
+
+  private clearSilenceTimer() {
+    if (this.silenceTimer) {
+      window.clearTimeout(this.silenceTimer)
+      this.silenceTimer = null
+    }
+  }
 
   constructor() {
     this.initNativeRecognition()
@@ -70,21 +78,39 @@ class STTService {
     }
   }
 
+  private resetSilenceTimer(timeoutMs = 4000) {
+    this.clearSilenceTimer()
+    if (timeoutMs > 0) {
+      this.silenceTimer = window.setTimeout(() => {
+        if (this.state === 'listening') {
+          this.stopListening()
+        }
+      }, timeoutMs)
+    }
+  }
+
   private startNativeListening(options: STTOptions): boolean {
     try {
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
       this.recognition = new SpeechRec()
 
-      this.recognition.continuous = options.continuous ?? false
+      // Enable continuous dictation by default so sentence pauses don't cut off speech
+      this.recognition.continuous = options.continuous ?? true
       this.recognition.interimResults = options.interimResults ?? true
       this.recognition.lang = options.lang || 'en-US'
       this.recognition.maxAlternatives = 1
 
+      const silenceTimeout = options.silenceTimeoutMs ?? 4000
+
       this.recognition.onstart = () => {
         this.setState('listening')
+        this.resetSilenceTimer(silenceTimeout)
       }
 
       this.recognition.onresult = (event: any) => {
+        // Reset silence timeout whenever voice activity is detected
+        this.resetSilenceTimer(silenceTimeout)
+
         let interim = ''
         let newFinal = ''
 
@@ -98,21 +124,29 @@ class STTService {
         }
 
         if (newFinal) {
-          this.accumulatedFinalText += (this.accumulatedFinalText ? ' ' : '') + newFinal.trim()
-          options.onFinal?.(this.accumulatedFinalText)
+          const trimmed = newFinal.trim()
+          if (trimmed) {
+            this.accumulatedFinalText += (this.accumulatedFinalText ? ' ' : '') + trimmed
+            options.onFinal?.(this.accumulatedFinalText)
+          }
         }
 
+        const liveText = (this.accumulatedFinalText ? this.accumulatedFinalText + ' ' : '') + interim.trim()
         if (interim) {
-          options.onInterim?.(interim)
+          options.onInterim?.(liveText.trim())
+        } else if (newFinal) {
+          options.onInterim?.(this.accumulatedFinalText)
         }
       }
 
       this.recognition.onerror = (event: any) => {
-        console.warn('[STT] Recognition error:', event.error)
+        // Ignore benign no-speech pauses in continuous mode; let silence timeout manage cutoff
         if (event.error === 'no-speech') {
-          // Normal timeout if user stayed quiet
-          this.setState('idle')
-        } else if (event.error === 'not-allowed') {
+          return
+        }
+        console.warn('[STT] Recognition error:', event.error)
+        this.clearSilenceTimer()
+        if (event.error === 'not-allowed') {
           this.setState('error')
           options.onError?.('Microphone access was denied. Please allow microphone permissions.')
         } else {
@@ -122,10 +156,12 @@ class STTService {
       }
 
       this.recognition.onend = () => {
+        this.clearSilenceTimer()
         if (this.state === 'listening') {
           this.setState('idle')
           if (this.accumulatedFinalText) {
             options.onFinal?.(this.accumulatedFinalText)
+            options.onComplete?.(this.accumulatedFinalText)
           }
         }
       }
@@ -134,6 +170,7 @@ class STTService {
       return true
     } catch (err: any) {
       console.error('[STT] Failed to start native recognition:', err)
+      this.clearSilenceTimer()
       this.setState('error')
       options.onError?.(err?.message || 'Failed to start speech recognition.')
       return false
@@ -201,6 +238,8 @@ class STTService {
   }
 
   public stopListening() {
+    this.clearSilenceTimer()
+
     if (this.recognition && this.state === 'listening') {
       try {
         this.recognition.stop()
@@ -215,10 +254,16 @@ class STTService {
 
     if (this.state !== 'processing') {
       this.setState('idle')
+      if (this.accumulatedFinalText) {
+        this.currentOptions.onComplete?.(this.accumulatedFinalText)
+      }
     }
   }
 
   public cancel() {
+    this.clearSilenceTimer()
+    this.accumulatedFinalText = ''
+
     if (this.recognition) {
       try {
         this.recognition.abort()
