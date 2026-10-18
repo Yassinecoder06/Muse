@@ -59,7 +59,23 @@ app.get('/api/images/:id', requireAuth, async (req, res, next) => {
 })
 app.use('/uploads', express.static(uploadsDirectory))
 app.use('/api', router)
-app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => { console.error(error); if (error instanceof ZodError) return res.status(400).json({ error: 'Invalid request', details: error.flatten() }); const status = typeof (error as any)?.statusCode === 'number' ? (error as any).statusCode : 500; res.status(status).json({ error: error instanceof Error ? error.message : 'Unexpected server error' }) })
+app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error(error)
+  if (error instanceof ZodError) return res.status(400).json({ error: 'Invalid request', details: error.flatten() })
+  const status = typeof (error as any)?.statusCode === 'number' ? (error as any).statusCode : 500
+  let msg = error instanceof Error ? error.message : 'Unexpected server error'
+  if (typeof msg === 'string' && msg.startsWith('{') && msg.includes('"error"')) {
+    try {
+      const parsed = JSON.parse(msg)
+      if (parsed.error?.code === 429 || parsed.error?.status === 'RESOURCE_EXHAUSTED') {
+        msg = 'AI daily quota has been reached. Please switch models in Settings or try again later.'
+      } else if (parsed.error?.message) {
+        msg = parsed.error.message
+      }
+    } catch {}
+  }
+  res.status(status).json({ error: msg })
+})
 ensureCollection().catch(error => console.error('Qdrant connection unavailable at startup', error))
 startAiWorker()
 app.listen(env.PORT, () => console.log(`Muse API listening on http://localhost:${env.PORT}`))

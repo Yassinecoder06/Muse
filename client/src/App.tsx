@@ -520,14 +520,18 @@ function MuseApp() {
           </div>
           <div className="setting-row">
             <span><Cpu size={17}/><span><strong>Chat model</strong><small>AI model used for this app's requests.</small></span></span>
-            <select className="setting-select" value={chatModel()} onChange={e => { setChatModel(e.target.value); setToast(e.target.value ? `Chat model: ${e.target.value}` : 'Chat model: Default (Auto · Gemini Priority)') }}>
-              {[{ value: '', label: 'Default (Auto · Gemini Priority)' }, ...(Array.isArray(models) ? models : [])
+            <select className="setting-select" value={chatModel()} onChange={e => { setChatModel(e.target.value); setToast(e.target.value ? `Chat model: ${e.target.value}` : 'Chat model: Default (Auto · Waterfall Cascade)') }}>
+              {[{ value: '', label: 'Default (Auto · Waterfall Cascade)' }, ...(Array.isArray(models) ? models : [])
                 .filter(name => !(name.toLowerCase().includes('gemma') && !name.includes('cloud')))
                 .map(name => {
                   let label = name
-                  if (name.startsWith('gemini-3.8')) label = `${name} (Intelligent · Gemini)`
-                  else if (name.startsWith('gemini-3.5')) label = `${name} (Fastest · Gemini)`
-                  else if (name.startsWith('gemini-3.1')) label = `${name} (Deep Reasoning · Gemini)`
+                  if (name === 'gemini-3.8-flash') label = `${name} (Top Intelligence · 20 Req/Day Limit)`
+                  else if (name === 'gemini-3.7-flash') label = `${name} (Advanced Reasoning)`
+                  else if (name === 'gemini-3.6-flash') label = `${name} (High Capability)`
+                  else if (name === 'gemini-3.5-flash') label = `${name} (Standard · High Quota)`
+                  else if (name === 'gemini-3.5-flash-lite') label = `${name} (Fast · High Quota)`
+                  else if (name === 'gemini-3.1-flash-lite') label = `${name} (Ultra-Fast · High Quota)`
+                  else if (name.startsWith('gemini-')) label = `${name} (Gemini)`
                   else if (name.includes('cloud')) label = `${name} (Cloud)`
                   else label = `${name} (Local)`
                   return { value: name, label }
