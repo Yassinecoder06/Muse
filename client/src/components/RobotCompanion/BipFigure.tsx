@@ -8,6 +8,7 @@ interface BipFigureProps {
   eyeOffset?: { x: number; y: number }
   isHovered?: boolean
   isDragging?: boolean
+  isSpeaking?: boolean
   onClick?: () => void
   onPointerDown?: React.PointerEventHandler<HTMLDivElement>
   onPointerMove?: React.PointerEventHandler<HTMLDivElement>
@@ -23,6 +24,7 @@ export function BipFigure({
   eyeOffset = { x: 0, y: 0 },
   isHovered = false,
   isDragging = false,
+  isSpeaking = false,
   onClick,
   onPointerDown,
   onPointerMove,
@@ -328,6 +330,56 @@ export function BipFigure({
               <g fill="#f472b6" opacity="0.65">
                 <circle cx="32" cy="51" r="2.5" />
                 <circle cx="68" cy="51" r="2.5" />
+              </g>
+            )}
+
+            {/* Speaking audio wave mouth when reading or talking */}
+            {isSpeaking && (
+              <g filter="url(#neonGlow)">
+                <motion.line
+                  x1="43"
+                  y1="52"
+                  x2="43"
+                  y2="52"
+                  stroke="#67e8f9"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  animate={{ y1: [52, 49, 52], y2: [52, 55, 52] }}
+                  transition={{ repeat: Infinity, duration: 0.35, ease: 'easeInOut' }}
+                />
+                <motion.line
+                  x1="47"
+                  y1="52"
+                  x2="47"
+                  y2="52"
+                  stroke="#a855f7"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  animate={{ y1: [52, 47, 52], y2: [52, 57, 52] }}
+                  transition={{ repeat: Infinity, duration: 0.3, ease: 'easeInOut', delay: 0.05 }}
+                />
+                <motion.line
+                  x1="51"
+                  y1="52"
+                  x2="51"
+                  y2="52"
+                  stroke="#f472b6"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  animate={{ y1: [52, 48, 52], y2: [52, 56, 52] }}
+                  transition={{ repeat: Infinity, duration: 0.32, ease: 'easeInOut', delay: 0.1 }}
+                />
+                <motion.line
+                  x1="55"
+                  y1="52"
+                  x2="55"
+                  y2="52"
+                  stroke="#67e8f9"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  animate={{ y1: [52, 50, 52], y2: [52, 54, 52] }}
+                  transition={{ repeat: Infinity, duration: 0.28, ease: 'easeInOut', delay: 0.15 }}
+                />
               </g>
             )}
           </g>

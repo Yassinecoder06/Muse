@@ -16,10 +16,17 @@ import {
   Check,
   X,
   Clock,
-  PanelLeft
+  PanelLeft,
+  Mic,
+  MicOff,
+  Volume2,
+  Square
 } from 'lucide-react'
 import { api } from '../services/api'
 import { chatModel } from '../services/settings'
+import { robotAudio, loadVoiceSettings } from '../services/robot-audio.service'
+import { tts } from '../services/tts.service'
+import { stt } from '../services/stt.service'
 import { FormattedMessage } from './FormattedMessage'
 import { ActionCards } from './ActionCards'
 import { MemoryModal } from './MemoryModal'
@@ -50,6 +57,50 @@ export function AssistantWorkspace({
   const [memoryModalOpen, setMemoryModalOpen] = useState(false)
   const [memoryCount, setMemoryCount] = useState(0)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('muse-assistant-sidebar') === 'collapsed')
+  const [isListening, setIsListening] = useState(false)
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null)
+
+  const handleToggleMic = () => {
+    if (isListening) {
+      stt.stopListening()
+      setIsListening(false)
+      return
+    }
+
+    robotAudio.play('blip')
+    setIsListening(true)
+    stt.startListening({
+      onInterim: interim => {
+        setInput(interim)
+      },
+      onFinal: final => {
+        setInput(prev => (prev && !prev.endsWith(' ') ? `${prev} ${final}` : final))
+        setIsListening(false)
+      },
+      onStateChange: state => {
+        setIsListening(state === 'listening')
+      },
+      onError: () => {
+        setIsListening(false)
+      }
+    })
+  }
+
+  const handleSpeakMessage = (msgId: string, content: string) => {
+    if (speakingMessageId === msgId && tts.isSpeaking()) {
+      tts.stop()
+      setSpeakingMessageId(null)
+      return
+    }
+
+    tts.stop()
+    setSpeakingMessageId(msgId)
+    tts.speak(content, {
+      onStart: () => setSpeakingMessageId(msgId),
+      onEnd: () => setSpeakingMessageId(null),
+      onError: () => setSpeakingMessageId(null)
+    })
+  }
 
   const toggleSidebar = () => {
     setSidebarCollapsed(current => {
@@ -175,8 +226,15 @@ export function AssistantWorkspace({
     const textToSend = (customPrompt || input).trim()
     if (!textToSend || loading || !activeSessionId) return
 
+    if (isListening) {
+      stt.stopListening()
+      setIsListening(false)
+    }
+
+    robotAudio.play('blip')
     setInput('')
     setLoading(true)
+    robotAudio.startThinkingLoop()
 
     // Optimistically add user message
     const tempUserMsg: ChatMessage = {
@@ -193,6 +251,9 @@ export function AssistantWorkspace({
         model: chatModel() || undefined
       })
 
+      robotAudio.stopThinkingLoop()
+      robotAudio.play('success')
+
       // Update session title if updated by agent
       if (res.sessionTitle) {
         setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, title: res.sessionTitle! } : s))
@@ -205,11 +266,21 @@ export function AssistantWorkspace({
         return [...withoutTemp, res.userMessage, res.assistantMessage]
       })
 
+      // Auto-read aloud if enabled
+      const currentVoiceSettings = loadVoiceSettings()
+      if (currentVoiceSettings.autoReadAloud) {
+        setTimeout(() => {
+          handleSpeakMessage(res.assistantMessage.id, res.assistantMessage.content)
+        }, 150)
+      }
+
       // Refresh memory count if tool saved memory
       if (res.assistantMessage.action_cards?.some(c => c.type === 'memory')) {
         void loadMemoryCount()
       }
     } catch (err) {
+      robotAudio.stopThinkingLoop()
+      robotAudio.play('error')
       const errorMsg: ChatMessage = {
         id: `err-${Date.now()}`,
         role: 'assistant',
@@ -286,14 +357,6 @@ export function AssistantWorkspace({
                 <small>Autonomous Agent</small>
               </div>
             </div>
-            <button
-              className="assistant-collapse-btn"
-              onClick={toggleSidebar}
-              title="Collapse sidebar"
-              aria-label="Collapse sidebar"
-            >
-              <PanelLeft size={16} />
-            </button>
           </div>
 
           <button className="assistant-new-chat-btn" onClick={handleNewSession}>
@@ -543,13 +606,26 @@ export function AssistantWorkspace({
                       />
                     )}
 
-                    <span className="assistant-msg-time">
-                      <Clock size={10} />
-                      {new Date(msg.created_at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </span>
+                    <div className="assistant-bubble-meta">
+                      <span className="assistant-msg-time">
+                        <Clock size={10} />
+                        {new Date(msg.created_at).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
+                      {msg.role === 'assistant' && (
+                        <button
+                          type="button"
+                          className={`assistant-read-aloud-btn ${speakingMessageId === msg.id ? 'speaking' : ''}`}
+                          onClick={() => handleSpeakMessage(msg.id, msg.content)}
+                          title={speakingMessageId === msg.id ? 'Stop speaking' : 'Read aloud with English voice'}
+                        >
+                          {speakingMessageId === msg.id ? <Square size={11} fill="currentColor" /> : <Volume2 size={12} />}
+                          <span>{speakingMessageId === msg.id ? 'Stop' : 'Read aloud'}</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -587,13 +663,22 @@ export function AssistantWorkspace({
               ref={inputRef}
               rows={2}
               className="assistant-composer-textarea"
-              placeholder="Ask Bip anything, schedule events, create tasks, write notes, or store memories..."
+              placeholder={isListening ? 'Listening to your voice…' : 'Ask Bip anything, schedule events, create tasks, write notes, or store memories...'}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={loading}
               autoFocus
             />
+            <button
+              type="button"
+              className={`assistant-mic-btn ${isListening ? 'listening' : ''}`}
+              onClick={handleToggleMic}
+              disabled={loading}
+              title={isListening ? 'Listening… click to finish dictation' : 'Dictate with your microphone (English)'}
+            >
+              {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+            </button>
             <button
               type="submit"
               className="assistant-send-btn"

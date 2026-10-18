@@ -1,16 +1,51 @@
-import { ArrowLeft, Bold, Bookmark, Calendar, CalendarCheck, Check, Code2, ExternalLink, FileText, Heading1, Heading2, Image, Italic, List, ListChecks, MoreHorizontal, Plus, Quote, Sparkles, Star, Trash2, WandSparkles, X } from 'lucide-react'
+import { ArrowLeft, Bold, Bookmark, Calendar, CalendarCheck, Check, Code2, ExternalLink, FileText, Heading1, Heading2, Image, Italic, List, ListChecks, Mic, MicOff, MoreHorizontal, Plus, Quote, Sparkles, Square, Star, Trash2, Volume2, WandSparkles, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { marked } from 'marked'
 import { api, resolveApiImageSrc, relativizeApiImageSrc } from '../services/api'
 import type { AiJob, CalendarEvent, Note, NoteInput, SpecializedNote } from '../types'
 import { saveCustomTemplate } from '../services/templates'
 import { ChatPanel } from './ChatPanel'
 import { ScheduleDetectorModal } from './ScheduleDetectorModal'
 import { activeVaultUser } from '../services/vault'
+import { robotAudio } from '../services/robot-audio.service'
+import { tts } from '../services/tts.service'
+import { stt } from '../services/stt.service'
 
 const rewriteModes = ['improve', 'professional', 'friendly', 'shorter', 'longer', 'grammar']
-const allowedTags = new Set(['A', 'B', 'BR', 'BLOCKQUOTE', 'CODE', 'DIV', 'EM', 'H1', 'H2', 'H3', 'HR', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'SECTION', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL'])
+const allowedTags = new Set(['A', 'B', 'BR', 'BLOCKQUOTE', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'SECTION', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL'])
 const reportClasses = new Set(['muse-report', 'report-meta', 'research-key-findings', 'report-dashboard', 'report-kpi-grid', 'report-kpi', 'report-chart', 'report-chart-row', 'report-data-gap', ...Array.from({ length: 10 }, (_, index) => `report-fill-${index + 1}`)])
+
+function prepareContent(raw: string): { html: string; extractedTitle?: string } {
+  if (!raw) return { html: '' }
+
+  let extractedTitle: string | undefined
+  let source = raw
+
+  // If starts with markdown H1: # Title
+  const h1Match = source.match(/^\s*#\s+([^\n]+)\n?/)
+  if (h1Match) {
+    extractedTitle = h1Match[1].replace(/[*_`]/g, '').trim()
+    source = source.replace(/^\s*#\s+[^\n]+\n?/, '').trim()
+  }
+
+  // Check if content has Markdown syntax or is plain text lacking block HTML
+  const hasMarkdown = /(?:^#{1,6}\s+|^\s*[-*+]\s+|^\s*\d+\.\s+|^\s*>\s+|```|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|^\s*---+\s*$)/m.test(source)
+  const isPlainOrMarkdown = !/<(?:p|div|h[1-6]|ul|ol|table|blockquote|section)\b/i.test(source)
+
+  let html = source
+  if (hasMarkdown || isPlainOrMarkdown) {
+    try {
+      html = (marked.parse(source, { async: false, breaks: true, gfm: true }) as string)
+        .replace(/>\s*\n\s*</g, '><')
+        .trim()
+    } catch {
+      html = source
+    }
+  }
+
+  return { html, extractedTitle }
+}
 
 function sanitizeHtml(value: string) {
   const container = document.createElement('div')
@@ -148,6 +183,58 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
   const navigate = useNavigate()
   const [linkedEvent, setLinkedEvent] = useState<CalendarEvent | null>(null)
   const [isSyncingCalendar, setIsSyncingCalendar] = useState(false)
+  const [isDictating, setIsDictating] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+
+  // Clean up any active speech when switching notes or leaving editor
+  useEffect(() => {
+    return () => {
+      tts.stop()
+      stt.stopListening()
+    }
+  }, [note.id])
+
+  function toggleDictation() {
+    if (isDictating) {
+      stt.stopListening()
+      setIsDictating(false)
+      return
+    }
+
+    robotAudio.play('blip')
+    setIsDictating(true)
+    stt.startListening({
+      continuous: true,
+      interimResults: true,
+      onFinal: text => {
+        ref.current?.focus()
+        document.execCommand('insertText', false, text + ' ')
+        edit(ref.current?.innerHTML || '')
+      },
+      onStateChange: state => setIsDictating(state === 'listening'),
+      onError: err => {
+        setIsDictating(false)
+        onToast(err)
+      }
+    })
+  }
+
+  function toggleReadAloud() {
+    if (isSpeaking && tts.isSpeaking()) {
+      tts.stop()
+      setIsSpeaking(false)
+      return
+    }
+
+    tts.stop()
+    setIsSpeaking(true)
+    const textToRead = [title, plainText(content)].filter(Boolean).join('. ')
+    tts.speak(textToRead, {
+      onStart: () => setIsSpeaking(true),
+      onEnd: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false)
+    })
+  }
 
   useEffect(() => {
     if (!isSpecialized) return
@@ -162,9 +249,13 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
 
   useEffect(() => {
     document.execCommand('styleWithCSS', false, 'false')
-    const cleaned = isResearch ? decorateKeyFindings(sanitizeHtml(note.content)) : sanitizeHtml(note.content)
+    const { html: formatted, extractedTitle } = prepareContent(note.content)
+    const cleaned = isResearch ? decorateKeyFindings(sanitizeHtml(formatted)) : sanitizeHtml(formatted)
     setContent(cleaned)
-    setTitle(note.title)
+    const effectiveTitle = (!note.title || note.title.trim().toLowerCase() === 'untitled note' || note.title.trim() === 'untitled') && extractedTitle
+      ? extractedTitle
+      : note.title
+    setTitle(effectiveTitle)
     setSpecializedNote(note.specialized)
     if (ref.current) ref.current.innerHTML = withImageUrls(cleaned)
   }, [note.id])
@@ -178,10 +269,14 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
         setJobId(null); setWorking(false)
         if (job.status === 'complete') {
           const updated = await refresh()
-          const updatedContent = isResearch ? decorateKeyFindings(sanitizeHtml(updated.content)) : sanitizeHtml(updated.content)
+          const { html: formatted, extractedTitle } = prepareContent(updated.content)
+          const updatedContent = isResearch ? decorateKeyFindings(sanitizeHtml(formatted)) : sanitizeHtml(formatted)
           // Title and content are controlled locally to support autosave. They
           // must be explicitly synchronized after an AI job changes the note.
-          setTitle(updated.title)
+          const effectiveTitle = (!updated.title || updated.title.trim().toLowerCase() === 'untitled note') && extractedTitle
+            ? extractedTitle
+            : updated.title
+          setTitle(effectiveTitle)
           setContent(updatedContent)
           if (ref.current) ref.current.innerHTML = withImageUrls(updatedContent)
           onToast(completionMessage(job))
@@ -656,6 +751,9 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
         <button className={active.blockquote ? 'active' : ''} onMouseDown={keepSelection} onClick={() => toggleBlock('blockquote')}><Quote size={17}/></button>
         <button className={active.pre ? 'active' : ''} onMouseDown={keepSelection} onClick={() => toggleBlock('pre')}><Code2 size={17}/></button>
         <button title="Add an image" onMouseDown={keepSelection} onClick={() => imageInput.current?.click()}><Image size={17}/></button>
+        <b/>
+        <button className={isDictating ? 'active mic-active' : ''} onMouseDown={keepSelection} onClick={toggleDictation} title={isDictating ? 'Listening… click to finish dictation' : 'Dictate note with your microphone (English)'}>{isDictating ? <MicOff size={16}/> : <Mic size={16}/>}</button>
+        <button className={isSpeaking ? 'active speaker-active' : ''} onMouseDown={keepSelection} onClick={toggleReadAloud} title={isSpeaking ? 'Stop reading' : 'Read note aloud with English voice'}>{isSpeaking ? <Square size={14} fill="currentColor"/> : <Volume2 size={16}/>}</button>
       </div>
       <input ref={imageInput} type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/avif" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void insertImage(file) }}/>
       <div ref={ref} className={`rich-editor${isResearch ? ' research-document' : ''}`} contentEditable suppressContentEditableWarning onInput={e => edit(e.currentTarget.innerHTML)} onPaste={pasteImage} onKeyUp={updateActive} onMouseUp={updateActive} onClick={updateActive}/>

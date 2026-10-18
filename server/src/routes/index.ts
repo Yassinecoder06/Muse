@@ -8,6 +8,7 @@ import * as calendar from '../controllers/calendar.controller.js'
 import * as tasks from '../controllers/tasks.controller.js'
 import * as detection from '../controllers/detection.controller.js'
 import * as chat from '../controllers/chat.controller.js'
+import * as voice from '../controllers/voice.controller.js'
 import { requireAuth } from '../middleware/auth.js'
 import { graph } from '../services/graph.service.js'
 
@@ -76,6 +77,9 @@ router.get('/chat/sessions/:id', chat.getSession)
 router.patch('/chat/sessions/:id', chat.updateSession)
 router.delete('/chat/sessions/:id', chat.deleteSession)
 router.post('/chat/sessions/:id/messages', chat.sendMessage)
+
+// Voice Transcribe Fallback
+router.post('/voice/transcribe', express.raw({ type: () => true, limit: '15mb' }), voice.transcribeAudio)
 
 // Memories
 router.get('/chat/memories', chat.listMemories)
