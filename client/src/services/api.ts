@@ -229,7 +229,13 @@ export const api = {
   getSettings: () => request<SettingsResponse>('/settings'),
   saveApiKey: (apiKey: string, provider?: 'gemini' | 'ollama') => request<SettingsResponse>('/settings', { method: 'PUT', body: JSON.stringify({ apiKey, provider }) }),
   deleteApiKey: (provider?: 'gemini' | 'ollama') => request<SettingsResponse>(`/settings${provider ? `?provider=${provider}` : ''}`, { method: 'DELETE' }),
-  getAiUsage: () => request<AiUsage>('/ai/usage'),
+  getAiUsage: (opts?: { model?: string; provider?: 'gemini' | 'ollama' }) => {
+    const params = new URLSearchParams()
+    if (opts?.model) params.set('model', opts.model)
+    if (opts?.provider) params.set('provider', opts.provider)
+    const qs = params.toString()
+    return request<AiUsage>(`/ai/usage${qs ? `?${qs}` : ''}`)
+  },
   getAiActive: () => request<{ running: boolean; type?: string }>('/ai/active'),
   getGraph: () => activeVaultUser() ? secureGraph() : request<GraphData>('/graph'),
 

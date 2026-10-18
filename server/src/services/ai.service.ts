@@ -436,15 +436,19 @@ export async function validateApiKey(apiKey: string): Promise<{ valid: boolean; 
 }
 
 export async function fetchAccountUsage(apiKey: string) {
-  const data = await queryOllama('/api/usage', undefined, apiKey, 'GET')
-  const limits = data?.limits || {}
-  const session = limits.session || {}
-  const weekly = limits.weekly || {}
-  const toPercent = (value: unknown) => { const n = typeof value === 'number' ? value : Number(value || 0); return Math.round((n > 1 ? n : n * 100) * 10) / 10 }
-  const models = (value: unknown) => Array.isArray(value) ? value.map((item: any) => ({ name: String(item?.name || ''), requests: Number(item?.request_count || 0) })).filter(item => item.name) : []
-  let plan: string | null = null
-  try { const me = await queryOllama('/api/me', {}, apiKey); plan = String(me?.plan || me?.subscription?.plan || '') || null } catch {}
-  return { plan, session: { usedPct: toPercent(session.usage), models: models(session.models) }, weekly: { usedPct: toPercent(weekly.usage), models: models(weekly.models) } }
+  try {
+    const data = await queryOllama('/api/usage', undefined, apiKey, 'GET')
+    const limits = data?.limits || {}
+    const session = limits.session || {}
+    const weekly = limits.weekly || {}
+    const toPercent = (value: unknown) => { const n = typeof value === 'number' ? value : Number(value || 0); return Math.round((n > 1 ? n : n * 100) * 10) / 10 }
+    const models = (value: unknown) => Array.isArray(value) ? value.map((item: any) => ({ name: String(item?.name || ''), requests: Number(item?.request_count || 0) })).filter(item => item.name) : []
+    let plan: string | null = null
+    try { const me = await queryOllama('/api/me', {}, apiKey); plan = String(me?.plan || me?.subscription?.plan || '') || null } catch {}
+    return { plan: plan || 'Ollama Cloud', session: { usedPct: toPercent(session.usage), models: models(session.models) }, weekly: { usedPct: toPercent(weekly.usage), models: models(weekly.models) } }
+  } catch {
+    return { plan: 'Ollama Cloud', session: { usedPct: 0, models: [] }, weekly: { usedPct: 0, models: [] } }
+  }
 }
 
 let cachedEmbeddingModel: string | null = null

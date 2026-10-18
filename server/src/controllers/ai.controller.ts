@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { jobs } from '../services/ai-job.service.js'
-import { AI_KEY_REQUIRED, ai, fetchAccountUsage, listModels as getModels, OLLAMA_LOCAL_URL } from '../services/ai.service.js'
+import { AI_KEY_REQUIRED, ai, fetchAccountUsage, listModels as getModels, OLLAMA_LOCAL_URL, isCloudModel, isGeminiModel } from '../services/ai.service.js'
 import { settings } from '../services/settings.repository.js'
 import { supabase } from '../supabase/client.js'
 import { researchArtifacts, researchDocuments } from '../services/research-document.repository.js'
@@ -123,46 +123,81 @@ export async function secureStream(req: Request, res: Response, next: NextFuncti
 export async function listModels(_req: Request, res: Response, next: NextFunction) { try { res.json(await getModels()) } catch (error) { next(error) } }
 export async function askNote(req: Request, res: Response, next: NextFunction) { try { const body = z.object({ noteId: z.string().uuid(), question: z.string().min(1).max(2000), history, model }).parse(req.body); await requireKey(user(req)); res.status(202).json(await jobs.enqueue(user(req), body.noteId, 'ask_note', { question: body.question, history: body.history, model: body.model })) } catch (error) { next(error) } }
 export async function askSearch(req: Request, res: Response, next: NextFunction) { try { const { question, history: turns, model: chatModel } = z.object({ question: z.string().min(1).max(2000), history, model }).parse(req.body); await requireKey(user(req)); res.status(202).json(await jobs.enqueue(user(req), null, 'ask_search', { question, history: turns, model: chatModel })) } catch (error) { next(error) } }
-export async function usage(_req: Request, res: Response, next: NextFunction) {
+export async function usage(req: Request, res: Response, next: NextFunction) {
   try {
-    const userId = user(_req)
-    const geminiKey = await settings.getGeminiKey(userId)
-    if (geminiKey) {
-      const dailyStats = await settings.getAiDailyUsage(userId, 'gemini')
-      const dailyLimit = dailyStats.dailyLimit || 1500
-      const requestsToday = dailyStats.requestsToday || 0
-      const usedPct = Math.min(100, Math.round((requestsToday / dailyLimit) * 1000) / 10)
-      const totalTokens = dailyStats.totalTokens || 0
-      const tokenPct = Math.min(100, Math.round((totalTokens / 1_000_000) * 1000) / 10)
+    const userId = user(req)
+    const [geminiKey, ollamaKey] = await Promise.all([
+      settings.getGeminiKey(userId),
+      settings.getKey(userId)
+    ])
 
-      res.json({
-        configured: true,
-        provider: 'gemini',
-        plan: 'Google AI Studio · Free Tier',
-        dailyLimit,
-        requestsToday,
-        totalTokens,
-        session: {
-          usedPct,
-          models: (dailyStats.models || []).map(m => ({
-            name: m.name,
-            requests: m.requests,
-            tokens: m.tokens
-          }))
-        },
-        weekly: {
-          usedPct: tokenPct,
-          models: (dailyStats.models || []).map(m => ({
-            name: m.name,
-            requests: m.requests
-          }))
-        }
-      })
+    const requestedModel = typeof req.query.model === 'string' ? req.query.model : undefined
+    const requestedProvider = typeof req.query.provider === 'string' ? req.query.provider : undefined
+
+    let targetProvider: 'gemini' | 'ollama'
+    if (requestedProvider === 'ollama') {
+      targetProvider = 'ollama'
+    } else if (requestedProvider === 'gemini') {
+      targetProvider = 'gemini'
+    } else if (requestedModel) {
+      if (isGeminiModel(requestedModel)) {
+        targetProvider = 'gemini'
+      } else if (isCloudModel(requestedModel) || requestedModel.includes('ollama')) {
+        targetProvider = 'ollama'
+      } else {
+        targetProvider = geminiKey ? 'gemini' : (ollamaKey ? 'ollama' : 'gemini')
+      }
+    } else {
+      targetProvider = geminiKey ? 'gemini' : (ollamaKey ? 'ollama' : 'gemini')
+    }
+
+    if (targetProvider === 'ollama') {
+      if (!ollamaKey) {
+        res.json({ configured: false, provider: 'ollama' })
+        return
+      }
+      res.json({ configured: true, provider: 'ollama', ...(await fetchAccountUsage(ollamaKey)) })
       return
     }
 
-    const key = await settings.getKey(userId)
-    if (!key) { res.json({ configured: false }); return }
-    res.json({ configured: true, provider: 'ollama', ...(await fetchAccountUsage(key)) })
+    if (!geminiKey) {
+      if (ollamaKey && !requestedProvider && !requestedModel) {
+        res.json({ configured: true, provider: 'ollama', ...(await fetchAccountUsage(ollamaKey)) })
+        return
+      }
+      res.json({ configured: false, provider: 'gemini' })
+      return
+    }
+
+    const dailyStats = await settings.getAiDailyUsage(userId, 'gemini')
+    const dailyLimit = dailyStats.dailyLimit || 1500
+    const requestsToday = dailyStats.requestsToday || 0
+    const usedPct = Math.min(100, Math.round((requestsToday / dailyLimit) * 1000) / 10)
+    const totalTokens = dailyStats.totalTokens || 0
+    const tokenPct = Math.min(100, Math.round((totalTokens / 1_000_000) * 1000) / 10)
+
+    res.json({
+      configured: true,
+      provider: 'gemini',
+      plan: 'Google AI Studio · Free Tier',
+      dailyLimit,
+      requestsToday,
+      totalTokens,
+      session: {
+        usedPct,
+        models: (dailyStats.models || []).map(m => ({
+          name: m.name,
+          requests: m.requests,
+          tokens: m.tokens
+        }))
+      },
+      weekly: {
+        usedPct: tokenPct,
+        models: (dailyStats.models || []).map(m => ({
+          name: m.name,
+          requests: m.requests
+        }))
+      }
+    })
   } catch (error) { next(error) }
 }
