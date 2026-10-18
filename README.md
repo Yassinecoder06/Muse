@@ -83,8 +83,8 @@ The API returns note saves immediately. A background processor generates missing
    npm run dev
    ```
 
-   Open `http://localhost:5173` for the Vite client; Express runs on
-   `http://localhost:3001`. The Docker Nginx gateway at
+   Open `http://localhost:5174` for the Vite client; Express runs on
+   `http://localhost:3002`. The Docker Nginx gateway at
    `http://localhost:8080` will also work while Express is running, but it
    serves the client bundle built when Compose last ran.
 
@@ -495,10 +495,10 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Docker Nginx (127.0
    tunnel token.
 
 Only Cloudflare is public in this design. Do not open inbound ports `80`,
-`443`, `3001`, `8000`, `5432`, or `6333` for Muse.
+`443`, `3002`, `8000`, `5432`, or `6333` for Muse.
 
 For a local setup, the tunnel ingress must point to `http://localhost:8080`.
-The Nginx container forwards `/api` to Express on port `3001`; do not point a
+The Nginx container forwards `/api` to Express on port `3002`; do not point a
 tunnel directly to Express.
 
 ## Verify a production deployment
@@ -507,7 +507,7 @@ After the full stack is up, confirm every layer end to end:
 
 ```bash
 docker compose ps --format "table {{.Name}}\t{{.Status}}"   # db, server, kong & nginx healthy
-docker compose exec server node -e "fetch('http://127.0.0.1:3001/health').then(r => r.json()).then(console.log)"
+docker compose exec server node -e "fetch('http://127.0.0.1:3002/health').then(r => r.json()).then(console.log)"
 curl -s http://localhost:8080/health                         # same health check through Nginx
 curl -sI https://notes.example.com/ | head -n 1             # 200 or 30x
 ```

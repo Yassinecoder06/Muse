@@ -36,8 +36,8 @@ Compose-managed Nginx, Supabase, SMTP, and Express setup.
 Supabase paths; Express owns Muse `/api/*` paths. Qdrant stores derived note
 vectors only—PostgreSQL stores notes, report inputs, artifacts, and metadata.
 
-During hot-reload development the browser uses Vite at `http://localhost:5173`
-and Express at `http://localhost:3001`. The Docker gateway serves the built
+During hot-reload development the browser uses Vite at `http://localhost:5174`
+and Express at `http://localhost:3002`. The Docker gateway serves the built
 frontend at `http://localhost:8080`.
 
 All `/api/*` endpoints require `Authorization: Bearer <GoTrue access token>`
@@ -265,7 +265,7 @@ script, and backup requirements.
 | --- | --- | --- |
 | `nginx` | `127.0.0.1:8080` | Built React client and reverse proxy |
 | `kong` | `127.0.0.1:8000`, `8443` | Supabase API gateway |
-| `studio` | `127.0.0.1:3000` | Supabase Studio |
+| `studio` | `127.0.0.1:54323` | Supabase Studio |
 | `qdrant` | `127.0.0.1:6333`, `6334` | Vector database |
 | `db`, `auth`, `rest`, `storage`, `realtime`, `meta`, `mailer-templates` | Internal only | Supabase services and email templates |
 

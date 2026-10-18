@@ -25,12 +25,13 @@ const secureRun = z.object({
 })
 const user = (req: Request) => req.userId!
 async function requireKey(userId: string) {
+  if (await settings.hasGeminiKey(userId)) return
   if (await settings.hasKey(userId)) return
   try {
     const res = await fetch(`${OLLAMA_LOCAL_URL}/api/tags`, { method: 'GET' })
     if (res.ok) return
   } catch {}
-  const error = new Error('No local Ollama found on port 11434 and no Ollama API key configured in Settings.')
+  const error = new Error('No Gemini or Ollama API key configured in Settings, and no local Ollama found on port 11434.')
   ;(error as any).statusCode = 400
   throw error
 }
@@ -77,8 +78,16 @@ export async function active(req: Request, res: Response, next: NextFunction) { 
 export async function secureStream(req: Request, res: Response, next: NextFunction) {
   try {
     const body = secureRun.parse(req.body)
-    const apiKey = await settings.getKey(user(req))
-    if (!apiKey) { res.status(400).json({ error: AI_KEY_REQUIRED }); return }
+    const { geminiKey, ollamaKey } = await settings.getEffectiveAiKeys(user(req))
+    if (!geminiKey && !ollamaKey) {
+      try {
+        const res = await fetch(`${OLLAMA_LOCAL_URL}/api/tags`, { method: 'GET' })
+        if (!res.ok) throw new Error()
+      } catch {
+        res.status(400).json({ error: AI_KEY_REQUIRED }); return
+      }
+    }
+    const keyContext = { geminiKey, ollamaKey, userId: user(req) }
     res.status(200).set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
     res.flushHeaders()
     const emit = (event: 'progress' | 'result' | 'error', value: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`)
@@ -86,23 +95,23 @@ export async function secureStream(req: Request, res: Response, next: NextFuncti
     const specialty = body.note.specialized?.aiInstruction ? ` Follow this specialized-note instruction: ${body.note.specialized.aiInstruction}` : ''
     const patch: Record<string, unknown> = {}
     emit('progress', { message: 'Muse is thinking' })
-    if (body.action === 'summary') { patch.summary = await ai.summarize(`${source}${specialty}`, body.model, apiKey) }
-    else if (body.action === 'tasks') { patch.tasks = await ai.extractTasks(`${source}${specialty}`, body.model, apiKey) }
-    else if (body.action === 'title') { patch.title = await ai.generateTitle(`${source}${specialty}`, body.model, apiKey) }
-    else if (body.action === 'tags') { patch.tags = await ai.generateTags(`${source}${specialty}`, body.model, apiKey) }
+    if (body.action === 'summary') { patch.summary = await ai.summarize(`${source}${specialty}`, body.model, keyContext) }
+    else if (body.action === 'tasks') { patch.tasks = await ai.extractTasks(`${source}${specialty}`, body.model, keyContext) }
+    else if (body.action === 'title') { patch.title = await ai.generateTitle(`${source}${specialty}`, body.model, keyContext) }
+    else if (body.action === 'tags') { patch.tags = await ai.generateTags(`${source}${specialty}`, body.model, keyContext) }
     else if (body.action === 'rewrite') {
       if (!body.mode) throw new Error('Choose a rewrite mode.')
       // The browser replaces image tags with [IMAGE n] markers before this
       // request and restores them after the stream. This keeps both inline
       // attachment bytes and their URLs out of the AI request.
-      patch.content = await ai.rewrite(body.note.content, body.mode, body.model, apiKey)
+      patch.content = await ai.rewrite(body.note.content, body.mode, body.model, keyContext)
     } else {
       emit('progress', { message: 'Creating a title' })
-      patch.title = body.note.title.trim() || await ai.generateTitle(`${source}${specialty}`, body.model, apiKey)
+      patch.title = body.note.title.trim() || await ai.generateTitle(`${source}${specialty}`, body.model, keyContext)
       emit('progress', { message: 'Finding key themes' })
-      patch.tags = await ai.generateTags(`${source}${specialty}`, body.model, apiKey)
+      patch.tags = await ai.generateTags(`${source}${specialty}`, body.model, keyContext)
       emit('progress', { message: 'Writing a summary' })
-      patch.summary = await ai.summarize(`${source}${specialty}`, body.model, apiKey)
+      patch.summary = await ai.summarize(`${source}${specialty}`, body.model, keyContext)
     }
     emit('result', { patch })
     res.end()
@@ -116,8 +125,44 @@ export async function askNote(req: Request, res: Response, next: NextFunction) {
 export async function askSearch(req: Request, res: Response, next: NextFunction) { try { const { question, history: turns, model: chatModel } = z.object({ question: z.string().min(1).max(2000), history, model }).parse(req.body); await requireKey(user(req)); res.status(202).json(await jobs.enqueue(user(req), null, 'ask_search', { question, history: turns, model: chatModel })) } catch (error) { next(error) } }
 export async function usage(_req: Request, res: Response, next: NextFunction) {
   try {
-    const key = await settings.getKey(user(_req))
+    const userId = user(_req)
+    const geminiKey = await settings.getGeminiKey(userId)
+    if (geminiKey) {
+      const dailyStats = await settings.getAiDailyUsage(userId, 'gemini')
+      const dailyLimit = dailyStats.dailyLimit || 1500
+      const requestsToday = dailyStats.requestsToday || 0
+      const usedPct = Math.min(100, Math.round((requestsToday / dailyLimit) * 1000) / 10)
+      const totalTokens = dailyStats.totalTokens || 0
+      const tokenPct = Math.min(100, Math.round((totalTokens / 1_000_000) * 1000) / 10)
+
+      res.json({
+        configured: true,
+        provider: 'gemini',
+        plan: 'Google AI Studio · Free Tier',
+        dailyLimit,
+        requestsToday,
+        totalTokens,
+        session: {
+          usedPct,
+          models: (dailyStats.models || []).map(m => ({
+            name: m.name,
+            requests: m.requests,
+            tokens: m.tokens
+          }))
+        },
+        weekly: {
+          usedPct: tokenPct,
+          models: (dailyStats.models || []).map(m => ({
+            name: m.name,
+            requests: m.requests
+          }))
+        }
+      })
+      return
+    }
+
+    const key = await settings.getKey(userId)
     if (!key) { res.json({ configured: false }); return }
-    res.json({ configured: true, ...(await fetchAccountUsage(key)) })
+    res.json({ configured: true, provider: 'ollama', ...(await fetchAccountUsage(key)) })
   } catch (error) { next(error) }
 }

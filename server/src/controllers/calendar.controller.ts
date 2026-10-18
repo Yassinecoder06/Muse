@@ -105,7 +105,8 @@ export async function quickAddEvent(req: Request, res: Response, next: NextFunct
 
     // Attempt AI refinement with local or cloud Ollama
     try {
-      const apiKey = await settings.getKey(req.userId!).catch(() => null)
+      const { geminiKey, ollamaKey } = await settings.getEffectiveAiKeys(req.userId!)
+      const keyContext = { geminiKey, ollamaKey, userId: req.userId! }
       const aiPrompt = `Given reference date ${refDate.toISOString()} and the event prompt: "${prompt}",
 extract the event details and reply strictly with valid JSON (no markdown):
 {
@@ -119,7 +120,8 @@ extract the event details and reply strictly with valid JSON (no markdown):
         'You are an expert calendar assistant that returns strictly JSON.',
         aiPrompt,
         undefined,
-        apiKey || undefined
+        keyContext,
+        'lightweight'
       )
       const match = aiResponse.match(/\{[\s\S]*\}/)
       if (match) {

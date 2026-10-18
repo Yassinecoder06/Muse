@@ -184,9 +184,11 @@ export function Dashboard({
                     <Trash2 size={14}/> Delete
                   </button>
                 ) : null}
-                <button onClick={() => confirmDelete(() => emptyTrash(), 'Permanently delete every note in the trash?')}>
-                  <Trash2 size={14}/> Empty trash
-                </button>
+                {counts.trash > 0 && (
+                  <button onClick={() => confirmDelete(() => emptyTrash(), 'Permanently delete every note in the trash?')}>
+                    <Trash2 size={14}/> Empty trash
+                  </button>
+                )}
               </div>
             ) : selected.length > 0 ? (
               <div className="trash-toolbar">
@@ -286,27 +288,69 @@ export function Dashboard({
             </div>
           ) : (
             <div className="empty">
-              <div><FileText size={24}/></div>
-              <h3>{query ? 'No matching notes' : 'Nothing here yet'}</h3>
-              <p>{query ? 'Try a different word or tag.' : 'Your next thought is a great place to begin.'}</p>
-              <button onClick={create}><Plus size={16}/> Create a note</button>
+              <div>
+                {scope === 'trash' ? (
+                  <Trash2 size={24}/>
+                ) : scope === 'favorites' ? (
+                  <Star size={24}/>
+                ) : scope === 'archive' ? (
+                  <Archive size={24}/>
+                ) : (
+                  <FileText size={24}/>
+                )}
+              </div>
+              <h3>
+                {query
+                  ? 'No matching notes'
+                  : scope === 'trash'
+                  ? 'Trash is empty'
+                  : scope === 'favorites'
+                  ? 'No favorites yet'
+                  : scope === 'archive'
+                  ? 'Archive is empty'
+                  : 'Nothing here yet'}
+              </h3>
+              <p style={!query && scope !== 'all' ? { marginBottom: 0 } : undefined}>
+                {query
+                  ? 'Try a different word or tag.'
+                  : scope === 'trash'
+                  ? 'Notes you delete will appear here.'
+                  : scope === 'favorites'
+                  ? 'Star your favorite notes to keep them close at hand.'
+                  : scope === 'archive'
+                  ? 'Archived notes will be stored here.'
+                  : 'Your next thought is a great place to begin.'}
+              </p>
+              {query ? (
+                <button onClick={() => setQuery('')}>
+                  <RotateCcw size={15}/> Clear search
+                </button>
+              ) : scope === 'all' ? (
+                <button onClick={create}>
+                  <Plus size={16}/> Create a note
+                </button>
+              ) : null}
             </div>
           )}
 
-          <div className="list-heading pinned">
-            <h2>Pinned</h2>
-            <span>Your favorite thoughts, close at hand</span>
-          </div>
-          <article className="reflection">
-            <div>✦</div>
-            <span>
-              <h3>Weekly reflection</h3>
-              <p>What gave me energy this week? What do I want more of?</p>
-              <b className="tag">rituals</b>
-              <b className="tag">personal</b>
-            </span>
-            <strong>↗</strong>
-          </article>
+          {scope === 'all' && (
+            <>
+              <div className="list-heading pinned">
+                <h2>Pinned</h2>
+                <span>Your favorite thoughts, close at hand</span>
+              </div>
+              <article className="reflection">
+                <div>✦</div>
+                <span>
+                  <h3>Weekly reflection</h3>
+                  <p>What gave me energy this week? What do I want more of?</p>
+                  <b className="tag">rituals</b>
+                  <b className="tag">personal</b>
+                </span>
+                <strong>↗</strong>
+              </article>
+            </>
+          )}
         </section>
       </main>
     </div>
