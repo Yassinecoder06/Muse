@@ -71,9 +71,9 @@ class _MainScaffoldState extends State<MainScaffold> {
             label: 'Notes',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.check_circle_outline_rounded),
-            activeIcon: Icon(Icons.check_circle_rounded),
-            label: 'Tasks',
+            icon: Icon(Icons.event_note_outlined),
+            activeIcon: Icon(Icons.event_note_rounded),
+            label: 'Schedule',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.tune_outlined),

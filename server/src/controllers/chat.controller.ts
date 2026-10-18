@@ -272,3 +272,63 @@ export async function deleteMemory(req: Request, res: Response, next: NextFuncti
     next(error)
   }
 }
+
+export async function directChat(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = z.object({
+      message: z.string().trim().min(1, 'Message cannot be empty'),
+      sessionId: z.string().uuid().optional(),
+      model: z.string().optional(),
+      userName: z.string().optional()
+    }).parse(req.body)
+
+    let sessionId = body.sessionId
+
+    if (!sessionId) {
+      const { data: existing } = await supabase
+        .from('chat_sessions')
+        .select('id')
+        .eq('user_id', req.userId!)
+        .eq('context_type', 'mobile')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (existing) {
+        sessionId = existing.id
+      } else {
+        const { data: created, error: createErr } = await supabase
+          .from('chat_sessions')
+          .insert({
+            user_id: req.userId!,
+            title: 'Mobile Companion',
+            context_type: 'mobile'
+          })
+          .select('id')
+          .single()
+
+        if (createErr) throw createErr
+        sessionId = created.id
+      }
+    }
+
+    const output = await runAgentConversation({
+      userId: req.userId!,
+      sessionId: sessionId!,
+      messageText: body.message,
+      model: body.model,
+      userName: body.userName
+    })
+
+    const reply = output.assistantMessage.content
+    res.json({
+      reply,
+      response: reply,
+      sessionId,
+      actionCards: output.assistantMessage.action_cards || [],
+      toolCalls: output.assistantMessage.tool_calls || []
+    })
+  } catch (error) {
+    next(error)
+  }
+}

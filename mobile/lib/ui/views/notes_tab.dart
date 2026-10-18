@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../data/models/note.dart';
 import '../../data/services/api_service.dart';
 import '../theme/app_theme.dart';
+import 'note_detail_view.dart';
 
 class NotesTab extends StatefulWidget {
   const NotesTab({super.key});
@@ -12,10 +14,14 @@ class NotesTab extends StatefulWidget {
 
 class _NotesTabState extends State<NotesTab> {
   final ApiService _api = ApiService();
-  List<Note> _notes = [];
+
+  List<Note> _allNotes = [];
   bool _loading = true;
   String _search = '';
   String? _error;
+
+  // Scopes: 'all', 'favorites', 'archive', 'trash'
+  String _currentScope = 'all';
 
   @override
   void initState() {
@@ -29,9 +35,9 @@ class _NotesTabState extends State<NotesTab> {
       _error = null;
     });
     try {
-      final list = await _api.fetchNotes();
+      final list = await _api.fetchNotes(scope: _currentScope);
       setState(() {
-        _notes = list;
+        _allNotes = list;
         _loading = false;
       });
     } catch (e) {
@@ -42,26 +48,145 @@ class _NotesTabState extends State<NotesTab> {
     }
   }
 
-  Future<void> _toggleFavorite(Note note) async {
-    try {
-      await _api.toggleFavoriteNote(note.id, note.favorite);
-      setState(() {
-        final index = _notes.indexWhere((n) => n.id == note.id);
-        if (index != -1) {
-          _notes[index] = Note(
-            id: note.id,
-            title: note.title,
-            content: note.content,
-            tags: note.tags,
-            favorite: !note.favorite,
-            updatedAt: note.updatedAt,
-          );
-        }
-      });
-    } catch (_) {}
+  Future<void> _setScope(String scope) async {
+    if (_currentScope == scope) return;
+    setState(() {
+      _currentScope = scope;
+    });
+    await _loadNotes();
   }
 
-  void _showCreateNoteDialog() {
+  Future<void> _toggleFavorite(Note note) async {
+    final nextFav = !note.favorite;
+    setState(() {
+      final index = _allNotes.indexWhere((n) => n.id == note.id);
+      if (index != -1) {
+        _allNotes[index] = note.copyWith(favorite: nextFav);
+      }
+    });
+
+    try {
+      await _api.toggleFavoriteNote(note.id, !nextFav);
+    } catch (_) {
+      // Revert if error
+      setState(() {
+        final index = _allNotes.indexWhere((n) => n.id == note.id);
+        if (index != -1) {
+          _allNotes[index] = note.copyWith(favorite: !nextFav);
+        }
+      });
+    }
+  }
+
+  Future<void> _restoreNote(Note note) async {
+    try {
+      await _api.restoreNote(note.id);
+      setState(() {
+        _allNotes.removeWhere((n) => n.id == note.id);
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Note restored to your workspace')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to restore: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
+  Future<void> _deletePermanently(Note note) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Delete permanently?', style: TextStyle(color: AppTheme.textPrimary)),
+        content: const Text(
+          'This note will be permanently erased and cannot be recovered.',
+          style: TextStyle(color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await _api.deleteNotePermanently(note.id);
+        setState(() {
+          _allNotes.removeWhere((n) => n.id == note.id);
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Note permanently deleted')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to delete: $e'), backgroundColor: Colors.redAccent),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _emptyTrash() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Empty Trash?', style: TextStyle(color: AppTheme.textPrimary)),
+        content: const Text(
+          'Every note in the trash will be permanently destroyed.',
+          style: TextStyle(color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Empty Trash', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await _api.emptyTrash();
+        setState(() => _allNotes.clear());
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Trash emptied')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to empty trash: $e'), backgroundColor: Colors.redAccent),
+          );
+        }
+      }
+    }
+  }
+
+  void _showCreateNoteSheet() {
     final titleController = TextEditingController();
     final contentController = TextEditingController();
 
@@ -99,6 +224,7 @@ class _NotesTabState extends State<NotesTab> {
             const SizedBox(height: 12),
             TextField(
               controller: titleController,
+              autofocus: true,
               style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
               decoration: InputDecoration(
                 hintText: 'Note Title',
@@ -111,7 +237,7 @@ class _NotesTabState extends State<NotesTab> {
             const SizedBox(height: 12),
             TextField(
               controller: contentController,
-              maxLines: 5,
+              maxLines: 6,
               style: const TextStyle(color: AppTheme.textPrimary),
               decoration: InputDecoration(
                 hintText: 'Type your thoughts or paste ideas…',
@@ -136,21 +262,27 @@ class _NotesTabState extends State<NotesTab> {
 
                 Navigator.pop(ctx);
                 try {
-                  await _api.createNote(
-                    title: title.isEmpty ? 'Quick Note' : title,
+                  final created = await _api.createNote(
+                    title: title.isEmpty ? 'Untitled Note' : title,
                     content: content,
                     tags: ['mobile'],
                   );
-                  _loadNotes();
+                  await _loadNotes();
+                  if (mounted) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => NoteDetailView(note: created)),
+                    ).then((_) => _loadNotes());
+                  }
                 } catch (e) {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to save: $e')),
+                      SnackBar(content: Text('Failed to save note: $e'), backgroundColor: Colors.redAccent),
                     );
                   }
                 }
               },
-              child: const Text('Save Note', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: const Text('Create Note', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             ),
           ],
         ),
@@ -160,158 +292,571 @@ class _NotesTabState extends State<NotesTab> {
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _notes.where((n) {
+    final now = DateTime.now();
+    final todayStr = DateFormat('EEEE, MMMM d').format(now);
+
+    final filtered = _allNotes.where((n) {
       if (_search.isEmpty) return true;
       final q = _search.toLowerCase();
-      return n.title.toLowerCase().contains(q) || n.plainText.toLowerCase().contains(q);
+      return n.title.toLowerCase().contains(q) ||
+          n.plainText.toLowerCase().contains(q) ||
+          n.tags.any((t) => t.toLowerCase().contains(q));
     }).toList();
+
+    // Divide into Starred and Others when in "all" scope
+    final starredNotes = _currentScope == 'all' && _search.isEmpty
+        ? filtered.where((n) => n.favorite).toList()
+        : <Note>[];
+    final otherNotes = _currentScope == 'all' && _search.isEmpty
+        ? filtered.where((n) => !n.favorite).toList()
+        : filtered;
 
     return Scaffold(
       backgroundColor: AppTheme.background,
       floatingActionButton: FloatingActionButton(
-        onPressed: _showCreateNoteDialog,
+        onPressed: _showCreateNoteSheet,
         tooltip: 'New Note',
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.edit_rounded),
       ),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
-              onChanged: (val) => setState(() => _search = val),
-              decoration: InputDecoration(
-                hintText: 'Search notes…',
-                hintStyle: const TextStyle(color: AppTheme.textSecondary),
-                prefixIcon: const Icon(Icons.search, color: AppTheme.textSecondary, size: 20),
-                filled: true,
-                fillColor: AppTheme.surface,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppTheme.surfaceBorder),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(color: AppTheme.surfaceBorder),
+      body: RefreshIndicator(
+        onRefresh: _loadNotes,
+        color: AppTheme.primaryLight,
+        child: CustomScrollView(
+          slivers: [
+            // Hero Header matching desktop Muse
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      todayStr,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textSecondary.withValues(alpha: 0.8),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Good day, Explorer.',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline_rounded, color: AppTheme.primaryLight, size: 26),
+                          tooltip: 'Quick Note',
+                          onPressed: _showCreateNoteSheet,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'A quiet space for your thoughts & workspace.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppTheme.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ),
 
-          // Notes List
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: _loadNotes,
-              color: AppTheme.primaryLight,
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: AppTheme.primaryLight))
-                  : _error != null
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24.0),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.cloud_off_rounded, color: Colors.orangeAccent, size: 48),
-                                const SizedBox(height: 12),
-                                Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textSecondary)),
-                                const SizedBox(height: 16),
-                                ElevatedButton.icon(
-                                  onPressed: _loadNotes,
-                                  icon: const Icon(Icons.refresh),
-                                  label: const Text('Retry'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : filtered.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.notes_rounded, size: 48, color: AppTheme.textSecondary.withValues(alpha: 0.4)),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    _search.isEmpty ? 'No notes yet' : 'No matching notes found',
-                                    style: const TextStyle(color: AppTheme.textSecondary),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-                              itemCount: filtered.length,
-                              itemBuilder: (context, index) {
-                                final note = filtered[index];
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(16.0),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                note.title.isEmpty ? 'Untitled Note' : note.title,
-                                                style: const TextStyle(
-                                                  color: AppTheme.textPrimary,
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ),
-                                            IconButton(
-                                              icon: Icon(
-                                                note.favorite ? Icons.star_rounded : Icons.star_outline_rounded,
-                                                color: note.favorite ? Colors.amber : AppTheme.textSecondary,
-                                                size: 22,
-                                              ),
-                                              onPressed: () => _toggleFavorite(note),
-                                            ),
-                                          ],
-                                        ),
-                                        if (note.plainText.isNotEmpty) ...[
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            note.plainText,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.4),
-                                          ),
-                                        ],
-                                        if (note.tags.isNotEmpty) ...[
-                                          const SizedBox(height: 10),
-                                          Wrap(
-                                            spacing: 6,
-                                            children: note.tags.map((tag) => Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: AppTheme.background,
-                                                borderRadius: BorderRadius.circular(6),
-                                                border: Border.all(color: AppTheme.surfaceBorder),
-                                              ),
-                                              child: Text(
-                                                '#$tag',
-                                                style: const TextStyle(color: AppTheme.primaryLight, fontSize: 11),
-                                              ),
-                                            )).toList(),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
+            // Scope Filter Navigation Strip (All, Favorites, Archive, Trash)
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 44,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  children: [
+                    _buildScopeChip(
+                      id: 'all',
+                      label: 'All notes',
+                      icon: Icons.notes_rounded,
+                      count: _currentScope == 'all' ? _allNotes.length : null,
+                    ),
+                    _buildScopeChip(
+                      id: 'favorites',
+                      label: 'Favorites',
+                      icon: Icons.star_rounded,
+                      iconColor: Colors.amber,
+                      count: _currentScope == 'favorites' ? _allNotes.length : null,
+                    ),
+                    _buildScopeChip(
+                      id: 'archive',
+                      label: 'Archive',
+                      icon: Icons.archive_outlined,
+                      count: _currentScope == 'archive' ? _allNotes.length : null,
+                    ),
+                    _buildScopeChip(
+                      id: 'trash',
+                      label: 'Trash',
+                      icon: Icons.delete_outline_rounded,
+                      iconColor: Colors.redAccent,
+                      count: _currentScope == 'trash' ? _allNotes.length : null,
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
+
+            // Search Bar
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
+                child: TextField(
+                  style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                  onChanged: (val) => setState(() => _search = val.trim()),
+                  decoration: InputDecoration(
+                    hintText: 'Search title, content, or #tag…',
+                    hintStyle: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                    prefixIcon: const Icon(Icons.search, color: AppTheme.textSecondary, size: 20),
+                    suffixIcon: _search.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, color: AppTheme.textSecondary, size: 18),
+                            onPressed: () => setState(() => _search = ''),
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: AppTheme.surface,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: AppTheme.surfaceBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: AppTheme.surfaceBorder),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Trash Toolbar banner if in trash
+            if (_currentScope == 'trash')
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline_rounded, size: 18, color: Colors.redAccent),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Trash notes can be restored or permanently erased.',
+                            style: TextStyle(fontSize: 12, color: Colors.redAccent),
+                          ),
+                        ),
+                        if (_allNotes.isNotEmpty)
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.redAccent,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            onPressed: _emptyTrash,
+                            child: const Text('Empty Trash', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // Main Content Area
+            if (_loading)
+              const SliverFillRemaining(
+                child: Center(child: CircularProgressIndicator(color: AppTheme.primaryLight)),
+              )
+            else if (_error != null)
+              SliverFillRemaining(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.cloud_off_rounded, color: Colors.orangeAccent, size: 48),
+                        const SizedBox(height: 12),
+                        Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textSecondary)),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: _loadNotes,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else if (filtered.isEmpty)
+              SliverFillRemaining(
+                child: _buildEmptyState(),
+              )
+            else ...[
+              // Section 1: Starred / Pinned Notes (if available)
+              if (starredNotes.isNotEmpty) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.star_rounded, size: 16, color: Colors.amber),
+                        const SizedBox(width: 6),
+                        Text(
+                          'STARRED NOTES (${starredNotes.length})',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => _buildNoteCard(starredNotes[index]),
+                      childCount: starredNotes.length,
+                    ),
+                  ),
+                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 12)),
+              ],
+
+              // Section 2: Recent / Other Notes
+              if (otherNotes.isNotEmpty) ...[
+                if (starredNotes.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
+                      child: Text(
+                        'RECENT NOTES (${otherNotes.length})',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: AppTheme.textSecondary,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ),
+                  ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => _buildNoteCard(otherNotes[index]),
+                      childCount: otherNotes.length,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
       ),
     );
+  }
+
+  Widget _buildScopeChip({
+    required String id,
+    required String label,
+    required IconData icon,
+    Color? iconColor,
+    int? count,
+  }) {
+    final isSelected = _currentScope == id;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        selected: isSelected,
+        avatar: Icon(
+          icon,
+          size: 15,
+          color: isSelected ? Colors.white : (iconColor ?? AppTheme.textSecondary),
+        ),
+        label: Text(
+          count != null ? '$label ($count)' : label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected ? Colors.white : AppTheme.textPrimary,
+          ),
+        ),
+        backgroundColor: AppTheme.surface,
+        selectedColor: AppTheme.primary,
+        side: BorderSide(
+          color: isSelected ? AppTheme.primaryLight : AppTheme.surfaceBorder,
+          width: 1,
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        onSelected: (_) => _setScope(id),
+      ),
+    );
+  }
+
+  Widget _buildNoteCard(Note note) {
+    final isTrash = _currentScope == 'trash';
+    final dateStr = _formatNoteDate(note.updatedAt);
+
+    // Kind badge color
+    Color badgeBg = AppTheme.background;
+    Color badgeTextColor = AppTheme.textSecondary;
+    String badgeText = 'NOTE';
+    if (note.kind == 'research') {
+      badgeBg = const Color(0xFF8B5CF6).withValues(alpha: 0.18);
+      badgeTextColor = const Color(0xFFA78BFA);
+      badgeText = 'RESEARCH';
+    } else if (note.kind == 'specialized') {
+      badgeBg = const Color(0xFF10B981).withValues(alpha: 0.18);
+      badgeTextColor = const Color(0xFF34D399);
+      badgeText = 'SPECIALIZED';
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: note.favorite ? Colors.amber.withValues(alpha: 0.3) : AppTheme.surfaceBorder,
+          width: note.favorite ? 1.2 : 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: () async {
+          if (isTrash) return;
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => NoteDetailView(note: note),
+            ),
+          );
+          if (result == true) {
+            _loadNotes();
+          }
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top row: Kind badge + Favorite / Trash actions
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: badgeBg,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: badgeTextColor.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(
+                      badgeText,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: badgeTextColor,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (isTrash) ...[
+                    IconButton(
+                      icon: const Icon(Icons.restore_from_trash_rounded, color: AppTheme.accent, size: 20),
+                      tooltip: 'Restore',
+                      onPressed: () => _restoreNote(note),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 20),
+                      tooltip: 'Delete permanently',
+                      onPressed: () => _deletePermanently(note),
+                    ),
+                  ] else ...[
+                    IconButton(
+                      icon: Icon(
+                        note.favorite ? Icons.star_rounded : Icons.star_outline_rounded,
+                        color: note.favorite ? Colors.amber : AppTheme.textSecondary,
+                        size: 22,
+                      ),
+                      onPressed: () => _toggleFavorite(note),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // Title
+              Text(
+                note.title.isEmpty ? 'Untitled note' : note.title,
+                style: const TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const SizedBox(height: 6),
+
+              // Excerpt (Clean, well-spaced preview)
+              if (note.plainText.isNotEmpty)
+                Text(
+                  note.plainText,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppTheme.textSecondary,
+                    fontSize: 13.5,
+                    height: 1.45,
+                  ),
+                ),
+
+              const SizedBox(height: 14),
+
+              // Bottom footer: Tags + Date + Chevron
+              Row(
+                children: [
+                  if (note.tags.isNotEmpty)
+                    Expanded(
+                      child: Wrap(
+                        spacing: 6,
+                        children: note.tags.take(3).map((tag) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.background,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: AppTheme.surfaceBorder),
+                          ),
+                          child: Text(
+                            '#$tag',
+                            style: const TextStyle(
+                              color: AppTheme.primaryLight,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        )).toList(),
+                      ),
+                    )
+                  else
+                    const Spacer(),
+
+                  // Date
+                  Text(
+                    dateStr,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: AppTheme.textSecondary.withValues(alpha: 0.7),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (!isTrash) ...[
+                    const SizedBox(width: 6),
+                    const Icon(Icons.chevron_right_rounded, size: 16, color: AppTheme.textSecondary),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    IconData icon = Icons.notes_rounded;
+    String title = 'No notes yet';
+    String message = 'Create your first note to start capturing your thoughts.';
+
+    if (_search.isNotEmpty) {
+      icon = Icons.search_off_rounded;
+      title = 'No matching notes';
+      message = 'Try searching with a different keyword or tag.';
+    } else if (_currentScope == 'favorites') {
+      icon = Icons.star_border_rounded;
+      title = 'No favorites yet';
+      message = 'Star notes in your workspace to pin them here.';
+    } else if (_currentScope == 'archive') {
+      icon = Icons.archive_outlined;
+      title = 'Archive is empty';
+      message = 'Archived notes will appear in this section.';
+    } else if (_currentScope == 'trash') {
+      icon = Icons.delete_outline_rounded;
+      title = 'Trash is empty';
+      message = 'Notes you move to trash will be stored here safely.';
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 48, color: AppTheme.textSecondary.withValues(alpha: 0.35)),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+            ),
+            const SizedBox(height: 20),
+            if (_search.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: () => setState(() => _search = ''),
+                icon: const Icon(Icons.clear, size: 16),
+                label: const Text('Clear search'),
+              )
+            else if (_currentScope == 'all')
+              ElevatedButton.icon(
+                onPressed: _showCreateNoteSheet,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Create a note'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatNoteDate(String isoString) {
+    if (isoString.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(isoString).toLocal();
+      return DateFormat('MMM d').format(dt);
+    } catch (_) {
+      return '';
+    }
   }
 }
