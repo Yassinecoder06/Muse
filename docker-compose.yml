@@ -41,6 +41,7 @@ services:
       - ./supabase/migrations/010_specialized_notes.sql:/docker-entrypoint-initdb.d/zz_010_specialized_notes.sql:ro
       - ./supabase/migrations/011_gemini_and_usage.sql:/docker-entrypoint-initdb.d/zz_011_gemini_and_usage.sql:ro
       - ./supabase/migrations/012_chat_sessions_and_memory.sql:/docker-entrypoint-initdb.d/zz_012_chat_sessions_and_memory.sql:ro
+      - ./supabase/migrations/013_remote_companion.sql:/docker-entrypoint-initdb.d/zz_013_remote_companion.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -73,7 +74,7 @@ services:
     depends_on:
       kong: { condition: service_started }
       server: { condition: service_healthy }
-    ports: ["127.0.0.1:8080:80"]
+    ports: ["0.0.0.0:8080:80"]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
       interval: 10s

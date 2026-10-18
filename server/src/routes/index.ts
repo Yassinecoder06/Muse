@@ -9,6 +9,7 @@ import * as tasks from '../controllers/tasks.controller.js'
 import * as detection from '../controllers/detection.controller.js'
 import * as chat from '../controllers/chat.controller.js'
 import * as voice from '../controllers/voice.controller.js'
+import * as remote from '../controllers/remote.controller.js'
 import { requireAuth } from '../middleware/auth.js'
 import { graph } from '../services/graph.service.js'
 
@@ -87,3 +88,12 @@ router.post('/voice/transcribe', express.raw({ type: () => true, limit: '15mb' }
 router.get('/chat/memories', chat.listMemories)
 router.post('/chat/memories', chat.createMemory)
 router.delete('/chat/memories/:id', chat.deleteMemory)
+
+// Remote Mobile Companion
+router.get('/remote/network-info', remote.getNetworkInfo)
+router.post('/remote/pairing/create', remote.createPairingSession)
+router.post('/remote/pairing/claim', remote.claimPairingSession)
+router.get('/remote/pairing/status', remote.checkPairingStatus)
+router.get('/remote/devices', remote.listDevices)
+router.delete('/remote/devices/:id', remote.revokeDevice)
+

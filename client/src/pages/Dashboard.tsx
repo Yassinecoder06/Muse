@@ -1,4 +1,4 @@
-import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, Plus, RotateCcw, Search, Settings, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
+import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, Plus, RotateCcw, Search, Settings, Smartphone, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import type { Note } from '../types'
@@ -26,6 +26,7 @@ export function Dashboard({
   tasks,
   analytics,
   settings,
+  linkPhone,
   userEmail,
   userName,
   emptyTrash,
@@ -54,6 +55,7 @@ export function Dashboard({
   tasks: () => void
   analytics: () => void
   settings: () => void
+  linkPhone?: () => void
   userEmail: string
   userName: string
   emptyTrash: () => void
@@ -132,6 +134,11 @@ export function Dashboard({
         <div className="sidebar-footer">
           <button title="Collections" onClick={collections}><FolderOpen size={17}/><span> Collections</span></button>
           <button title="Graph" onClick={graph}><Waypoints size={17}/><span> Graph</span></button>
+          {linkPhone && (
+            <button title="Link Phone Companion" onClick={linkPhone} className="link-phone-btn">
+              <Smartphone size={17}/><span> Link Phone</span>
+            </button>
+          )}
           <button title="Settings" onClick={settings}><Settings size={17}/><span> Settings</span></button>
           <div className="user">
             <div>{initials}</div>
@@ -156,6 +163,11 @@ export function Dashboard({
               <i className="pulse"/>{aiWorking === 'research' ? 'Researching' : 'Working'}
             </span>
           ) : null}
+          {linkPhone && (
+            <button className="theme top-link-phone" onClick={linkPhone} title="Link Phone Companion">
+              <Smartphone size={18}/>
+            </button>
+          )}
           <button className="theme" onClick={toggleTheme}>{dark ? <Sun size={18}/> : <Moon size={18}/>}</button>
           <button className="ask-muse top-ask" onClick={ask} title="Bip Autonomous AI Assistant"><Bot size={17}/> <span>Ask Muse</span></button>
           <button className="new-note top-new" onClick={create} title="New note (Ctrl+M / ⌘M)"><Plus size={17}/> <span>New note</span></button>

@@ -547,3 +547,53 @@ GoTrue container:
 ```bash
 docker compose logs auth --tail 20
 ```
+
+---
+
+## Remote Mobile Companion (Flutter App)
+
+Muse includes a cross-platform mobile companion located in the `mobile/` directory, allowing you to access your notes, tasks, and talk directly with **Bip AI Assistant** from your phone.
+
+### Features
+* **Zero-Cloud Local Pairing:** Pair your mobile device with your computer via a one-time QR code or 6-digit PIN.
+* **Bip AI Chat on Mobile:** Voice dictation and conversational assistant with action card support (creates notes and tasks directly).
+* **Notes & Tasks Sync:** Instant read/write access to your local encrypted database with haptic toggles.
+* **Self-Healing Device Tokens:** Uses high-entropy device bearer tokens (`muse_dev_...`) stored securely in encrypted phone storage. Revocable anytime from the desktop client.
+
+### How to Pair Your Phone
+1. On your computer, open Muse in your browser (`http://localhost:8080`) and click **Link Phone** in the sidebar or top navigation bar.
+2. An interactive pairing modal will display an animated QR code and a 6-digit PIN (valid for 5 minutes).
+3. On your mobile phone, open the Muse companion app.
+4. Point the camera at the QR code. The app automatically claims the session, links your device, and redirects to your workspace dashboard.
+5. Alternatively, tap **Enter PIN Manually**, enter your computer's IP address (e.g., `http://192.168.100.136:8080`), and type the 6-digit PIN.
+
+### Connecting Over the Internet
+When away from your home Wi-Fi network, you can connect your phone to Muse over the internet using one of two secure methods:
+
+#### Method A: Tailscale Mesh VPN (Recommended)
+If Tailscale is running on your host machine and your mobile phone:
+1. Note your host's Tailscale IP (e.g. `100.84.254.110`).
+2. In the desktop **Link Phone** modal, select the **Tailscale (100.84.254.110:8080)** endpoint option before scanning the QR code, or enter `http://100.84.254.110:8080` in the mobile app.
+3. Your phone securely connects over your private encrypted Tailscale mesh without opening any router ports.
+
+#### Method B: Cloudflare Quick Tunnel
+1. On your host computer, start a quick ephemeral tunnel:
+   ```bash
+   cloudflared tunnel --url http://localhost:8080
+   ```
+2. Cloudflare outputs a public HTTPS address (e.g. `https://random-subdomain.trycloudflare.com`).
+3. Click the pencil icon next to the server address in the desktop **Link Phone** modal, paste your tunnel URL, and scan the regenerated QR code on your phone.
+
+### Building & Running Mobile App
+```bash
+# In the repository root
+cd mobile
+
+# Verify dependencies and analyze code
+flutter pub get
+flutter analyze
+
+# Launch onto your connected Android device via ADB
+flutter run -d <device_id>
+```
+

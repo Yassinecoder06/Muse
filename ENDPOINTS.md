@@ -604,3 +604,95 @@ All API endpoints are mounted under `/api` (e.g. `http://localhost:8080/api`).
   "text": "Transcribed spoken text here"
 }
 ```
+
+---
+
+## 15. Remote Mobile Companion
+
+Endpoints facilitating secure remote pairing and synchronization between mobile companion clients (Flutter app) and Muse host over Wi-Fi / LAN or remote tunnels (Tailscale, Cloudflare).
+
+### `GET /api/remote/network-info`
+* **Description:** Detects and returns host network connection addresses (LAN IP, Tailscale IP, configured Public URL).
+* **Auth Required:** No
+* **Response (200 OK):**
+```json
+{
+  "localIp": "192.168.100.136",
+  "localUrl": "http://192.168.100.136:8080",
+  "tailscaleIp": "100.84.254.110",
+  "tailscaleUrl": "http://100.84.254.110:8080",
+  "publicUrl": "http://192.168.100.136:8080"
+}
+```
+
+### `POST /api/remote/pairing/create`
+* **Description:** Generates a short-lived (5-minute TTL) one-time cryptographic pairing token and 6-digit verification PIN for desktop QR pairing.
+* **Auth Required:** Yes
+* **Request Body:**
+```json
+{
+  "serverUrl": "http://192.168.100.136:8080"
+}
+```
+* **Response (200 OK):**
+```json
+{
+  "token": "muse_pair_...",
+  "pin": "482910",
+  "serverUrl": "http://192.168.100.136:8080",
+  "qrPayload": "muse://pair?data=...",
+  "expiresAt": "2026-10-18T19:50:00.000Z"
+}
+```
+
+### `POST /api/remote/pairing/claim`
+* **Description:** Redeems a pairing token or PIN from the mobile app, creates a secure persistent device authentication token, and registers the mobile phone.
+* **Auth Required:** No (one-time claim with token or pin)
+* **Request Body:**
+```json
+{
+  "token": "muse_pair_...",
+  "pin": "482910",
+  "deviceName": "Xiaomi Redmi Note 13",
+  "deviceModel": "Android 15"
+}
+```
+* **Response (200 OK):**
+```json
+{
+  "success": true,
+  "serverUrl": "http://192.168.100.136:8080",
+  "deviceToken": "muse_dev_...",
+  "device": {
+    "id": "uuid",
+    "name": "Xiaomi Redmi Note 13",
+    "model": "Android 15"
+  }
+}
+```
+
+### `GET /api/remote/pairing/status`
+* **Description:** Polled by desktop client while the pairing QR code modal is open. Detects when the mobile camera scans and claims the session.
+* **Query Params:** `?token=muse_pair_...`
+* **Auth Required:** No
+* **Response (200 OK):**
+```json
+{
+  "claimed": true,
+  "device": {
+    "name": "Xiaomi Redmi Note 13",
+    "model": "Android 15"
+  }
+}
+```
+
+### `GET /api/remote/devices`
+* **Description:** Lists all active mobile and remote companion devices authorized on this workspace.
+* **Auth Required:** Yes
+* **Response (200 OK):** Array of `RemoteDevice` objects (`id`, `device_name`, `device_model`, `last_active_at`, `created_at`).
+
+### `DELETE /api/remote/devices/:id`
+* **Description:** Immediately revokes access for a paired companion device.
+* **Auth Required:** Yes
+* **Response (200 OK):** `{ "success": true }`
+
