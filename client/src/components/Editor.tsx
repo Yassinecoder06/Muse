@@ -211,7 +211,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
         document.execCommand('insertText', false, text + ' ')
         edit(ref.current?.innerHTML || '')
       },
-      onStateChange: state => setIsDictating(state === 'listening'),
+      onStateChange: state => setIsDictating(state === 'listening' || state === 'processing'),
       onError: err => {
         setIsDictating(false)
         onToast(err)

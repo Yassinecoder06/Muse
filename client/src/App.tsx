@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom'
-import { Bot, Cpu, KeyRound, Moon, RefreshCw, Settings, Sun, User, Volume2, X } from 'lucide-react'
+import { Bot, Cpu, KeyRound, Mic, Moon, RefreshCw, Settings, Sun, User, Volume2, X } from 'lucide-react'
 import { api, type AiUsage, type SettingsResponse } from './services/api'
 import { chatModel, setChatModel } from './services/settings'
 import { robotAudio, loadVoiceSettings, saveVoiceSettings } from './services/robot-audio.service'
@@ -629,6 +629,24 @@ function MuseApp() {
                   {v.name} ({v.lang})
                 </option>
               ))}
+            </select>
+          </div>
+
+          <div className="setting-row">
+            <span>
+              <Mic size={17}/>
+              <span>
+                <strong>Speech-to-Text (STT) Model</strong>
+                <small>Audio transcription engine for microphone dictation.</small>
+              </span>
+            </span>
+            <select
+              className="setting-select"
+              value={voiceSettings.sttEngine || 'gemini'}
+              onChange={e => updateVoicePref({ sttEngine: e.target.value as 'gemini' | 'native' })}
+            >
+              <option value="gemini">Gemini 3.5 Flash ASR (High Accuracy AI · Recommended)</option>
+              <option value="native">Browser Web Speech API (Local Built-in)</option>
             </select>
           </div>
 

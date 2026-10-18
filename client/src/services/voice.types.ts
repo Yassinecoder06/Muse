@@ -7,6 +7,7 @@ export interface VoiceSettings {
   soundEffectsEnabled: boolean // default true
   soundEffectsVolume: number  // 0.0 - 1.0, default 0.6
   lang: string       // default 'en-US'
+  sttEngine?: 'gemini' | 'native' // 'gemini' (Gemini 3.5 Flash ASR) or 'native' (Web Speech API)
 }
 
 export type STTState = 'idle' | 'listening' | 'processing' | 'error'
