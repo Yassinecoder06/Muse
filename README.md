@@ -6,29 +6,34 @@ Muse is a production-oriented AI note application built around one principle: **
 
 ```text
 React + Vite  ──HTTP──>  Express API  ──> Supabase PostgreSQL (source of truth)
-                                  ├──> Ollama Cloud (research and chat) + local Ollama (embeddings)
-                                  └──> Qdrant (note embeddings and metadata)
+                                  ├──> Google Gemini (gemini-3.8-flash, 3.7, 3.5, 3.1)
+                                  ├──> Ollama Cloud (Reflection AI Beam 501B MoE, Gemma, Nemotron)
+                                  ├──> Local Ollama (Embeddings nomic-embed-text)
+                                  └──> Qdrant (Note embeddings and metadata)
 ```
 
 The API returns note saves immediately. A background processor generates missing titles, tags, summaries, and vectors after the response. Qdrant stores only embeddings and compact metadata; full note text always remains in Supabase.
 
+For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](./ENDPOINTS.md).
+
 ## Included capabilities
 
-- Premium responsive dashboard, dark mode, keyboard shortcuts, and command palette (`Ctrl/⌘ K`, `Ctrl/⌘ M`)
-- Rich editable notes with headings, formatting, lists, checklists, code blocks, quotes, autosave, word count, and save state
-- Topbar quick-access **"Ask Muse"** and chat panel (`Enter` to send, `Shift + Enter` for newline)
-- A **note graph**: every note becomes a node connected to meaningfully similar notes and notes that share tags (see the Graph entry in the sidebar)
-- **Specialized Notes & Custom Templates**: Structured templates (Gym workout, Daily tasks & feedback, Expense & decisions) and custom templates where you name your own fields, write freely alongside structured data, assign color accents (7 swatches), and search templates
-- **Interactive Calendar & Natural Language Scheduling**: Monthly calendar agenda, natural-language event creation (e.g. "Gym tomorrow at 20h"), and note-event deep linking
-- **Dedicated Tasks Management**: Global filterable tasks workspace (All, Pending, Completed, Note-specific) with due dates, priority, and bi-directional note navigation
-- **AI Schedule & Task Detector**: Scans note text for dates, appointments, and actionable tasks, allowing one-click review and workspace addition
-- **Batch Note Selection**: Multi-select notes on the dashboard to move multiple notes to trash, restore, or manage in bulk
-- AI title generation, tag extraction, summaries, task extraction, and six rewrite modes
-- "Ask this note" constrained to the active note
-- RAG-powered "Ask my notes" that embeds the question, retrieves up to eight Qdrant matches, fetches those complete notes, and cites their titles
-- **Security-scanned research uploads**: documents are checked at upload time; dangerous structures are rejected outright and prompt-injection patterns are flagged so you see a warning before the text feeds an AI run
-- Soft deletion with Qdrant vector cleanup, background embedding upserts, REST validation, and toast feedback
-- Signature violet theme hover interactions in both light and dark modes
+- **Bip Autonomous AI Agent & Floating Companion**: Interactive draggable robot companion with dynamic mood states (`idle`, `happy`, `thinking`, `excited`, `curious`, `surprised`) and procedural Web Audio sound synthesis (`chirp`, `boop`, `blip`, `success`, `error`, `thinking` loop).
+- **Dedicated Assistant Workspace (`/assistant`)**: Session-based multi-turn conversation workspace with persistent history, session renaming, search, and inline message editing, deleting, and "Save & Resend".
+- **Single-Prompt Autonomous Multi-Tool Calling**: Bip executes actions directly in your workspace—creating notes, adding priority tasks, scheduling calendar events, and storing long-term memories in parallel/sequence.
+- **Persistent User Memories**: Bip learns and retains your lasting preferences, work habits, and goals across sessions via `user_memories`.
+- **Speech-to-Text (STT) & Text-to-Speech (TTS)**: Built-in voice input with 4-second pause tolerance, Gemini Multimodal Audio fallback transcription, and English voice synthesis read-aloud.
+- **KaTeX LaTeX Math Rendering**: Renders mathematical formulas (`$$...$$` block and `$...$` inline) with automatic escaping for percent signs (`\%`) to ensure uncorrupted rendering.
+- **Waterfall Model Cascade & Quota Resilience**: Automatically cascades across Gemini models (`gemini-3.8-flash` → `gemini-3.7-flash` → `gemini-3.6-flash` → `gemini-3.5-flash` → `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite`) if a daily free-tier quota (429) is exhausted, and cascades to Ollama Cloud with support for Reflection AI's **Beam** (`beam:cloud`, 501B MoE).
+- **Zero-Knowledge Encrypted Vault & Passkeys**: Optional client-side AES-GCM encryption with Argon2id key derivation, WebAuthn passkey authentication, and additive legacy migration.
+- **Interactive Calendar & Natural Language Scheduling**: Monthly calendar agenda, natural-language event creation (e.g. "Gym tomorrow at 20h"), and note-event deep linking.
+- **Dedicated Tasks Management**: Global filterable tasks workspace (All, Pending, Completed, Note-specific) with due dates, priorities, and bi-directional note navigation.
+- **AI Schedule & Task Detector**: Scans note text for dates, appointments, and actionable tasks, allowing one-click review and workspace addition.
+- **Specialized Notes & Custom Templates**: Structured templates (Gym workout, Daily tasks & feedback, Expense & decisions) and custom templates with custom fields and 7 accent colors.
+- **Knowledge Graph**: Every note becomes a node connected to meaningfully similar notes based on semantic embeddings and shared tags.
+- **Security-scanned research uploads**: Documents (PDF, DOCX, TXT) are checked at upload time for macro injection and prompt-injection patterns before feeding AI pipelines.
+- **Batch Note Selection**: Multi-select notes on the dashboard to move multiple notes to trash, restore, or manage in bulk.
+- **Signature Violet Theme**: Premium responsive dashboard, dark mode, keyboard shortcuts, and command palette (`Ctrl/⌘ K`, `Ctrl/⌘ M`).
 
 ## Prerequisites
 

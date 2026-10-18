@@ -522,10 +522,10 @@ function MuseApp() {
             <span><Cpu size={17}/><span><strong>Chat model</strong><small>AI model used for this app's requests.</small></span></span>
             <select className="setting-select" value={chatModel()} onChange={e => { setChatModel(e.target.value); setToast(e.target.value ? `Chat model: ${e.target.value}` : 'Chat model: Default (Auto · Waterfall Cascade)') }}>
               {[{ value: '', label: 'Default (Auto · Waterfall Cascade)' }, ...(Array.isArray(models) ? models : [])
-                .filter(name => !(name.toLowerCase().includes('gemma') && !name.includes('cloud')))
+                .filter(name => name !== 'beam' && !(name.toLowerCase().includes('gemma') && !name.includes('cloud')))
                 .map(name => {
                   let label = name
-                  if (name === 'beam:cloud' || name === 'beam') label = 'beam:cloud (Reflection AI · 501B MoE · Cloud)'
+                  if (name === 'beam:cloud') label = 'beam:cloud (Reflection AI · 501B MoE · Cloud)'
                   else if (name === 'gemini-3.8-flash') label = `${name} (Top Intelligence · 20 Req/Day Limit)`
                   else if (name === 'gemini-3.7-flash') label = `${name} (Advanced Reasoning)`
                   else if (name === 'gemini-3.6-flash') label = `${name} (High Capability)`
