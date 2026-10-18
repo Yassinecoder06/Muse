@@ -22,7 +22,8 @@ For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](.
 - **Dedicated Assistant Workspace (`/assistant`)**: Session-based multi-turn conversation workspace with persistent history, session renaming, search, and inline message editing, deleting, and "Save & Resend".
 - **Single-Prompt Autonomous Multi-Tool Calling**: Bip executes actions directly in your workspace—creating notes, adding priority tasks, scheduling calendar events, and storing long-term memories in parallel/sequence.
 - **Persistent User Memories**: Bip learns and retains your lasting preferences, work habits, and goals across sessions via `user_memories`.
-- **Speech-to-Text (STT) & Text-to-Speech (TTS)**: Built-in voice input with 4-second pause tolerance, Gemini Multimodal Audio fallback transcription, and English voice synthesis read-aloud.
+- **Speech-to-Text (STT) & Text-to-Speech (TTS)**: Dual-engine voice input (server Gemini Multimodal Audio + browser Web Speech API), emoji-skipping conversational English voice synthesis (strips pictographs, flags, and emoji descriptions for clean read-aloud), and native on-device streaming voice dictation on mobile.
+- **Remote Mobile Companion (Flutter)**: Dedicated companion app with one-click QR code pairing, on-device microphone dictation, dual reading/editing note modes with HTML-to-Markdown formatting, task & schedule management, and mobile Bip AI chat.
 - **KaTeX LaTeX Math Rendering**: Renders mathematical formulas (`$$...$$` block and `$...$` inline) with automatic escaping for percent signs (`\%`) to ensure uncorrupted rendering.
 - **Waterfall Model Cascade & Quota Resilience**: Automatically cascades across Gemini models (`gemini-3.8-flash` → `gemini-3.7-flash` → `gemini-3.6-flash` → `gemini-3.5-flash` → `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite`) if a daily free-tier quota (429) is exhausted, and cascades to Ollama Cloud with support for Reflection AI's **Beam** (`beam:cloud`, 501B MoE).
 - **Zero-Knowledge Encrypted Vault & Passkeys**: Optional client-side AES-GCM encryption with Argon2id key derivation, WebAuthn passkey authentication, and additive legacy migration.
@@ -556,9 +557,17 @@ Muse includes a cross-platform mobile companion located in the `mobile/` directo
 
 ### Features
 * **Zero-Cloud Local Pairing:** Pair your mobile device with your computer via a one-time QR code or 6-digit PIN.
-* **Bip AI Chat on Mobile:** Voice dictation and conversational assistant with action card support (creates notes and tasks directly).
-* **Notes & Tasks Sync:** Instant read/write access to your local encrypted database with haptic toggles.
+* **On-Device Real-Time Microphone Dictation:** Continuous live speech-to-text powered by Google Speech Services (`speech_to_text: ^7.5.0`) with Bluetooth earbuds support (`BLUETOOTH_CONNECT`) and zero cloud latency.
+* **Bip AI Assistant on Mobile:** Talk or type with Bip remotely. Features live voice recognition, action cards, and real-time execution of workspace tools (creating notes, tasks, and scheduling events).
+* **Dual Reading & Editing Note Modes:** Browse notes with formatted markdown styling, or switch into edit mode with tag editors, word counts, and direct voice dictation.
+* **HTML to Markdown Engine:** Automatic conversion of rich HTML generated on the desktop web app into structured Markdown for clean mobile viewing.
+* **Dedicated Tasks & Schedule:** Segmented task management (All, Today, Upcoming, Overdue, Completed) alongside scheduled calendar events.
 * **Self-Healing Device Tokens:** Uses high-entropy device bearer tokens (`muse_dev_...`) stored securely in encrypted phone storage. Revocable anytime from the desktop client.
+
+### Voice & Speech Synthesis (TTS & STT)
+* **Web STT:** Dual-engine architecture with Google Gemini Multimodal Audio (`gemini-3.5-flash` / `gemini-3.7-flash` via `/api/voice/transcribe`) for complex prompts, and Web Speech API (`webkitSpeechRecognition`) for local browser transcription.
+* **Mobile STT:** Real-time on-device streaming recognition using Android's native `RecognitionService`.
+* **Conversational TTS:** Browser Speech Synthesis with automatic Unicode emoji and symbol filtering (`EMOJI_REGEX`), stripping emoji descriptions (e.g. "robot face sparkles") and normalizing whitespace/punctuation for clean, natural speech playback.
 
 ### How to Pair Your Phone
 1. On your computer, open Muse in your browser (`http://localhost:8080`) and click **Link Phone** in the sidebar or top navigation bar.
@@ -592,8 +601,11 @@ cd mobile
 # Verify dependencies and analyze code
 flutter pub get
 flutter analyze
+flutter test
 
-# Launch onto your connected Android device via ADB
-flutter run -d <device_id>
+# Build debug APK and install to connected physical device
+flutter build bundle
+cd android && JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64 ./gradlew assembleDebug
+adb install -r ../build/app/outputs/flutter-apk/app-debug.apk
 ```
 
