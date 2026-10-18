@@ -22,7 +22,8 @@ import {
   Volume2,
   Square,
   Pencil,
-  RotateCcw
+  RotateCcw,
+  Loader2
 } from 'lucide-react'
 import { api } from '../services/api'
 import { chatModel } from '../services/settings'
@@ -59,24 +60,24 @@ export function AssistantWorkspace({
   const [memoryModalOpen, setMemoryModalOpen] = useState(false)
   const [memoryCount, setMemoryCount] = useState(0)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('muse-assistant-sidebar') === 'collapsed')
-  const [isListening, setIsListening] = useState(false)
+  const [sttState, setSttState] = useState<'idle' | 'listening' | 'processing' | 'error'>('idle')
+  const isListening = sttState === 'listening'
+  const isProcessingVoice = sttState === 'processing'
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null)
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [isSavingEdit, setIsSavingEdit] = useState(false)
 
   const handleToggleMic = () => {
-    if (isListening) {
+    if (isListening || isProcessingVoice) {
       stt.stopListening()
-      setIsListening(false)
       return
     }
 
     robotAudio.play('blip')
-    setIsListening(true)
     stt.startListening({
       continuous: true,
-      silenceTimeoutMs: 4000,
+      silenceTimeoutMs: 5000,
       onInterim: interim => {
         setInput(interim)
       },
@@ -85,13 +86,12 @@ export function AssistantWorkspace({
       },
       onComplete: final => {
         setInput(final)
-        setIsListening(false)
       },
       onStateChange: state => {
-        setIsListening(state === 'listening')
+        setSttState(state)
       },
       onError: () => {
-        setIsListening(false)
+        setSttState('idle')
       }
     })
   }
@@ -236,9 +236,9 @@ export function AssistantWorkspace({
     const textToSend = (customPrompt || input).trim()
     if (!textToSend || loading || !activeSessionId) return
 
-    if (isListening) {
+    if (isListening || isProcessingVoice) {
       stt.stopListening()
-      setIsListening(false)
+      setSttState('idle')
     }
 
     robotAudio.play('blip')
@@ -785,21 +785,29 @@ export function AssistantWorkspace({
               ref={inputRef}
               rows={2}
               className="assistant-composer-textarea"
-              placeholder={isListening ? 'Listening to your voice…' : 'Ask Bip anything, schedule events, create tasks, write notes, or store memories...'}
+              placeholder={
+                isProcessingVoice
+                  ? 'Transcribing with Gemini AI…'
+                  : (isListening ? 'Listening to your voice… tap mic when done' : 'Ask Bip anything, schedule events, create tasks, write notes, or store memories...')
+              }
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={loading}
+              disabled={loading || isProcessingVoice}
               autoFocus
             />
             <button
               type="button"
-              className={`assistant-mic-btn ${isListening ? 'listening' : ''}`}
+              className={`assistant-mic-btn ${isListening ? 'listening' : ''} ${isProcessingVoice ? 'processing' : ''}`}
               onClick={handleToggleMic}
               disabled={loading}
-              title={isListening ? 'Listening… click to finish dictation' : 'Dictate with your microphone (English)'}
+              title={
+                isProcessingVoice
+                  ? 'Transcribing with Gemini AI…'
+                  : (isListening ? 'Listening… click to finish dictation' : 'Dictate with your microphone (English)')
+              }
             >
-              {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+              {isProcessingVoice ? <Loader2 size={18} className="animate-spin" /> : (isListening ? <MicOff size={18} /> : <Mic size={18} />)}
             </button>
             <button
               type="submit"

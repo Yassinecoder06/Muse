@@ -22,28 +22,71 @@ export async function transcribeAudio(req: Request, res: Response, next: NextFun
     const client = new GoogleGenAI({ apiKey: geminiKey })
     const base64Data = buffer.toString('base64')
 
-    const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
+    const transcriptionPrompt = `You are a professional, high-accuracy speech-to-text transcription engine.
+Transcribe the spoken audio verbatim into natural English text.
+
+Rules:
+1. Output ONLY the raw transcription without any quotes, preamble, notes, timestamps, speaker labels, or markdown formatting.
+2. Accurately transcribe spoken words, math expressions, numbers, and technical terms.
+3. Automatically apply correct punctuation and natural capitalization.
+4. If the audio is completely silent or contains only background noise, respond with an empty string.`
+
+    const modelsToTry = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.7-flash']
+    let transcribedText = ''
+    let lastError: unknown = null
+
+    for (const modelName of modelsToTry) {
+      try {
+        const response = await client.models.generateContent({
+          model: modelName,
+          contents: [
             {
-              inlineData: {
-                mimeType,
-                data: base64Data
-              }
-            },
-            {
-              text: 'Transcribe the spoken English speech verbatim. Return ONLY the transcription with appropriate punctuation and capitalization. Do not include introductory notes, timestamps, explanations, or quotes.'
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType,
+                    data: base64Data
+                  }
+                },
+                {
+                  text: transcriptionPrompt
+                }
+              ]
             }
           ]
-        }
-      ]
-    })
+        })
 
-    const text = String(response.text || '').trim()
-    return res.json({ text })
+        let text = String(response.text || '').trim()
+        if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+          text = text.slice(1, -1).trim()
+        }
+
+        transcribedText = text
+
+        // Log usage in background
+        void settings.logAiUsage({
+          userId: req.userId!,
+          provider: 'gemini',
+          model: modelName,
+          taskType: 'transcribe',
+          promptTokens: response.usageMetadata?.promptTokenCount || 50,
+          candidateTokens: response.usageMetadata?.candidatesTokenCount || 20,
+          totalTokens: response.usageMetadata?.totalTokenCount || 70
+        }).catch(() => {})
+
+        break
+      } catch (err) {
+        lastError = err
+        console.warn(`[Voice STT] Model ${modelName} failed, attempting next in cascade:`, err)
+      }
+    }
+
+    if (!transcribedText && lastError) {
+      throw lastError
+    }
+
+    return res.json({ text: transcribedText })
   } catch (err) {
     next(err)
   }

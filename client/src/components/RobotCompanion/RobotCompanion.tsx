@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Maximize2, Mic, MicOff, Pencil, RotateCcw, Sparkles, Square, Trash2, Volume2, VolumeX, X } from 'lucide-react'
+import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Loader2, Maximize2, Mic, MicOff, Pencil, RotateCcw, Sparkles, Square, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { BipFigure, type BipMood } from './BipFigure'
 import { FormattedMessage } from '../FormattedMessage'
 import { ActionCards } from '../ActionCards'
@@ -55,7 +55,9 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
   const [messages, setMessages] = useState<Message[]>([DEFAULT_GREETING])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [isListening, setIsListening] = useState(false)
+  const [sttState, setSttState] = useState<'idle' | 'listening' | 'processing' | 'error'>('idle')
+  const isListening = sttState === 'listening'
+  const isProcessingVoice = sttState === 'processing'
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null)
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
@@ -316,17 +318,15 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
   }
 
   const handleToggleMic = () => {
-    if (isListening) {
+    if (isListening || isProcessingVoice) {
       stt.stopListening()
-      setIsListening(false)
       return
     }
 
     robotAudio.play('blip')
-    setIsListening(true)
     stt.startListening({
       continuous: true,
-      silenceTimeoutMs: 4000,
+      silenceTimeoutMs: 5000,
       onInterim: interim => {
         setInput(interim)
       },
@@ -335,13 +335,12 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       },
       onComplete: final => {
         setInput(final)
-        setIsListening(false)
       },
       onStateChange: state => {
-        setIsListening(state === 'listening')
+        setSttState(state)
       },
       onError: err => {
-        setIsListening(false)
+        setSttState('idle')
         setHint(err)
         window.setTimeout(() => setHint(null), 4000)
       }
@@ -365,9 +364,9 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     const query = (textToSend || input).trim()
     if (!query || loading) return
 
-    if (isListening) {
+    if (isListening || isProcessingVoice) {
       stt.stopListening()
-      setIsListening(false)
+      setSttState('idle')
     }
 
     robotAudio.play('blip')
@@ -720,20 +719,28 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
           >
             <button
               type="button"
-              className={`bip-mic-btn ${isListening ? 'listening' : ''}`}
+              className={`bip-mic-btn ${isListening ? 'listening' : ''} ${isProcessingVoice ? 'processing' : ''}`}
               onClick={handleToggleMic}
               disabled={loading}
-              title={isListening ? 'Listening… click to finish' : 'Dictate with your microphone (English)'}
+              title={
+                isProcessingVoice
+                  ? 'Transcribing with Gemini AI…'
+                  : (isListening ? 'Listening… click to finish dictation' : 'Dictate with your microphone (English)')
+              }
             >
-              {isListening ? <MicOff size={15} /> : <Mic size={15} />}
+              {isProcessingVoice ? <Loader2 size={15} className="animate-spin" /> : (isListening ? <MicOff size={15} /> : <Mic size={15} />)}
             </button>
             <input
               className="bip-input"
               type="text"
-              placeholder={isListening ? 'Listening to your voice…' : 'Ask me anything…'}
+              placeholder={
+                isProcessingVoice
+                  ? 'Transcribing with Gemini AI…'
+                  : (isListening ? 'Listening to your voice…' : 'Ask me anything…')
+              }
               value={input}
               onChange={e => setInput(e.target.value)}
-              disabled={loading}
+              disabled={loading || isProcessingVoice}
               autoFocus
             />
             <button

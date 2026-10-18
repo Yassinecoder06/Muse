@@ -794,6 +794,12 @@
   animation: bipPulseMic 1.2s infinite ease-in-out;
 }
 
+.bip-mic-btn.processing {
+  background: #ede9fe;
+  color: #7c3aed;
+  border-color: #a78bfa;
+}
+
 [data-theme='dark'] .bip-mic-btn {
   background: #2a253a;
   border-color: #3e3654;

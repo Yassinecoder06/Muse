@@ -1,7 +1,7 @@
 import { api } from './api'
+import { robotAudio, loadVoiceSettings } from './robot-audio.service'
 import type { STTOptions, STTState } from './voice.types'
 
-// Declarations for browser SpeechRecognition
 declare global {
   interface Window {
     SpeechRecognition?: any
@@ -14,9 +14,17 @@ class STTService {
   private state: STTState = 'idle'
   private currentOptions: STTOptions = {}
   private mediaRecorder: MediaRecorder | null = null
+  private audioStream: MediaStream | null = null
   private audioChunks: Blob[] = []
   private accumulatedFinalText = ''
   private silenceTimer: any = null
+  private audioCtx: AudioContext | null = null
+  private analyser: AnalyserNode | null = null
+  private animFrameId: number | null = null
+
+  constructor() {
+    this.initNativeRecognition()
+  }
 
   private clearSilenceTimer() {
     if (this.silenceTimer) {
@@ -25,8 +33,18 @@ class STTService {
     }
   }
 
-  constructor() {
-    this.initNativeRecognition()
+  private stopAudioContext() {
+    if (this.animFrameId) {
+      cancelAnimationFrame(this.animFrameId)
+      this.animFrameId = null
+    }
+    if (this.audioCtx && this.audioCtx.state !== 'closed') {
+      try {
+        void this.audioCtx.close()
+      } catch {}
+      this.audioCtx = null
+    }
+    this.analyser = null
   }
 
   private initNativeRecognition() {
@@ -71,14 +89,21 @@ class STTService {
     this.currentOptions = options
     this.accumulatedFinalText = ''
 
+    const settings = loadVoiceSettings()
+    const engine = settings.sttEngine || 'gemini'
+
+    if (engine === 'gemini') {
+      return this.startGeminiRecording(options)
+    }
+
     if (this.hasNativeSupport()) {
       return this.startNativeListening(options)
-    } else {
-      return this.startFallbackRecording(options)
     }
+
+    return this.startGeminiRecording(options)
   }
 
-  private resetSilenceTimer(timeoutMs = 4000) {
+  private resetSilenceTimer(timeoutMs = 4500) {
     this.clearSilenceTimer()
     if (timeoutMs > 0) {
       this.silenceTimer = window.setTimeout(() => {
@@ -94,13 +119,12 @@ class STTService {
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
       this.recognition = new SpeechRec()
 
-      // Enable continuous dictation by default so sentence pauses don't cut off speech
       this.recognition.continuous = options.continuous ?? true
       this.recognition.interimResults = options.interimResults ?? true
       this.recognition.lang = options.lang || 'en-US'
       this.recognition.maxAlternatives = 1
 
-      const silenceTimeout = options.silenceTimeoutMs ?? 4000
+      const silenceTimeout = options.silenceTimeoutMs ?? 4500
 
       this.recognition.onstart = () => {
         this.setState('listening')
@@ -108,7 +132,6 @@ class STTService {
       }
 
       this.recognition.onresult = (event: any) => {
-        // Reset silence timeout whenever voice activity is detected
         this.resetSilenceTimer(silenceTimeout)
 
         let interim = ''
@@ -140,15 +163,12 @@ class STTService {
       }
 
       this.recognition.onerror = (event: any) => {
-        // Ignore benign no-speech pauses in continuous mode; let silence timeout manage cutoff
-        if (event.error === 'no-speech') {
-          return
-        }
-        console.warn('[STT] Recognition error:', event.error)
+        if (event.error === 'no-speech') return
+        console.warn('[STT] Native recognition error:', event.error)
         this.clearSilenceTimer()
         if (event.error === 'not-allowed') {
           this.setState('error')
-          options.onError?.('Microphone access was denied. Please allow microphone permissions.')
+          options.onError?.('Microphone access was denied. Please allow microphone permissions in your browser.')
         } else {
           this.setState('error')
           options.onError?.(`Speech recognition error: ${event.error}`)
@@ -177,61 +197,139 @@ class STTService {
     }
   }
 
-  private startFallbackRecording(options: STTOptions): boolean {
+  private startGeminiRecording(options: STTOptions): boolean {
     if (!navigator?.mediaDevices?.getUserMedia) {
+      if (this.hasNativeSupport()) {
+        return this.startNativeListening(options)
+      }
       this.setState('error')
-      options.onError?.('Microphone input is not supported in this browser.')
+      options.onError?.('Microphone audio recording is not supported in this browser.')
       return false
     }
 
     navigator.mediaDevices
-      .getUserMedia({ audio: true })
+      .getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true
+        }
+      })
       .then(stream => {
+        this.audioStream = stream
         this.audioChunks = []
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm')
+
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : MediaRecorder.isTypeSupported('audio/webm')
           ? 'audio/webm'
           : MediaRecorder.isTypeSupported('audio/mp4')
           ? 'audio/mp4'
           : 'audio/wav'
 
-        this.mediaRecorder = new MediaRecorder(stream, { mimeType })
+        try {
+          this.mediaRecorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 })
+        } catch {
+          this.mediaRecorder = new MediaRecorder(stream)
+        }
 
         this.mediaRecorder.ondataavailable = e => {
-          if (e.data.size > 0) {
+          if (e.data && e.data.size > 0) {
             this.audioChunks.push(e.data)
           }
         }
 
+        // Setup voice activity and silence detection via AnalyserNode
+        try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+          if (AudioContextClass) {
+            this.audioCtx = new AudioContextClass()
+            const source = this.audioCtx.createMediaStreamSource(stream)
+            this.analyser = this.audioCtx.createAnalyser()
+            this.analyser.fftSize = 512
+            source.connect(this.analyser)
+
+            const dataArray = new Uint8Array(this.analyser.frequencyBinCount)
+            let hasSpoken = false
+            const silenceTimeout = options.silenceTimeoutMs ?? 4500
+
+            const checkAudioLevel = () => {
+              if (this.state !== 'listening' || !this.analyser) return
+              this.analyser.getByteFrequencyData(dataArray)
+              let sum = 0
+              for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i]
+              }
+              const average = sum / dataArray.length
+
+              // Threshold for speech detection
+              if (average > 14) {
+                if (!hasSpoken) hasSpoken = true
+                this.resetSilenceTimer(silenceTimeout)
+              }
+
+              this.animFrameId = requestAnimationFrame(checkAudioLevel)
+            }
+            this.animFrameId = requestAnimationFrame(checkAudioLevel)
+          }
+        } catch (audioCtxErr) {
+          console.warn('[STT] Could not initialize audio level analyzer:', audioCtxErr)
+        }
+
         this.mediaRecorder.onstop = async () => {
-          stream.getTracks().forEach(track => track.stop())
+          this.stopAudioContext()
+          if (this.audioStream) {
+            this.audioStream.getTracks().forEach(track => track.stop())
+            this.audioStream = null
+          }
+
           if (this.audioChunks.length === 0) {
             this.setState('idle')
             return
           }
 
           this.setState('processing')
+
           try {
-            const audioBlob = new Blob(this.audioChunks, { type: mimeType })
+            const actualMime = this.mediaRecorder?.mimeType || mimeType
+            const audioBlob = new Blob(this.audioChunks, { type: actualMime })
+
+            if (audioBlob.size < 600) {
+              this.setState('idle')
+              return
+            }
+
             const result = await api.transcribeAudio(audioBlob)
-            if (result && result.text) {
-              this.accumulatedFinalText = result.text.trim()
-              options.onFinal?.(this.accumulatedFinalText)
+            const text = result?.text?.trim() || ''
+
+            if (text) {
+              this.accumulatedFinalText = text
+              options.onFinal?.(text)
+              options.onComplete?.(text)
+              robotAudio.play('success')
             }
           } catch (err: any) {
-            console.error('[STT Fallback] Server transcription failed:', err)
-            options.onError?.('Audio transcription failed. Ensure Gemini API key is configured.')
+            console.error('[STT Gemini] Server transcription error:', err)
+            const errMsg = err?.message || 'Gemini speech transcription failed.'
+            if (errMsg.toLowerCase().includes('gemini api key is required')) {
+              options.onError?.('Gemini API key required for AI speech recognition. Configure your key in Settings.')
+            } else {
+              options.onError?.(errMsg)
+            }
           } finally {
             this.setState('idle')
           }
         }
 
-        this.mediaRecorder.start()
+        this.mediaRecorder.start(250)
         this.setState('listening')
+        this.resetSilenceTimer(options.silenceTimeoutMs ?? 6000)
       })
       .catch(err => {
-        console.error('[STT Fallback] Microphone access error:', err)
+        console.error('[STT Gemini] getUserMedia error:', err)
         this.setState('error')
-        options.onError?.('Microphone access was denied. Please allow microphone access in your browser.')
+        options.onError?.('Microphone access was denied. Please allow microphone permissions in your browser.')
       })
 
     return true
@@ -239,6 +337,7 @@ class STTService {
 
   public stopListening() {
     this.clearSilenceTimer()
+    this.stopAudioContext()
 
     if (this.recognition && this.state === 'listening') {
       try {
@@ -253,7 +352,6 @@ class STTService {
     }
 
     if (this.state !== 'processing') {
-      this.setState('idle')
       if (this.accumulatedFinalText) {
         this.currentOptions.onComplete?.(this.accumulatedFinalText)
       }
@@ -262,7 +360,13 @@ class STTService {
 
   public cancel() {
     this.clearSilenceTimer()
+    this.stopAudioContext()
     this.accumulatedFinalText = ''
+
+    if (this.audioStream) {
+      this.audioStream.getTracks().forEach(track => track.stop())
+      this.audioStream = null
+    }
 
     if (this.recognition) {
       try {

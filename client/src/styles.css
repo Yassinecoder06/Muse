@@ -4255,6 +4255,12 @@
   animation: pulseAssistantMic 1.2s infinite ease-in-out;
 }
 
+.assistant-mic-btn.processing {
+  background: #ede9fe;
+  color: #7c3aed;
+  border-color: #a78bfa;
+}
+
 [data-theme=dark] .assistant-mic-btn {
   background: #2a2733;
   color: #b5adc4;

@@ -10,7 +10,8 @@ const DEFAULT_SETTINGS: VoiceSettings = {
   autoReadAloud: false,
   soundEffectsEnabled: true,
   soundEffectsVolume: 0.5,
-  lang: 'en-US'
+  lang: 'en-US',
+  sttEngine: 'gemini'
 }
 
 export function loadVoiceSettings(): VoiceSettings {
