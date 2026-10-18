@@ -9,9 +9,9 @@ import {
 } from './agent-tools.service.js'
 import {
   extractKeys,
-  getAutoRoutedGeminiModel,
-  GEMINI_CHAT_MODEL,
-  isCloudModel,
+  getCascadeCandidates,
+  isRetryableGeminiError,
+  formatFriendlyAgentQuotaError,
   isGeminiModel,
   OLLAMA_CLOUD_URL,
   OLLAMA_LOCAL_URL
@@ -171,10 +171,11 @@ export async function runAgentConversation({
   const recordedToolResults: any[] = []
 
   let finalResponseText = ''
+  let agentError: any = null
 
   if (geminiKey) {
-    // Priority: Run with Gemini Agent Engine
-    const targetModel = getAutoRoutedGeminiModel('chat', model)
+    // Priority: Run with Gemini Agent Engine using Waterfall Cascade
+    const geminiCandidates = getCascadeCandidates(model)
     const client = new GoogleGenAI({ apiKey: geminiKey })
 
     // Build Gemini contents history
@@ -200,138 +201,179 @@ export async function runAgentConversation({
       contents.push({ role: 'user', parts: [{ text: messageText }] })
     }
 
-    // Multi-turn tool execution loop (max 4 tool call rounds)
-    let turns = 0
-    while (turns < 4) {
-      turns++
-      const response = await client.models.generateContent({
-        model: targetModel,
-        contents,
-        config: {
-          systemInstruction,
-          tools: formatGeminiTools()
-        }
-      })
+    let modelIdx = 0
+    try {
+      // Multi-turn tool execution loop (max 4 tool call rounds)
+      let turns = 0
+      while (turns < 4) {
+        turns++
+        let response: any = null
+        let activeModel = geminiCandidates[modelIdx]
 
-      // Log token usage
-      if (response.usageMetadata) {
-        void settings.logAiUsage({
-          userId,
-          provider: 'gemini',
-          model: targetModel,
-          taskType: 'chat',
-          promptTokens: response.usageMetadata.promptTokenCount || 0,
-          candidateTokens: response.usageMetadata.candidatesTokenCount || 0,
-          totalTokens: response.usageMetadata.totalTokenCount || 0
-        })
-      }
-
-      const candidate = response.candidates?.[0]
-      const modelParts = candidate?.content?.parts || []
-      const functionCalls = modelParts.filter((p: any) => p.functionCall).map((p: any) => p.functionCall)
-
-      // Append model response to conversation contents
-      contents.push({
-        role: 'model',
-        parts: modelParts.length > 0 ? modelParts : [{ text: response.text || '' }]
-      })
-
-      if (functionCalls.length > 0) {
-        const functionResponseParts: any[] = []
-
-        for (const call of functionCalls) {
-          recordedToolCalls.push({ name: call.name, args: call.args })
-          const execution = await executeAgentTool(userId, call.name, call.args || {})
-          recordedToolResults.push({ name: call.name, result: execution.result })
-          if (execution.actionCard) {
-            allActionCards.push(execution.actionCard)
-          }
-
-          functionResponseParts.push({
-            functionResponse: {
-              name: call.name,
-              response: execution.result
+        // Model waterfall attempt loop: try active model, tracking back to weaker model on failure
+        while (modelIdx < geminiCandidates.length) {
+          activeModel = geminiCandidates[modelIdx]
+          try {
+            response = await client.models.generateContent({
+              model: activeModel,
+              contents,
+              config: {
+                systemInstruction,
+                tools: formatGeminiTools()
+              }
+            })
+            break // Succeeded with activeModel!
+          } catch (err: any) {
+            if (isRetryableGeminiError(err)) {
+              const nextModel = geminiCandidates[modelIdx + 1]
+              if (nextModel) {
+                console.warn(`[Agent] Model ${activeModel} quota reached / failed (${err.message?.slice(0, 80)}). Tracking back to weaker model: ${nextModel}`)
+                modelIdx++
+                continue
+              }
             }
+            throw err
+          }
+        }
+
+        if (!response) break
+
+        // Log token usage
+        if (response.usageMetadata) {
+          void settings.logAiUsage({
+            userId,
+            provider: 'gemini',
+            model: activeModel,
+            taskType: 'chat',
+            promptTokens: response.usageMetadata.promptTokenCount || 0,
+            candidateTokens: response.usageMetadata.candidatesTokenCount || 0,
+            totalTokens: response.usageMetadata.totalTokenCount || 0
           })
         }
 
-        // Send tool results back to model in next loop iteration
+        const candidate = response.candidates?.[0]
+        const modelParts = candidate?.content?.parts || []
+        const functionCalls = modelParts.filter((p: any) => p.functionCall).map((p: any) => p.functionCall)
+
+        // Append model response to conversation contents
         contents.push({
-          role: 'user',
-          parts: functionResponseParts
+          role: 'model',
+          parts: modelParts.length > 0 ? modelParts : [{ text: response.text || '' }]
         })
-      } else {
-        // Model provided final answer
-        finalResponseText = String(response.text || '').trim()
-        break
-      }
-    }
-  } else {
-    // Fallback: Run with Ollama
-    const fallbackModel = isGeminiModel(model) ? undefined : model
-    const baseUrl = ollamaKey ? OLLAMA_CLOUD_URL : OLLAMA_LOCAL_URL
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (ollamaKey) headers['Authorization'] = `Bearer ${ollamaKey}`
 
-    const ollamaMessages: any[] = [{ role: 'system', content: systemInstruction }]
-    for (const msg of historyRows || []) {
-      if (msg.role === 'user' || msg.role === 'assistant') {
-        ollamaMessages.push({ role: msg.role, content: msg.content })
-      }
-    }
+        if (functionCalls.length > 0) {
+          const functionResponseParts: any[] = []
 
-    let turns = 0
-    while (turns < 4) {
-      turns++
-      const res = await fetch(`${baseUrl}/api/chat`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: fallbackModel || (ollamaKey ? env.OLLAMA_CHAT_MODEL || 'gemma4:31b-cloud' : 'gemma4-ab-qat:e4b'),
-          stream: false,
-          messages: ollamaMessages,
-          tools: formatOllamaTools(),
-          options: { num_ctx: env.OLLAMA_NUM_CTX || 16384 }
-        })
-      })
+          for (const call of functionCalls) {
+            recordedToolCalls.push({ name: call.name, args: call.args })
+            const execution = await executeAgentTool(userId, call.name, call.args || {})
+            recordedToolResults.push({ name: call.name, result: execution.result })
+            if (execution.actionCard) {
+              allActionCards.push(execution.actionCard)
+            }
 
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => '')
-        throw new Error(`Ollama agent chat error (${res.status}): ${errBody}`)
-      }
-
-      const data: any = await res.json()
-      const msg = data.message || {}
-      ollamaMessages.push(msg)
-
-      if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
-        for (const tc of msg.tool_calls) {
-          const fnName = tc.function?.name
-          const fnArgs = typeof tc.function?.arguments === 'string'
-            ? JSON.parse(tc.function.arguments)
-            : tc.function?.arguments || {}
-
-          recordedToolCalls.push({ name: fnName, args: fnArgs })
-          const execution = await executeAgentTool(userId, fnName, fnArgs)
-          recordedToolResults.push({ name: fnName, result: execution.result })
-          if (execution.actionCard) {
-            allActionCards.push(execution.actionCard)
+            functionResponseParts.push({
+              functionResponse: {
+                name: call.name,
+                response: execution.result
+              }
+            })
           }
 
-          ollamaMessages.push({
-            role: 'tool',
-            content: JSON.stringify(execution.result)
+          // Send tool results back to model in next loop iteration
+          contents.push({
+            role: 'user',
+            parts: functionResponseParts
           })
+        } else {
+          // Model provided final answer
+          finalResponseText = String(response.text || '').trim()
+          break
         }
-      } else {
-        finalResponseText = String(msg.content || '').trim()
-        break
       }
+    } catch (geminiErr: any) {
+      console.warn('[Agent] Gemini waterfall cascade exhausted:', geminiErr?.message || geminiErr)
+      agentError = geminiErr
     }
   }
 
-  if (!finalResponseText && allActionCards.length > 0) {
-    finalResponseText = 'All set! I have performed the requested actions.'
+  // Fallback to Ollama if Gemini was not used or all Gemini models reached quota
+  if (!finalResponseText && (ollamaKey || !geminiKey)) {
+    try {
+      const fallbackModel = isGeminiModel(model) ? undefined : model
+      const baseUrl = ollamaKey ? OLLAMA_CLOUD_URL : OLLAMA_LOCAL_URL
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (ollamaKey) headers['Authorization'] = `Bearer ${ollamaKey}`
+
+      const ollamaMessages: any[] = [{ role: 'system', content: systemInstruction }]
+      for (const msg of historyRows || []) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          ollamaMessages.push({ role: msg.role, content: msg.content })
+        }
+      }
+
+      let turns = 0
+      while (turns < 4) {
+        turns++
+        const res = await fetch(`${baseUrl}/api/chat`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: fallbackModel || (ollamaKey ? env.OLLAMA_CHAT_MODEL || 'gemma4:31b-cloud' : 'gemma4-ab-qat:e4b'),
+            stream: false,
+            messages: ollamaMessages,
+            tools: formatOllamaTools(),
+            options: { num_ctx: env.OLLAMA_NUM_CTX || 16384 }
+          })
+        })
+
+        if (!res.ok) {
+          const errBody = await res.text().catch(() => '')
+          throw new Error(`Ollama agent chat error (${res.status}): ${errBody}`)
+        }
+
+        const data: any = await res.json()
+        const msg = data.message || {}
+        ollamaMessages.push(msg)
+
+        if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+          for (const tc of msg.tool_calls) {
+            const fnName = tc.function?.name
+            const fnArgs = typeof tc.function?.arguments === 'string'
+              ? JSON.parse(tc.function.arguments)
+              : tc.function?.arguments || {}
+
+            recordedToolCalls.push({ name: fnName, args: fnArgs })
+            const execution = await executeAgentTool(userId, fnName, fnArgs)
+            recordedToolResults.push({ name: fnName, result: execution.result })
+            if (execution.actionCard) {
+              allActionCards.push(execution.actionCard)
+            }
+
+            ollamaMessages.push({
+              role: 'tool',
+              content: JSON.stringify(execution.result)
+            })
+          }
+        } else {
+          finalResponseText = String(msg.content || '').trim()
+          break
+        }
+      }
+    } catch (ollamaErr: any) {
+      console.warn('[Agent] Ollama fallback execution failed:', ollamaErr?.message || ollamaErr)
+      if (!agentError) agentError = ollamaErr
+    }
+  }
+
+  if (!finalResponseText) {
+    if (allActionCards.length > 0) {
+      finalResponseText = 'All set! I have performed the requested actions.'
+    } else if (agentError) {
+      finalResponseText = formatFriendlyAgentQuotaError(agentError)
+    } else {
+      finalResponseText = 'Beep boop! ⚠️ Please add an API key in Settings (⚙️) to chat with Bip.'
+    }
   }
 
   // 5. Save assistant response to chat_messages

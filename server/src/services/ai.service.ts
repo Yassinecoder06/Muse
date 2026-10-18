@@ -6,20 +6,95 @@ export const OLLAMA_CLOUD_URL = 'https://ollama.com'
 export const OLLAMA_LOCAL_URL = (env.OLLAMA_EMBEDDING_BASE_URL || 'http://localhost:11434').replace(/\/$/, '')
 export const AI_KEY_REQUIRED = 'Add your Gemini API key (or Ollama API key) in Settings to use AI features.'
 
+export const GEMINI_MODEL_HIERARCHY = [
+  'gemini-3.8-flash',      // Most capable preview reasoning flash model (20 free req/day)
+  'gemini-3.7-flash',      // High-capability advanced reasoning model
+  'gemini-3.6-flash',      // High-capability balanced model
+  'gemini-3.5-flash',      // Standard high-quota flash model
+  'gemini-3.5-flash-lite', // Fast lightweight high-quota model
+  'gemini-3.1-flash-lite'  // Ultra-fast lightweight model
+] as const
+
+export type GeminiModelName = (typeof GEMINI_MODEL_HIERARCHY)[number]
+
 export const GEMINI_CHAT_MODEL = 'gemini-3.8-flash'
 export const GEMINI_FAST_MODEL = 'gemini-3.5-flash-lite'
-export const GEMINI_RESEARCH_MODEL = 'gemini-3.1-pro-preview'
-export const geminiModels = [GEMINI_CHAT_MODEL, GEMINI_FAST_MODEL, GEMINI_RESEARCH_MODEL]
+
+export const geminiModels = [...GEMINI_MODEL_HIERARCHY]
 
 export const LOCAL_MODEL = 'gemma4-ab-qat:e4b'
 export const curatedModels = ['gpt-oss:120b-cloud', 'nemotron-3-super:cloud', 'gemma4:31b-cloud']
 export const ALLOWED_MODELS = [...geminiModels, ...curatedModels]
 
+export function getCascadeCandidates(requestedModel?: string): string[] {
+  if (requestedModel && GEMINI_MODEL_HIERARCHY.includes(requestedModel as any)) {
+    const startIdx = GEMINI_MODEL_HIERARCHY.indexOf(requestedModel as any)
+    return [...GEMINI_MODEL_HIERARCHY.slice(startIdx)]
+  }
+  return [...GEMINI_MODEL_HIERARCHY]
+}
+
+export function isRetryableGeminiError(err: any): boolean {
+  if (!err) return false
+  const status = err.status || err.code || err.statusCode
+  if (status === 429 || status === 404 || status === 503) return true
+  const msg = (err.message || String(err)).toLowerCase()
+  return (
+    msg.includes('429') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('quota') ||
+    msg.includes('rate-limit') ||
+    msg.includes('rate limit') ||
+    msg.includes('overloaded') ||
+    msg.includes('not found') ||
+    msg.includes('is no longer available') ||
+    msg.includes('service unavailable')
+  )
+}
+
+export function formatGeminiErrorMessage(err: any): string {
+  if (!err) return 'An unexpected error occurred while communicating with AI.'
+  const rawMsg = err.message || String(err)
+  if (isRetryableGeminiError(err) && (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED') || rawMsg.includes('quota'))) {
+    return 'Your Google Gemini daily free tier quota has been reached. Please switch models in Settings or try again later.'
+  }
+  try {
+    const parsed = typeof rawMsg === 'string' && rawMsg.startsWith('{') ? JSON.parse(rawMsg) : null
+    if (parsed?.error?.message) {
+      if (parsed.error.code === 429 || parsed.error.status === 'RESOURCE_EXHAUSTED') {
+        return 'Your Google Gemini daily free tier quota has been reached. Please switch models in Settings or try again later.'
+      }
+      return parsed.error.message
+    }
+  } catch {}
+  return rawMsg
+}
+
+export function formatFriendlyAgentQuotaError(err: any): string {
+  const raw = err?.message || String(err || '')
+  if (
+    raw.includes('429') ||
+    raw.includes('RESOURCE_EXHAUSTED') ||
+    raw.includes('quota') ||
+    raw.includes('Quota exceeded')
+  ) {
+    return `Beep boop! ⚠️ All AI model quotas have been exhausted for today across all fallback models.
+
+To continue chatting right away:
+- Add or switch to an **Ollama model** in Settings (⚙️)
+- Or wait until your daily Google Gemini quota resets at midnight UTC.`
+  }
+  if (raw.includes('API_KEY_INVALID') || raw.includes('401') || raw.includes('403')) {
+    return 'Beep boop! ⚠️ Your Gemini API key was rejected or expired. Please check your key in **Settings** (⚙️).'
+  }
+  return `Beep boop! ⚠️ I had trouble connecting to the AI brain: ${raw.slice(0, 150)}. Please check your Settings or try again in a moment.`
+}
+
 export const cloudModelName = (name: string) => name?.replace(/-cloud$/, '').replace(/:cloud$/, '') || name
 
 export function isGeminiModel(name: string | undefined): boolean {
   if (!name) return false
-  return name.startsWith('gemini-') || geminiModels.includes(name)
+  return name.startsWith('gemini-') || (geminiModels as readonly string[]).includes(name)
 }
 
 export function isGeminiKey(key: string | undefined): boolean {
@@ -149,26 +224,46 @@ async function callGemini(
       }))
     : [{ role: 'user', parts: [{ text: '' }] }]
 
-  const response = await client.models.generateContent({
-    model,
-    contents,
-    config: systemMsg ? { systemInstruction: systemMsg } : undefined
-  })
+  const candidateModels = getCascadeCandidates(model)
+  let lastError: any = null
 
-  const usage = response.usageMetadata
-  if (userId && usage) {
-    void settings.logAiUsage({
-      userId,
-      provider: 'gemini',
-      model,
-      taskType,
-      promptTokens: usage.promptTokenCount || 0,
-      candidateTokens: usage.candidatesTokenCount || 0,
-      totalTokens: usage.totalTokenCount || 0
-    })
+  for (let i = 0; i < candidateModels.length; i++) {
+    const candidate = candidateModels[i]
+    try {
+      const response = await client.models.generateContent({
+        model: candidate,
+        contents,
+        config: systemMsg ? { systemInstruction: systemMsg } : undefined
+      })
+
+      const usage = response.usageMetadata
+      if (userId && usage) {
+        void settings.logAiUsage({
+          userId,
+          provider: 'gemini',
+          model: candidate,
+          taskType,
+          promptTokens: usage.promptTokenCount || 0,
+          candidateTokens: usage.candidatesTokenCount || 0,
+          totalTokens: usage.totalTokenCount || 0
+        })
+      }
+
+      return String(response.text || '').trim()
+    } catch (err: any) {
+      lastError = err
+      if (isRetryableGeminiError(err)) {
+        const nextModel = candidateModels[i + 1]
+        if (nextModel) {
+          console.warn(`[AI Engine] Model ${candidate} quota reached / failed (${err?.message?.slice(0, 80)}). Tracking back to weaker model: ${nextModel}`)
+          continue
+        }
+      }
+      throw err
+    }
   }
 
-  return String(response.text || '').trim()
+  throw lastError
 }
 
 export type TaskType = 'lightweight' | 'chat' | 'rewrite' | 'report' | 'general'
@@ -181,11 +276,10 @@ export function getAutoRoutedGeminiModel(taskType: TaskType, requestedModel?: st
     case 'lightweight':
       return GEMINI_FAST_MODEL // gemini-3.5-flash-lite: highest RPM/RPD on free tier
     case 'report':
-      return GEMINI_CHAT_MODEL // gemini-3.8-flash: intelligent and balanced
     case 'chat':
     case 'rewrite':
     default:
-      return GEMINI_CHAT_MODEL // gemini-3.8-flash: premier conversational model
+      return GEMINI_MODEL_HIERARCHY[0] // gemini-3.8-flash: starts at top model and waterfalls down to weaker models
   }
 }
 
@@ -307,6 +401,10 @@ export async function validateGeminiApiKey(apiKey: string): Promise<{ valid: boo
     return { valid: true }
   } catch (err: any) {
     const msg = err instanceof Error ? err.message : String(err)
+    if (msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED')) {
+      // Key is valid, but currently quota-limited
+      return { valid: true }
+    }
     if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('401') || msg.includes('403')) {
       return { valid: false, error: 'That Gemini API key was rejected by Google. Verify it at aistudio.google.com/apikey.' }
     }

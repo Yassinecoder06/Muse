@@ -402,11 +402,21 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     } catch (err) {
       robotAudio.stopThinkingLoop()
       robotAudio.play('error')
+      const rawMsg = err instanceof Error ? err.message : String(err || '')
+      let cleanMsg = rawMsg
+      if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED') || rawMsg.includes('quota')) {
+        cleanMsg = 'All AI model quotas have been exhausted for today across all fallback models. You can add an Ollama key in Settings or wait for the daily reset.'
+      } else if (rawMsg.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(rawMsg)
+          cleanMsg = parsed.error?.message || cleanMsg
+        } catch {}
+      }
       setMessages(prev => [
         ...prev,
         {
           role: 'assistant',
-          text: err instanceof Error ? `*Beep* ⚠️ ${err.message}` : "I couldn't reach the agent brain right now."
+          text: `*Beep* ⚠️ ${cleanMsg}`
         }
       ])
       setMood('curious')
