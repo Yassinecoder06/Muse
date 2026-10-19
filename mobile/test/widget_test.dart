@@ -65,7 +65,8 @@ void main() {
     );
 
     await tester.pump();
-    expect(find.textContaining('Bip AI Remote Assistant'), findsOneWidget);
+    expect(find.textContaining('conversation'), findsOneWidget);
+    expect(find.text('New chat'), findsOneWidget);
     expect(find.text('What notes do I have?'), findsOneWidget);
   });
 }

@@ -3,8 +3,10 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/chat_message.dart';
 import '../../data/services/api_service.dart';
+import '../../data/services/app_events.dart';
 import '../../data/services/voice_service.dart';
 import '../theme/app_theme.dart';
+import 'note_detail_view.dart';
 
 class BipChatTab extends StatefulWidget {
   const BipChatTab({super.key});
@@ -21,6 +23,9 @@ class _BipChatTabState extends State<BipChatTab> {
   final List<BipMessage> _messages = [];
   bool _loading = false;
   bool _isListening = false;
+  // The server keeps the conversation; the phone only remembers which one.
+  String? _sessionId;
+  bool _historyLoading = true;
 
   final List<String> _suggestions = [
     'What notes do I have?',
@@ -29,23 +34,91 @@ class _BipChatTabState extends State<BipChatTab> {
     'What is scheduled on my calendar?',
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    _messages.add(
-      BipMessage(
+  BipMessage get _welcome => BipMessage(
         id: 'welcome',
         role: 'assistant',
         text: "Beep boop! 🤖✨ I'm Bip, your proactive Muse AI companion.\n\nI can search your notes, manage your tasks, schedule calendar events, and answer questions about your space.",
         timestamp: DateTime.now(),
-      ),
-    );
+      );
+
+  @override
+  void initState() {
+    super.initState();
+    _messages.add(_welcome);
+    _loadHistory();
+    AppEvents.launchAction.addListener(_onLaunchAction);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onLaunchAction());
+  }
+
+  // "Ask Bip" home-screen shortcut: open straight into voice input.
+  void _onLaunchAction() {
+    if (AppEvents.launchAction.value != 'ask_bip' || !mounted) return;
+    AppEvents.launchAction.value = null;
+    if (!_isListening) _toggleListening();
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final session = await _api.fetchLatestMobileSession();
+      if (!mounted) return;
+      setState(() {
+        if (session != null) {
+          _sessionId = session['id']?.toString();
+          final rows = (session['messages'] as List<dynamic>? ?? []).whereType<Map<String, dynamic>>();
+          _messages
+            ..clear()
+            ..add(_welcome)
+            ..addAll(rows.map(BipMessage.fromSession));
+        }
+        _historyLoading = false;
+      });
+      _scrollToBottom();
+    } catch (_) {
+      // Offline or older server: start with an empty conversation.
+      if (mounted) setState(() => _historyLoading = false);
+    }
+  }
+
+  Future<void> _startNewChat() async {
+    if (_loading) return;
+    try {
+      final id = await _api.createMobileSession();
+      if (!mounted) return;
+      setState(() {
+        _sessionId = id;
+        _messages
+          ..clear()
+          ..add(_welcome);
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
+  Future<void> _openNote(String noteId) async {
+    try {
+      final note = await _api.fetchNote(noteId);
+      if (!mounted) return;
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => NoteDetailView(note: note)));
+      AppEvents.notifyDataChanged();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open that note: ${e.toString().replaceFirst('Exception: ', '')}')),
+        );
+      }
+    }
   }
 
   String _initialVoiceText = '';
 
   @override
   void dispose() {
+    AppEvents.launchAction.removeListener(_onLaunchAction);
     _voice.cancelListening();
     _textController.dispose();
     _scrollController.dispose();
@@ -157,15 +230,20 @@ class _BipChatTabState extends State<BipChatTab> {
     _scrollToBottom();
 
     try {
-      final history = _messages
-          .where((m) => m.id != 'welcome')
-          .map((m) => {'role': m.role, 'content': m.text})
-          .toList();
-
-      final res = await _api.sendChatMessage(query, history);
+      Map<String, dynamic> res;
+      try {
+        res = await _api.sendChatMessage(query, sessionId: _sessionId);
+      } on Exception catch (e) {
+        // The conversation was deleted on the desktop: continue in a new one.
+        if (_sessionId == null || !e.toString().contains('not found')) rethrow;
+        _sessionId = null;
+        res = await _api.sendChatMessage(query);
+      }
+      _sessionId = res['sessionId']?.toString() ?? _sessionId;
       final replyText = (res['reply'] ?? res['response'] ?? 'Bip processed your request.').toString();
       final actionCards = res['actionCards'] as List<dynamic>?;
       final toolCalls = res['toolCalls'] as List<dynamic>?;
+      if (actionCards != null && actionCards.isNotEmpty) AppEvents.notifyDataChanged();
 
       setState(() {
         _messages.add(BipMessage(
@@ -211,20 +289,24 @@ class _BipChatTabState extends State<BipChatTab> {
                 ),
               ),
               const SizedBox(width: 8),
-              const Text(
-                'Bip AI Remote Assistant · Ready',
-                style: TextStyle(
+              Text(
+                _historyLoading ? 'Loading your conversation…' : 'Bip remembers this conversation',
+                style: const TextStyle(
                   fontSize: 12,
                   color: AppTheme.textSecondary,
                   fontWeight: FontWeight.w500,
                 ),
               ),
               const Spacer(),
-              const Icon(Icons.bolt_rounded, size: 16, color: AppTheme.accent),
-              const SizedBox(width: 4),
-              const Text(
-                'Autonomous Tools',
-                style: TextStyle(fontSize: 11, color: AppTheme.accent, fontWeight: FontWeight.bold),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: AppTheme.accent,
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                onPressed: _loading ? null : _startNewChat,
+                icon: const Icon(Icons.add_comment_outlined, size: 16),
+                label: const Text('New chat', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -517,6 +599,14 @@ class _BipChatTabState extends State<BipChatTab> {
                         ),
                 ),
 
+                // What Bip did (or wants confirmed), as tappable cards.
+                if (message.actionCards != null)
+                  ...message.actionCards!.whereType<Map>().map(
+                        (card) => card['type'] == 'confirm_required'
+                            ? _ConfirmActionCard(card: card, api: _api, readOnly: message.fromHistory)
+                            : _ActionCardTile(card: card, onOpenNote: _openNote),
+                      ),
+
                 // Timestamp
                 Padding(
                   padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
@@ -533,6 +623,213 @@ class _BipChatTabState extends State<BipChatTab> {
           ),
           if (isUser) const SizedBox(width: 8),
         ],
+      ),
+    );
+  }
+}
+
+class _ConfirmActionCard extends StatefulWidget {
+  final Map card;
+  final ApiService api;
+  final bool readOnly;
+
+  const _ConfirmActionCard({required this.card, required this.api, this.readOnly = false});
+
+  @override
+  State<_ConfirmActionCard> createState() => _ConfirmActionCardState();
+}
+
+class _ConfirmActionCardState extends State<_ConfirmActionCard> {
+  String _state = 'pending'; // pending | working | done | cancelled
+  String? _error;
+
+  Map get _data => (widget.card['data'] as Map?) ?? const {};
+
+  Future<void> _confirm() async {
+    final token = _data['token']?.toString() ?? '';
+    if (token.isEmpty) return;
+    setState(() {
+      _state = 'working';
+      _error = null;
+    });
+    try {
+      await widget.api.confirmAgentAction(token);
+      AppEvents.notifyDataChanged();
+      if (mounted) setState(() => _state = 'done');
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _state = 'pending';
+          _error = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (widget.card['title'] ?? _data['title'] ?? 'Item').toString();
+    final itemType = (widget.card['itemType'] ?? _data['itemType'] ?? 'Item').toString();
+    final status = (widget.card['status'] ?? _data['status'] ?? 'Delete').toString();
+    final pending = !widget.readOnly && (_state == 'pending' || _state == 'working');
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _state == 'done'
+                ? '$itemType · Done'
+                : _state == 'cancelled'
+                    ? '$itemType · Cancelled'
+                    : widget.readOnly
+                        ? '$itemType · Not confirmed (ask Bip again)'
+                        : '$itemType · Needs your confirmation',
+            style: const TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(title, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+          if (_error != null) ...[
+            const SizedBox(height: 4),
+            Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12)),
+          ],
+          if (pending) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+                  onPressed: _state == 'working' ? null : _confirm,
+                  child: Text(_state == 'working' ? 'Working…' : '$status ${itemType.toLowerCase()}'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: _state == 'working' ? null : () => setState(() => _state = 'cancelled'),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Compact summary of something Bip created, changed, or deleted.
+class _ActionCardTile extends StatelessWidget {
+  final Map card;
+  final void Function(String noteId) onOpenNote;
+
+  const _ActionCardTile({required this.card, required this.onOpenNote});
+
+  @override
+  Widget build(BuildContext context) {
+    final data = (card['data'] as Map?) ?? const {};
+    final type = card['type']?.toString() ?? '';
+    final id = (card['id'] ?? data['id'])?.toString();
+    String field(String key) => (card[key] ?? data[key] ?? '').toString();
+
+    late IconData icon;
+    late Color color;
+    late String label;
+    String title = field('title');
+    String subtitle = '';
+    bool opensNote = false;
+
+    switch (type) {
+      case 'note':
+      case 'note_updated':
+      case 'specialized_note':
+        icon = Icons.description_outlined;
+        color = AppTheme.primaryLight;
+        label = type == 'note_updated' ? 'Note updated' : 'Note created';
+        subtitle = field('contentSnippet');
+        opensNote = id != null && id.isNotEmpty;
+      case 'task':
+      case 'task_updated':
+        icon = (card['completed'] ?? data['completed']) == true ? Icons.check_circle_outline : Icons.radio_button_unchecked;
+        color = AppTheme.accent;
+        label = type == 'task_updated' ? 'Task updated' : 'Task added';
+        title = field('text');
+        final due = (card['dueDate'] ?? data['due_date'])?.toString();
+        subtitle = [if (due != null && due.isNotEmpty && due != 'null') 'Due $due', field('priority')].where((s) => s.isNotEmpty).join(' · ');
+      case 'event':
+        icon = Icons.event_outlined;
+        color = Colors.lightBlueAccent;
+        label = 'Event scheduled';
+        final start = DateTime.tryParse((card['startTime'] ?? data['start_time'] ?? '').toString());
+        subtitle = [if (start != null) DateFormat('EEE, MMM d · h:mm a').format(start.toLocal()), field('location')].where((s) => s.isNotEmpty).join(' · ');
+      case 'memory':
+        icon = Icons.psychology_outlined;
+        color = Colors.amberAccent;
+        label = 'Bip will remember';
+        title = field('fact');
+      case 'template':
+        icon = Icons.dashboard_customize_outlined;
+        color = AppTheme.primaryLight;
+        label = 'Template saved';
+      case 'item_deleted':
+        icon = Icons.delete_outline_rounded;
+        color = Colors.redAccent;
+        label = field('status').isEmpty ? 'Deleted' : field('status');
+      default:
+        return const SizedBox.shrink();
+    }
+    if (title.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Material(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: opensNote ? () => onOpenNote(id!) : null,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border(left: BorderSide(color: color, width: 3)),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 20, color: color),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(label, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 2),
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          decoration: type == 'item_deleted' ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                      if (subtitle.isNotEmpty)
+                        Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                    ],
+                  ),
+                ),
+                if (opensNote) const Icon(Icons.chevron_right_rounded, color: AppTheme.textSecondary),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

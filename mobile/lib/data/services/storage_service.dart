@@ -1,3 +1,4 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StorageService {
@@ -5,6 +6,10 @@ class StorageService {
   static const _keyDeviceToken = 'muse_device_token';
   static const _keyDeviceName = 'muse_device_name';
   static const _keyDeviceId = 'muse_device_id';
+
+  // The device token is a long-lived credential for the whole Muse account, so
+  // it lives in the Android Keystore / iOS Keychain rather than plain prefs.
+  static const _secure = FlutterSecureStorage();
 
   Future<void> saveConnection({
     required String serverUrl,
@@ -16,7 +21,7 @@ class StorageService {
     // Normalize url: remove trailing slash
     final cleanUrl = serverUrl.trim().replaceAll(RegExp(r'/+$'), '');
     await prefs.setString(_keyServerUrl, cleanUrl);
-    await prefs.setString(_keyDeviceToken, deviceToken.trim());
+    await _secure.write(key: _keyDeviceToken, value: deviceToken.trim());
     await prefs.setString(_keyDeviceName, deviceName.trim());
     if (deviceId != null) {
       await prefs.setString(_keyDeviceId, deviceId);
@@ -29,8 +34,17 @@ class StorageService {
   }
 
   Future<String?> getDeviceToken() async {
+    final token = await _secure.read(key: _keyDeviceToken);
+    if (token != null && token.isNotEmpty) return token;
+
+    // One-time move for phones paired before tokens were stored securely.
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyDeviceToken);
+    final legacy = prefs.getString(_keyDeviceToken);
+    if (legacy != null && legacy.isNotEmpty) {
+      await _secure.write(key: _keyDeviceToken, value: legacy);
+      await prefs.remove(_keyDeviceToken);
+    }
+    return legacy;
   }
 
   Future<String?> getDeviceName() async {
@@ -48,6 +62,7 @@ class StorageService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyServerUrl);
     await prefs.remove(_keyDeviceToken);
+    await _secure.delete(key: _keyDeviceToken);
     await prefs.remove(_keyDeviceName);
     await prefs.remove(_keyDeviceId);
   }

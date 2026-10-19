@@ -36,8 +36,8 @@ class CalendarEvent {
     return {
       'title': title,
       'description': description,
-      'start_time': startTime.toIso8601String(),
-      if (endTime != null) 'end_time': endTime!.toIso8601String(),
+      'start_time': startTime.toUtc().toIso8601String(),
+      if (endTime != null) 'end_time': endTime!.toUtc().toIso8601String(),
       'all_day': allDay,
       'location': location,
       if (noteId != null) 'note_id': noteId,

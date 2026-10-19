@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/task.dart';
 import '../../data/models/event.dart';
 import '../../data/services/api_service.dart';
+import '../../data/services/app_events.dart';
+import '../../data/services/offline_queue.dart';
+import '../../data/services/reminder_service.dart';
 import '../theme/app_theme.dart';
 
 class TasksTab extends StatefulWidget {
@@ -33,13 +37,25 @@ class _TasksTabState extends State<TasksTab> {
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
     _loadData();
+    AppEvents.dataChanged.addListener(_onDataChanged);
   }
 
-  Future<void> _loadData() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  @override
+  void dispose() {
+    AppEvents.dataChanged.removeListener(_onDataChanged);
+    super.dispose();
+  }
+
+  // Bip added a task or event: refresh quietly, keeping the list on screen.
+  void _onDataChanged() => _loadData(silent: true);
+
+  Future<void> _loadData({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
       final from = DateTime.now().subtract(const Duration(days: 30));
@@ -50,12 +66,16 @@ class _TasksTabState extends State<TasksTab> {
         _api.fetchEvents(from: from, to: to),
       ]);
 
+      if (!mounted) return;
       setState(() {
         _tasks = results[0] as List<TodoTask>;
         _events = results[1] as List<CalendarEvent>;
         _loading = false;
       });
+      // Reminders always follow the freshest lists (including desktop edits).
+      await ReminderService.sync(_tasks, _events);
     } catch (e) {
+      if (!mounted || silent) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -74,9 +94,12 @@ class _TasksTabState extends State<TasksTab> {
     });
 
     try {
-      await _api.toggleTaskCompleted(task.id, nextStatus);
+      // Offline: the tick stays and syncs later.
+      await OfflineQueue.setTaskCompleted(_api, task.id, nextStatus);
+      unawaited(ReminderService.sync(_tasks, _events));
     } catch (_) {
-      // Revert if error
+      // Revert if the server rejected it
+      if (!mounted) return;
       setState(() {
         final index = _tasks.indexWhere((t) => t.id == task.id);
         if (index != -1) {
@@ -86,22 +109,44 @@ class _TasksTabState extends State<TasksTab> {
     }
   }
 
-  Future<void> _deleteTask(TodoTask task) async {
-    final prev = List<TodoTask>.from(_tasks);
-    setState(() {
-      _tasks.removeWhere((t) => t.id == task.id);
-    });
-
-    try {
-      await _api.deleteTask(task.id);
-    } catch (e) {
-      setState(() => _tasks = prev);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete task: $e'), backgroundColor: Colors.redAccent),
-        );
+  /// Removes an item from the list right away and only deletes it on the
+  /// server once the Undo snackbar has gone without being tapped.
+  void _deleteWithUndo({required String label, required VoidCallback removeLocally, required VoidCallback restoreLocally, required Future<void> Function() deleteRemotely}) {
+    setState(removeLocally);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger
+        .showSnackBar(SnackBar(
+          content: Text('$label deleted'),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(label: 'Undo', onPressed: () {}),
+        ))
+        .closed
+        .then((reason) async {
+      if (reason == SnackBarClosedReason.action) {
+        if (mounted) setState(restoreLocally);
+        return;
       }
-    }
+      try {
+        await deleteRemotely();
+        unawaited(ReminderService.sync(_tasks, _events));
+      } catch (e) {
+        if (!mounted) return;
+        setState(restoreLocally);
+        messenger.showSnackBar(SnackBar(content: Text('Could not delete: ${e.toString().replaceFirst('Exception: ', '')}'), backgroundColor: Colors.redAccent));
+      }
+    });
+  }
+
+  void _deleteTask(TodoTask task) {
+    final index = _tasks.indexWhere((t) => t.id == task.id);
+    if (index == -1) return;
+    _deleteWithUndo(
+      label: 'Task',
+      removeLocally: () => _tasks.removeAt(index),
+      restoreLocally: () => _tasks.insert(index.clamp(0, _tasks.length), task),
+      deleteRemotely: () => _api.deleteTask(task.id),
+    );
   }
 
   void _showAddTaskSheet() {
@@ -262,15 +307,19 @@ class _TasksTabState extends State<TasksTab> {
                       : null;
 
                   try {
-                    final created = await _api.createTask(
+                    // Online: the list refreshes via AppEvents. Offline: queued.
+                    final savedNow = await OfflineQueue.createTask(
+                      _api,
                       title: text,
                       dueDate: dateStr,
                       dueTime: timeStr,
                       priority: priority,
                     );
-                    setState(() {
-                      _tasks.insert(0, created);
-                    });
+                    if (!savedNow && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Saved on your phone. It will sync when Muse is reachable.')),
+                      );
+                    }
                   } catch (e) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -289,22 +338,15 @@ class _TasksTabState extends State<TasksTab> {
   }
 
   // --- Calendar Event actions ---
-  Future<void> _deleteEvent(CalendarEvent event) async {
-    final prev = List<CalendarEvent>.from(_events);
-    setState(() {
-      _events.removeWhere((e) => e.id == event.id);
-    });
-
-    try {
-      await _api.deleteEvent(event.id);
-    } catch (e) {
-      setState(() => _events = prev);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete event: $e'), backgroundColor: Colors.redAccent),
-        );
-      }
-    }
+  void _deleteEvent(CalendarEvent event) {
+    final index = _events.indexWhere((e) => e.id == event.id);
+    if (index == -1) return;
+    _deleteWithUndo(
+      label: 'Event',
+      removeLocally: () => _events.removeAt(index),
+      restoreLocally: () => _events.insert(index.clamp(0, _events.length), event),
+      deleteRemotely: () => _api.deleteEvent(event.id),
+    );
   }
 
   void _showAddEventSheet() {
@@ -1071,16 +1113,30 @@ class _TasksTabState extends State<TasksTab> {
       priorityText = 'LOW';
     }
 
+    // Swipe right: complete / reopen. Swipe left: delete (with Undo).
     return Dismissible(
       key: Key(task.id),
-      direction: DismissDirection.endToStart,
       background: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        decoration: BoxDecoration(color: AppTheme.accent, borderRadius: BorderRadius.circular(12)),
+        child: Icon(task.completed ? Icons.undo_rounded : Icons.check_rounded, color: Colors.white),
+      ),
+      secondaryBackground: Container(
         margin: const EdgeInsets.only(bottom: 8),
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
         decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(12)),
         child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
       ),
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.startToEnd) {
+          _toggleTask(task);
+          return false; // the tile stays; only its state flips
+        }
+        return true;
+      },
       onDismissed: (_) => _deleteTask(task),
       child: Card(
         margin: const EdgeInsets.only(bottom: 8),
