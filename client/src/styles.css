@@ -5446,3 +5446,46 @@
   padding: 6px 10px;
   font-size: 12px;
 }
+
+/* Task reminders: bell picker */
+.reminder-picker { position: relative; display: inline-block; }
+.reminder-trigger { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 8px; font-size: 12px; color: #7a7486; background: transparent; border: 1px dashed #d8d3e2; white-space: nowrap; }
+.reminder-trigger:hover { border-color: #8e6ce7; color: #6544af; }
+.reminder-trigger.active { border-style: solid; border-color: #c9b6f5; background: #f5f0ff; color: #6544af; font-weight: 600; }
+.reminder-popover { position: absolute; z-index: 40; top: calc(100% + 6px); right: 0; width: 250px; display: grid; gap: 10px; padding: 12px; background: #fff; border: 1px solid #e3dff0; border-radius: 12px; box-shadow: 0 14px 40px #2a1f4a24; }
+.reminder-popover header { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+.reminder-popover label { display: grid; gap: 4px; font-size: 11px; font-weight: 600; color: #5d5868; }
+.reminder-popover input, .reminder-popover select { padding: 7px 8px; border: 1px solid #ddd8e6; border-radius: 8px; font-size: 13px; background: #fff; color: #2a2733; }
+.reminder-popover footer { display: flex; justify-content: flex-end; gap: 8px; }
+.reminder-save { padding: 7px 14px; border-radius: 8px; background: #7c3aed; color: #fff; font-weight: 700; font-size: 12px; }
+.reminder-save:disabled { opacity: .6; }
+.reminder-clear { display: inline-flex; align-items: center; gap: 4px; margin-right: auto; font-size: 12px; color: #b91c1c; background: transparent; }
+.reminder-hint { font-size: 11px; color: #8a8494; }
+.reminder-error { font-size: 11px; color: #b91c1c; }
+.task-due-time { margin-left: 8px; font-size: 11px; color: #7a7486; font-variant-numeric: tabular-nums; }
+.task-time-input { width: 110px; }
+[data-theme=dark] .reminder-trigger { border-color: #3a3741; color: #a9a3b0; }
+[data-theme=dark] .reminder-trigger.active { background: #2a2140; border-color: #5b3fb0; color: #c9b6f5; }
+[data-theme=dark] .reminder-popover { background: #211f27; border-color: #393641; box-shadow: none; }
+[data-theme=dark] .reminder-popover label { color: #bcb7c6; }
+[data-theme=dark] .reminder-popover input, [data-theme=dark] .reminder-popover select { background: #19181d; border-color: #403b49; color: #f1edf5; }
+
+/* Bip alarm: full attention when a reminder rings */
+.bip-alarm-backdrop { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; gap: 16px; padding: 24px; background: #120d2299; backdrop-filter: blur(6px); }
+.bip-alarm-card { width: min(100%, 400px); display: grid; justify-items: center; gap: 8px; padding: 26px 24px 20px; text-align: center; background: #fff; border-radius: 22px; box-shadow: 0 30px 80px #0006; animation: bip-alarm-pop .35s cubic-bezier(.2, 1.4, .4, 1); }
+.bip-alarm-figure { animation: bip-alarm-wiggle .5s ease-in-out infinite alternate; }
+.bip-alarm-kicker { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: #f5f0ff; color: #6d28d9; font-size: 12px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+.bip-alarm-card h2 { margin: 2px 0 0; font-size: 22px; letter-spacing: -.4px; color: #1f1b2b; }
+.bip-alarm-line { margin: 0; font-size: 14px; color: #6f6a7b; }
+.bip-alarm-countdown { margin: 6px 0 4px; font: 700 30px/1 'DM Mono', monospace; color: #7c3aed; font-variant-numeric: tabular-nums; }
+.bip-alarm-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 6px; }
+.bip-alarm-actions button { display: inline-flex; align-items: center; gap: 5px; padding: 9px 14px; border-radius: 10px; font-weight: 600; font-size: 13px; background: #f1eef7; color: #3d3650; }
+.bip-alarm-actions .bip-alarm-done { background: #7c3aed; color: #fff; }
+.bip-alarm-actions .bip-alarm-dismiss { padding: 9px 10px; }
+[data-theme=dark] .bip-alarm-card { background: #211f27; }
+[data-theme=dark] .bip-alarm-card h2 { color: #f0edf5; }
+[data-theme=dark] .bip-alarm-kicker { background: #2a2140; color: #c9b6f5; }
+[data-theme=dark] .bip-alarm-actions button { background: #2d2a35; color: #e7e3ef; }
+@keyframes bip-alarm-pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes bip-alarm-wiggle { from { transform: rotate(-6deg) translateY(0); } to { transform: rotate(6deg) translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .bip-alarm-card, .bip-alarm-figure { animation: none; } }

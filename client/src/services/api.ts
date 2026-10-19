@@ -21,6 +21,9 @@ export const AUTH_REQUIRED_EVENT = 'muse:auth-required'
 async function failure(response: Response, fallback: string): Promise<never> {
   const body = await response.json().catch(() => ({}))
   if (response.status === 401 && body.code === 'auth_required') window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+  // Gateway errors come from nginx as HTML, so there is no JSON message.
+  if (!body.error && (response.status === 502 || response.status === 503)) throw new Error('Muse server is not reachable right now. Is it running?')
+  if (!body.error && response.status === 504) throw new Error('Muse took too long to answer (the AI models may be slow or out of quota). Please try again.')
   throw new Error(body.error || fallback)
 }
 
@@ -406,7 +409,7 @@ export const api = {
 
   // Tasks
   listTasks: (dueDate?: string) => request<Task[]>(`/tasks${dueDate ? `?due_date=${dueDate}` : ''}`),
-  createTask: (data: { text: string; due_date?: string | null; due_time?: string | null; priority?: string; note_id?: string | null }) => request<Task>('/tasks', { method: 'POST', body: JSON.stringify(data) }),
+  createTask: (data: { text: string; due_date?: string | null; due_time?: string | null; priority?: string; note_id?: string | null; reminder_minutes_before?: number | null; reminder_at?: string | null }) => request<Task>('/tasks', { method: 'POST', body: JSON.stringify(data) }),
   updateTask: (id: string, data: Partial<Task>) => request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
