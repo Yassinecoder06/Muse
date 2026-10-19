@@ -26,7 +26,7 @@ import { describeNow } from '../utils/timezone.js'
 import { chatRoutes, generateChain } from './providers/router.js'
 import type { ChatMessage, ToolSpec } from './providers/llm.js'
 
-const MAX_TOOL_ROUNDS = 4
+const MAX_TOOL_ROUNDS = 10
 const HISTORY_MESSAGES = 16
 
 export interface AgentRunOutput {
@@ -127,7 +127,11 @@ ${userTemplatesList}
    - \`create_specialized_template\`: Save a new template when explicitly requested.
    - \`list_specialized_templates\`: View all available templates.
    - \`update_note\`: Update or append to an existing note.
-   - \`search_notes\`: Search the user's notes for knowledge or context.
+   - \`read_note\`: Read the full content and details of a specific note by title or note ID.
+   - \`search_notes\`: Search the user's notes for knowledge or context. Use read_note when you need the complete content of a found note.
+   - \`search_web\`: Search the live web for real-time information, research, documentation, recipes, news, or facts outside the workspace.
+   - \`calculate\`: Perform mathematical calculations, percentages, formulas, and conversions accurately (always use this tool for arithmetic rather than calculating in your head).
+   - \`execute_code\`: Run a multi-line JavaScript code snippet in an isolated sandbox for advanced math, statistical modeling, algorithmic calculations, array manipulation, data processing, or simulations (supports Math, console.log, sum, avg, median, stddev, range). Use "return <value>;" to return the output.
    - \`create_task\`: Create tasks with due dates, due times, and priority levels. When the user wants to be reminded, set \`remind_minutes_before\` (e.g. 5) or \`remind_at\` (e.g. "today at 7:45pm"); Bip rings an alarm on their phone and in the browser.
    - \`update_task\`: Mark tasks complete, change text/due date/time, or add, change, or remove (-1) a reminder.
    - \`list_tasks\`: List existing tasks.
@@ -313,7 +317,20 @@ export async function runAgentConversation({
           convo.push({ role: 'tool', toolCallId: call.id, name: call.name, content: JSON.stringify(execution.result) })
         }
       }
-      if (!finalResponseText && turns >= MAX_TOOL_ROUNDS) hitToolLimit = true
+      if (!finalResponseText && recordedToolCalls.length > 0) {
+        try {
+          const { result: finalTurn } = await generateChain(userId, routes, { system: systemInstruction, messages: convo, tools: [] }, 'chat')
+          if (finalTurn.text && finalTurn.text.trim()) {
+            finalResponseText = finalTurn.text.trim()
+          } else if (turns >= MAX_TOOL_ROUNDS) {
+            hitToolLimit = true
+          }
+        } catch {
+          if (turns >= MAX_TOOL_ROUNDS) hitToolLimit = true
+        }
+      } else if (!finalResponseText && turns >= MAX_TOOL_ROUNDS) {
+        hitToolLimit = true
+      }
     } catch (providerErr: any) {
       console.warn('[Agent] All chosen chat models failed:', providerErr?.message || providerErr)
       agentError = providerErr
@@ -351,13 +368,13 @@ export async function runAgentConversation({
     }
 
     let modelIdx = 0
+    let activeModel = geminiCandidates[modelIdx] || 'gemini-2.5-flash'
     try {
-      // Multi-turn tool execution loop (max 4 tool call rounds)
+      // Multi-turn tool execution loop (max MAX_TOOL_ROUNDS tool call rounds)
       let turns = 0
       while (turns < MAX_TOOL_ROUNDS) {
         turns++
         let response: any = null
-        let activeModel = geminiCandidates[modelIdx]
 
         // Model waterfall attempt loop: try active model, tracking back to weaker model on failure
         while (modelIdx < geminiCandidates.length) {
@@ -441,7 +458,25 @@ export async function runAgentConversation({
           break
         }
       }
-      if (!finalResponseText && turns >= MAX_TOOL_ROUNDS) hitToolLimit = true
+      if (!finalResponseText && recordedToolCalls.length > 0) {
+        try {
+          const finalGen = await client.models.generateContent({
+            model: activeModel,
+            contents,
+            config: { systemInstruction }
+          })
+          const finalText = String(finalGen.text || '').trim()
+          if (finalText) {
+            finalResponseText = finalText
+          } else if (turns >= MAX_TOOL_ROUNDS) {
+            hitToolLimit = true
+          }
+        } catch {
+          if (turns >= MAX_TOOL_ROUNDS) hitToolLimit = true
+        }
+      } else if (!finalResponseText && turns >= MAX_TOOL_ROUNDS) {
+        hitToolLimit = true
+      }
     } catch (geminiErr: any) {
       console.warn('[Agent] Gemini waterfall cascade exhausted:', geminiErr?.message || geminiErr)
       agentError = geminiErr
@@ -520,7 +555,32 @@ export async function runAgentConversation({
           break
         }
       }
-      if (!finalResponseText && turns >= MAX_TOOL_ROUNDS) hitToolLimit = true
+      if (!finalResponseText && recordedToolCalls.length > 0) {
+        try {
+          const res = await fetch(`${baseUrl}/api/chat`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              model: targetModel,
+              stream: false,
+              messages: ollamaMessages,
+              options: { num_ctx: env.OLLAMA_NUM_CTX || 16384 }
+            })
+          })
+          if (res.ok) {
+            const data: any = await res.json()
+            const finalText = String(data.message?.content || '').trim()
+            if (finalText) finalResponseText = finalText
+            else if (turns >= MAX_TOOL_ROUNDS) hitToolLimit = true
+          } else if (turns >= MAX_TOOL_ROUNDS) {
+            hitToolLimit = true
+          }
+        } catch {
+          if (turns >= MAX_TOOL_ROUNDS) hitToolLimit = true
+        }
+      } else if (!finalResponseText && turns >= MAX_TOOL_ROUNDS) {
+        hitToolLimit = true
+      }
     } catch (ollamaErr: any) {
       console.warn('[Agent] Ollama fallback execution failed:', ollamaErr?.message || ollamaErr)
       if (!agentError) agentError = ollamaErr

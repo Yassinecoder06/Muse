@@ -1,7 +1,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 
-export type BipMood = 'idle' | 'happy' | 'thinking' | 'curious' | 'sleeping' | 'excited'
+export type BipMood = 'idle' | 'happy' | 'thinking' | 'curious' | 'sleeping' | 'excited' | 'dizzy'
 
 interface BipFigureProps {
   mood?: BipMood
@@ -42,6 +42,7 @@ export function BipFigure({
   const isSleeping = mood === 'sleeping'
   const isHappy = mood === 'happy' || mood === 'excited'
   const isCurious = mood === 'curious'
+  const isDizzy = mood === 'dizzy'
 
   return (
     <div
@@ -63,7 +64,14 @@ export function BipFigure({
         width="100%"
         height="100%"
         animate={
-          isDragging
+          isDizzy
+            ? {
+                rotate: [-8, 8, -6, 6, -3, 3, 0],
+                x: [-3, 3, -2, 2, 0],
+                y: [-2, 2, -2, 2, 0],
+                transition: { repeat: Infinity, duration: 0.7, ease: 'easeInOut' }
+              }
+            : isDragging
             ? { y: -4, rotate: 2, scale: 1.05 }
             : isSleeping
             ? { y: [0, 3, 0], transition: { repeat: Infinity, duration: 4, ease: 'easeInOut' } }
@@ -192,7 +200,9 @@ export function BipFigure({
             stroke="#afa7c7"
             strokeWidth="1"
             animate={
-              isHappy
+              isDizzy
+                ? { y: [-4, 4, -4], rotate: [-25, 25, -25], transition: { repeat: Infinity, duration: 0.35 } }
+                : isHappy
                 ? { y: [-2, -6, -2], rotate: [-10, -25, -10], transition: { repeat: Infinity, duration: 0.7 } }
                 : isDragging
                 ? { y: 3, rotate: 15 }
@@ -208,7 +218,9 @@ export function BipFigure({
             stroke="#afa7c7"
             strokeWidth="1"
             animate={
-              isHappy
+              isDizzy
+                ? { y: [4, -4, 4], rotate: [25, -25, 25], transition: { repeat: Infinity, duration: 0.35 } }
+                : isHappy
                 ? { y: [-2, -6, -2], rotate: [10, 25, 10], transition: { repeat: Infinity, duration: 0.7 } }
                 : isDragging
                 ? { y: 3, rotate: -15 }
@@ -271,6 +283,24 @@ export function BipFigure({
               <g stroke="url(#bipEyeGlow)" strokeWidth="3" strokeLinecap="round" opacity="0.7">
                 <line x1="36" y1="46" x2="44" y2="46" />
                 <line x1="56" y1="46" x2="64" y2="46" />
+              </g>
+            ) : isDizzy ? (
+              // Dizzy spiral swirl eyes: comic spinning spirals
+              <g stroke="url(#bipEyeGlow)" strokeWidth="2.2" strokeLinecap="round" fill="none" filter="url(#neonGlow)">
+                <motion.g
+                  style={{ originX: '40px', originY: '45px' }}
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 0.75, ease: 'linear' }}
+                >
+                  <path d="M 40 45 m -1 0 a 1.2 1.2 0 0 1 2.4 0 a 2.5 2.5 0 0 1 -5 0 a 4 4 0 0 1 8 0 a 5.5 5.5 0 0 1 -11 0" />
+                </motion.g>
+                <motion.g
+                  style={{ originX: '60px', originY: '45px' }}
+                  animate={{ rotate: -360 }}
+                  transition={{ repeat: Infinity, duration: 0.75, ease: 'linear' }}
+                >
+                  <path d="M 60 45 m 1 0 a 1.2 1.2 0 0 1 -2.4 0 a 2.5 2.5 0 0 1 5 0 a 4 4 0 0 1 -8 0 a 5.5 5.5 0 0 1 11 0" />
+                </motion.g>
               </g>
             ) : isHappy ? (
               // Happy eyes: smiling curves (^ ^)
@@ -382,8 +412,28 @@ export function BipFigure({
                 />
               </g>
             )}
+
+            {/* Wobbly mouth when dizzy */}
+            {isDizzy && (
+              <g stroke="url(#bipEyeGlow)" strokeWidth="2.2" strokeLinecap="round" fill="none" opacity="0.95">
+                <path d="M 41 54 Q 45.5 50.5 50 54 Q 54.5 57.5 59 54" />
+              </g>
+            )}
           </g>
         </motion.g>
+
+        {/* Circling dizzy stars above head */}
+        {isDizzy && (
+          <motion.g
+            style={{ originX: '50px', originY: '18px' }}
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, duration: 2.2, ease: 'linear' }}
+          >
+            <circle cx="33" cy="14" r="2.5" fill="#facc15" filter="url(#neonGlow)" />
+            <circle cx="67" cy="14" r="2.2" fill="#38bdf8" filter="url(#neonGlow)" />
+            <polygon points="50,6 52,10 56,10 53,13 54,17 50,14 46,17 47,13 44,10 48,10" fill="#f59e0b" opacity="0.9" />
+          </motion.g>
+        )}
 
         {/* Floating "Z z Z" bubbles when sleeping */}
         {isSleeping && (
