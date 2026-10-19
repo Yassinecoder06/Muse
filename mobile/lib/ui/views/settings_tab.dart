@@ -119,6 +119,41 @@ class _SettingsTabState extends State<SettingsTab> {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
+          // App Header
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryLight.withValues(alpha: 0.35),
+                        blurRadius: 12,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Image.asset('assets/images/muse_logo.png', fit: BoxFit.cover),
+                ),
+                const SizedBox(width: 14),
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Muse Companion', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+                    SizedBox(height: 2),
+                    Text('Encrypted notes & AI partner', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
           // Connection card
           Card(
             child: Padding(

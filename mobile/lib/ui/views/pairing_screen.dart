@@ -254,6 +254,25 @@ class _PairingScreenState extends State<PairingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Center(
+            child: Container(
+              width: 72,
+              height: 72,
+              margin: const EdgeInsets.only(bottom: 20, top: 4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppTheme.primaryLight.withValues(alpha: 0.35),
+                    blurRadius: 16,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: Image.asset('assets/images/muse_logo.png', fit: BoxFit.cover),
+            ),
+          ),
           const Text(
             'Manual Pairing',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
