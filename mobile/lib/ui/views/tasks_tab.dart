@@ -165,14 +165,15 @@ class _TasksTabState extends State<TasksTab> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            left: 20,
-            right: 20,
-            top: 20,
-          ),
-          child: Column(
+        builder: (ctx, setSheetState) => SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+              left: 20,
+              right: 20,
+              top: 20,
+            ),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -364,8 +365,9 @@ class _TasksTabState extends State<TasksTab> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // --- Calendar Event actions ---
   void _deleteEvent(CalendarEvent event) {
@@ -396,14 +398,15 @@ class _TasksTabState extends State<TasksTab> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            left: 20,
-            right: 20,
-            top: 20,
-          ),
-          child: Column(
+        builder: (ctx, setSheetState) => SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+              left: 20,
+              right: 20,
+              top: 20,
+            ),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -555,8 +558,9 @@ class _TasksTabState extends State<TasksTab> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _showQuickAddAIPrompt() {
     final promptCtrl = TextEditingController();
@@ -570,14 +574,15 @@ class _TasksTabState extends State<TasksTab> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setPromptState) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            left: 20,
-            right: 20,
-            top: 20,
-          ),
-          child: Column(
+        builder: (ctx, setPromptState) => SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+              left: 20,
+              right: 20,
+              top: 20,
+            ),
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -679,8 +684,9 @@ class _TasksTabState extends State<TasksTab> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // --- Date strip generator (yesterday to +12 days) ---
   List<DateTime> _getDateRange() {

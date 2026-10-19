@@ -3,6 +3,7 @@ import '../../data/services/api_service.dart';
 import '../../data/services/offline_queue.dart';
 import '../../data/services/reminder_service.dart';
 import '../../data/services/storage_service.dart';
+import '../../data/services/tts_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/alarm_setup_card.dart';
 import 'pairing_screen.dart';
@@ -17,6 +18,7 @@ class SettingsTab extends StatefulWidget {
 class _SettingsTabState extends State<SettingsTab> {
   final StorageService _storage = StorageService();
   final ApiService _api = ApiService();
+  final TtsService _tts = TtsService();
 
   String? _serverUrl;
   String? _deviceName;
@@ -25,11 +27,19 @@ class _SettingsTabState extends State<SettingsTab> {
   bool _checking = true;
   Map<String, dynamic>? _usage;
   bool _remindersOn = false;
+  bool _autoReadAloud = true;
+  double _speechRate = 0.5;
 
   @override
   void initState() {
     super.initState();
     _loadInfo();
+    _tts.getAutoReadAloud().then((on) {
+      if (mounted) setState(() => _autoReadAloud = on);
+    });
+    _tts.getSpeechRate().then((rate) {
+      if (mounted) setState(() => _speechRate = rate);
+    });
     ReminderService.isEnabled().then((on) {
       if (mounted) setState(() => _remindersOn = on);
     });
@@ -228,6 +238,96 @@ class _SettingsTabState extends State<SettingsTab> {
                   subtitle: Text(tokenSnippet, style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary, fontFamily: 'monospace')),
                 ),
               ],
+            ),
+          ),
+          // Voice & Speech (TTS)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SwitchListTile(
+                    secondary: const Icon(Icons.volume_up_rounded, color: AppTheme.primaryLight),
+                    title: const Text('Voice & Speech (TTS)', style: TextStyle(fontSize: 15, color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
+                    subtitle: const Text(
+                      'Automatically read Bip responses out loud on mobile',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    ),
+                    value: _autoReadAloud,
+                    onChanged: (on) async {
+                      await _tts.setAutoReadAloud(on);
+                      setState(() => _autoReadAloud = on);
+                      if (!on) await _tts.stop();
+                    },
+                  ),
+                  const Divider(height: 1, color: AppTheme.surfaceBorder),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Speech Speed',
+                              style: TextStyle(fontSize: 14, color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
+                            ),
+                            Text(
+                              _speechRate == 0.4 ? 'Slower (0.8×)' : (_speechRate == 0.6 ? 'Faster (1.2×)' : 'Normal (1.0×)'),
+                              style: const TextStyle(fontSize: 12, color: AppTheme.primaryLight, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          child: SegmentedButton<double>(
+                            showSelectedIcon: false,
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            segments: const [
+                              ButtonSegment(value: 0.4, label: Text('0.8×')),
+                              ButtonSegment(value: 0.5, label: Text('1.0×')),
+                              ButtonSegment(value: 0.6, label: Text('1.2×')),
+                            ],
+                            selected: {_speechRate},
+                            onSelectionChanged: (selected) async {
+                              final val = selected.first;
+                              await _tts.setSpeechRate(val);
+                              setState(() => _speechRate = val);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1, color: AppTheme.surfaceBorder),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Hear how Bip sounds on your phone',
+                            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                          ),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            _tts.speak("Hello! I'm Bip, your proactive Muse AI companion. Voice text-to-speech is active and working on your phone!");
+                          },
+                          icon: const Icon(Icons.record_voice_over_rounded, size: 16),
+                          label: const Text('Test Voice'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),

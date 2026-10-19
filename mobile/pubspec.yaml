@@ -48,6 +48,7 @@ dependencies:
   flutter_timezone: ^5.1.1
   quick_actions: ^1.1.1
   path_provider: ^2.1.5
+  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:

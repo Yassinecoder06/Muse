@@ -6,6 +6,7 @@ import '../../data/services/api_service.dart';
 import '../../data/services/note_cache.dart';
 import '../../data/services/note_store.dart';
 import '../../data/services/offline_queue.dart';
+import '../../data/services/tts_service.dart';
 import '../../data/services/voice_service.dart';
 import '../theme/app_theme.dart';
 
@@ -21,6 +22,7 @@ class NoteDetailView extends StatefulWidget {
 class _NoteDetailViewState extends State<NoteDetailView> {
   final ApiService _api = ApiService();
   final VoiceService _voice = VoiceService();
+  final TtsService _tts = TtsService();
 
   late TextEditingController _titleController;
   late TextEditingController _contentController;
@@ -127,6 +129,7 @@ class _NoteDetailViewState extends State<NoteDetailView> {
   @override
   void dispose() {
     _voice.cancel();
+    _tts.stop();
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
@@ -139,6 +142,7 @@ class _NoteDetailViewState extends State<NoteDetailView> {
       await _voice.stop();
       return;
     }
+    await _tts.stop();
     _initialDictationText = _contentController.text;
     final started = await _voice.startDictation(
       onText: (words) {
@@ -455,6 +459,24 @@ class _NoteDetailViewState extends State<NoteDetailView> {
           onPressed: _saveAndLeave,
         ),
         actions: [
+          ValueListenableBuilder<bool>(
+            valueListenable: _tts.isSpeaking,
+            builder: (context, speaking, _) => IconButton(
+              tooltip: speaking ? 'Stop reading' : 'Read note aloud',
+              icon: Icon(
+                speaking ? Icons.stop_circle_rounded : Icons.volume_up_rounded,
+                color: speaking ? AppTheme.accent : AppTheme.textSecondary,
+              ),
+              onPressed: () {
+                if (speaking) {
+                  _tts.stop();
+                } else {
+                  final text = '${_titleController.text}. ${_contentController.text}';
+                  _tts.speak(text);
+                }
+              },
+            ),
+          ),
           IconButton(
             tooltip: _isDictating ? 'Stop dictating' : 'Dictate with microphone',
             icon: Icon(

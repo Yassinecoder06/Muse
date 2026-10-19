@@ -188,9 +188,14 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
+    final view = View.of(context);
+    final isKeyboardOpen = view.viewInsets.bottom > 0 || MediaQuery.of(context).viewInsets.bottom > 0;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
+        toolbarHeight: (isLandscape && isKeyboardOpen) ? 40 : (isLandscape ? 44 : kToolbarHeight),
         title: Row(
           children: [
             Container(
@@ -247,32 +252,34 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
           ),
         ],
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.smart_toy_outlined),
-            activeIcon: Icon(Icons.smart_toy_rounded),
-            label: 'Bip AI',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.edit_note_outlined),
-            activeIcon: Icon(Icons.edit_note_rounded),
-            label: 'Notes',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.event_note_outlined),
-            activeIcon: Icon(Icons.event_note_rounded),
-            label: 'Schedule',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.tune_outlined),
-            activeIcon: Icon(Icons.tune_rounded),
-            label: 'Settings',
-          ),
-        ],
-      ),
+      bottomNavigationBar: isKeyboardOpen
+          ? null
+          : BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: (index) => setState(() => _currentIndex = index),
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.smart_toy_outlined),
+                  activeIcon: Icon(Icons.smart_toy_rounded),
+                  label: 'Bip AI',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.edit_note_outlined),
+                  activeIcon: Icon(Icons.edit_note_rounded),
+                  label: 'Notes',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.event_note_outlined),
+                  activeIcon: Icon(Icons.event_note_rounded),
+                  label: 'Schedule',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.tune_outlined),
+                  activeIcon: Icon(Icons.tune_rounded),
+                  label: 'Settings',
+                ),
+              ],
+            ),
     );
   }
 }
