@@ -23,6 +23,7 @@ import { SpecializedNotePanel } from './components/SpecializedNotePanel'
 import { RobotCompanion } from './components/RobotCompanion/RobotCompanion'
 import { RemotePairingModal } from './components/RemotePairingModal'
 import { OwnerGate } from './components/OwnerGate'
+import { BipAlarmCenter } from './components/BipAlarmCenter'
 import type { CustomTemplate } from './services/templates'
 
 function MuseApp() {
@@ -832,6 +833,7 @@ function MuseApp() {
       </div>
     )}
     <RemotePairingModal isOpen={remoteModalOpen} onClose={() => setRemoteModalOpen(false)}/>
+    <BipAlarmCenter/>
     {showBip && (
       <RobotCompanion
         onCreateNote={input => create.mutate(input)}

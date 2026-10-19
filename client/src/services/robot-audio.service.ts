@@ -95,6 +95,34 @@ class RobotAudioService {
     }
   }
 
+  /**
+   * One burst of Bip's alarm: a bright rising beep-beep-BEEP. Reminders call
+   * it on a loop. Not gated by the UI sound-effects toggle: an alarm the user
+   * set should be heard.
+   */
+  public alarmBurst() {
+    const ctx = this.getAudioContext()
+    if (!ctx) return
+    const now = ctx.currentTime
+    const master = ctx.createGain()
+    master.gain.setValueAtTime(0.5, now)
+    master.connect(ctx.destination)
+    const notes: [number, number][] = [[0, 880], [0.18, 880], [0.36, 1320]]
+    for (const [offset, frequency] of notes) {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'square'
+      osc.frequency.setValueAtTime(frequency, now + offset)
+      gain.gain.setValueAtTime(0.001, now + offset)
+      gain.gain.linearRampToValueAtTime(0.35, now + offset + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + offset + (frequency > 1000 ? 0.3 : 0.12))
+      osc.connect(gain)
+      gain.connect(master)
+      osc.start(now + offset)
+      osc.stop(now + offset + 0.32)
+    }
+  }
+
   private playBoop(ctx: AudioContext, master: GainNode, now: number) {
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
