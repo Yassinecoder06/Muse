@@ -3,6 +3,7 @@ import { chatModel } from './settings'
 import type { AiJob, GraphData, Note, NoteInput, Task, CalendarEvent, DetectionResult, ChatSession, ChatMessage, UserMemory } from '../types'
 import type { SpecializedCategory } from '../types'
 import type { CustomTemplate } from './templates'
+import type { Activity } from './insights'
 import { activeVaultUser, decryptNote, encryptNote, encryptRecord, newSecureNote } from './vault'
 import type { VaultRecord, SecureNote } from './vault'
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
@@ -252,9 +253,11 @@ export const api = {
     if (activeVaultUser()) {
       const { note, task } = await findSecureTask(id)
       const { record } = await secureNote(note.id)
-      const tasks = note.tasks.map(item => item.id === id ? { ...item, completed } : item)
+      // Mirrors the server's completed_at trigger so analytics see vault completions too.
+      const completed_at = completed ? task.completed_at || new Date().toISOString() : null
+      const tasks = note.tasks.map(item => item.id === id ? { ...item, completed, completed_at } : item)
       await persistSecureNote({ ...note, tasks }, (record.revision || 1) + 1)
-      return { ...task, completed }
+      return { ...task, completed, completed_at }
     }
     return request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ completed }) })
   },
@@ -418,6 +421,7 @@ export const api = {
   },
 
   // Tasks
+  analyticsActivity: (days: number) => request<Activity>(`/analytics/activity?days=${days}`),
   listTasks: (dueDate?: string) => request<Task[]>(`/tasks${dueDate ? `?due_date=${dueDate}` : ''}`),
   createTask: (data: { text: string; due_date?: string | null; due_time?: string | null; priority?: string; note_id?: string | null; reminder_minutes_before?: number | null; reminder_at?: string | null }) => request<Task>('/tasks', { method: 'POST', body: JSON.stringify(data) }),
   updateTask: (id: string, data: Partial<Task>) => request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
