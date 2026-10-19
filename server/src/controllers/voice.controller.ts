@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express'
 import { GoogleGenAI } from '@google/genai'
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 import { settings } from '../services/settings.repository.js'
+import { speakFor, transcribeFor } from '../services/providers/router.js'
 
 const ALLOWED_NEURAL_VOICES = [
   'en-US-JennyNeural',
@@ -19,6 +20,17 @@ export async function synthesizeSpeech(req: Request, res: Response, next: NextFu
     }
     if (text.length > 5000) {
       return res.status(413).json({ error: 'Text is too long to read aloud (5000 characters max).' })
+    }
+
+    // The user's chosen text-to-speech model (Settings → AI providers).
+    const chosen = await speakFor(req.userId!, text.trim(), typeof voice === 'string' ? voice : null)
+    if (chosen?.kind === 'browser') {
+      return res.status(409).json({ error: 'Your read-aloud voice is set to the browser/phone voice.', useBrowser: true })
+    }
+    if (chosen?.kind === 'audio') {
+      res.setHeader('Content-Type', chosen.audio.mime)
+      res.setHeader('Cache-Control', 'private, no-store')
+      return res.send(chosen.audio.data)
     }
 
     const selectedVoice = ALLOWED_NEURAL_VOICES.includes(voice) ? voice : 'en-US-JennyNeural'
@@ -45,6 +57,13 @@ export async function transcribeAudio(req: Request, res: Response, next: NextFun
 
     const contentType = req.headers['content-type'] || 'audio/webm'
     const mimeType = contentType.split(';')[0].trim()
+
+    // The user's chosen speech-to-text model (Settings → AI providers).
+    const chosen = await transcribeFor(req.userId!, buffer, mimeType)
+    if (chosen?.kind === 'browser') {
+      return res.status(409).json({ error: 'Your dictation is set to the browser/phone speech recognition.', useBrowser: true })
+    }
+    if (chosen?.kind === 'text') return res.json({ text: chosen.text })
     const geminiKey = await settings.getGeminiKey(req.userId!)
 
     if (!geminiKey) {

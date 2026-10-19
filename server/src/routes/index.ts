@@ -11,6 +11,7 @@ import * as chat from '../controllers/chat.controller.js'
 import * as voice from '../controllers/voice.controller.js'
 import * as remote from '../controllers/remote.controller.js'
 import * as templates from '../controllers/templates.controller.js'
+import * as providers from '../controllers/ai-providers.controller.js'
 import * as ownerAuth from '../controllers/owner.controller.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter, loginLimiter, pairingLimiter } from '../middleware/rate-limit.js'
@@ -79,6 +80,13 @@ router.get('/reports/:noteId/export', ai.exportReport)
 router.post('/ai/stream', ai.secureStream)
 router.post('/ai/jobs', ai.enqueue).get('/ai/jobs/:id', ai.getJob).get('/ai/jobs/:id/artifacts', ai.getArtifacts).get('/ai/active', ai.active).get('/models', ai.listModels).get('/ai/usage', ai.usage)
 router.post('/chat/note', ai.askNote).post('/chat/search', ai.askSearch)
+// Bring-your-own AI providers and per-job model choices
+router.get('/ai/providers', providers.getProviders).post('/ai/providers', providers.createProvider)
+router.post('/ai/providers/fetch', providers.fetchModels)
+router.patch('/ai/providers/:id', providers.updateProvider).delete('/ai/providers/:id', providers.deleteProvider)
+router.put('/ai/preferences', providers.savePreferences)
+router.post('/ai/test', providers.testModel)
+router.get('/ai/reindex', providers.reindexStatus)
 router.get('/settings', settings.getSettings).put('/settings', settings.saveApiKey).delete('/settings', settings.deleteApiKey)
 
 // Chat Sessions & Bip Agent

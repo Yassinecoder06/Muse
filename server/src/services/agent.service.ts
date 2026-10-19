@@ -23,6 +23,8 @@ import { notes } from './note.repository.js'
 import type { SpecializedTemplate } from '../types/index.js'
 import { env } from '../utils/env.js'
 import { describeNow } from '../utils/timezone.js'
+import { chatRoutes, generateChain } from './providers/router.js'
+import type { ChatMessage, ToolSpec } from './providers/llm.js'
 
 const MAX_TOOL_ROUNDS = 4
 const HISTORY_MESSAGES = 16
@@ -280,7 +282,51 @@ export async function runAgentConversation({
   let hitToolLimit = false
   const runTool = (name: string, args: Record<string, any>) => executeAgentTool(userId, name, args, { timezone })
 
-  if (geminiKey) {
+  // The user's own chat models (Settings → AI providers), with their
+  // fallbacks. Works with any provider format; tool calls are normalized.
+  const routes = await chatRoutes(userId, model).catch(() => [])
+  if (routes.length) {
+    const convo: ChatMessage[] = historyRows.map(msg => msg.role === 'user'
+      ? { role: 'user' as const, content: msg.content }
+      : { role: 'assistant' as const, content: withToolSummary(msg.content, msg.tool_calls) })
+    if (convo[convo.length - 1]?.role !== 'user') convo.push({ role: 'user', content: messageText })
+    try {
+      let turns = 0
+      while (turns < MAX_TOOL_ROUNDS) {
+        turns++
+        const { result } = await generateChain(userId, routes, { system: systemInstruction, messages: convo, tools: agentToolDeclarations as unknown as ToolSpec[] }, 'chat')
+        convo.push({ role: 'assistant', content: result.text, toolCalls: result.toolCalls, raw: result.raw })
+        if (!result.toolCalls.length) {
+          finalResponseText = result.text
+          break
+        }
+        for (const call of result.toolCalls) {
+          if ('_invalid_json' in call.args) {
+            // Malformed arguments: tell the model instead of aborting the turn.
+            convo.push({ role: 'tool', toolCallId: call.id, name: call.name, content: JSON.stringify({ error: `Arguments for ${call.name} were not valid JSON. Retry with valid JSON.` }) })
+            continue
+          }
+          recordedToolCalls.push({ name: call.name, args: call.args })
+          const execution = await runTool(call.name, call.args)
+          recordedToolResults.push({ name: call.name, result: execution.result })
+          if (execution.actionCard) allActionCards.push(execution.actionCard)
+          convo.push({ role: 'tool', toolCallId: call.id, name: call.name, content: JSON.stringify(execution.result) })
+        }
+      }
+      if (!finalResponseText && turns >= MAX_TOOL_ROUNDS) hitToolLimit = true
+    } catch (providerErr: any) {
+      console.warn('[Agent] All chosen chat models failed:', providerErr?.message || providerErr)
+      agentError = providerErr
+    }
+  }
+
+  // A provider model ref means nothing to the built-in routing below.
+  if (model && /^[0-9a-f-]{36}:/i.test(model)) model = undefined
+
+  // Muse's built-in routing (Gemini cascade, then Ollama) when no models are
+  // chosen, or when they all failed before any tool ran. Never re-run after
+  // tools already executed: that would repeat their actions.
+  if (geminiKey && !finalResponseText && recordedToolCalls.length === 0) {
     // Priority: Run with Gemini Agent Engine using Waterfall Cascade
     const geminiCandidates = getCascadeCandidates(model, geminiKey)
     const client = new GoogleGenAI({ apiKey: geminiKey })
@@ -403,7 +449,7 @@ export async function runAgentConversation({
   }
 
   // Fallback to Ollama if Gemini was not used or all Gemini models reached quota
-  if (!finalResponseText && (ollamaKey || !geminiKey)) {
+  if (!finalResponseText && recordedToolCalls.length === 0 && (ollamaKey || !geminiKey)) {
     try {
       const fallbackModel = isGeminiModel(model) ? undefined : model
       const baseUrl = ollamaKey ? OLLAMA_CLOUD_URL : OLLAMA_LOCAL_URL

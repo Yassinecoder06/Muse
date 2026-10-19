@@ -266,6 +266,16 @@ export const api = {
   createResearch: (input: { topic: string; depth: 'concise' | 'standard' | 'in-depth'; documentIds?: string[]; title?: string; reportType?: string; objective?: string; audience?: string; instructions?: string; outputFormat?: 'html' | 'pdf' | 'docx' }) => request<AiJob>('/ai/jobs', { method: 'POST', body: JSON.stringify({ type: 'research', ...input }) }),
   getAiJob: (id: string) => request<AiJob>(`/ai/jobs/${id}`),
   listModels: () => request<string[]>(`/models`),
+
+  // Bring-your-own AI providers
+  aiProviders: () => request<AiProvidersState>('/ai/providers'),
+  addAiProvider: (body: { kind: string; name?: string; baseUrl?: string | null; apiKey?: string | null }) => request<AiProvidersState>('/ai/providers', { method: 'POST', body: JSON.stringify(body) }),
+  updateAiProvider: (id: string, body: { name?: string; baseUrl?: string | null; apiKey?: string; enabled?: boolean }) => request<AiProvidersState>(`/ai/providers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteAiProvider: (id: string) => request<AiProvidersState>(`/ai/providers/${id}`, { method: 'DELETE' }),
+  fetchAiModels: (providerId?: string) => request<AiProvidersState>('/ai/providers/fetch', { method: 'POST', body: JSON.stringify(providerId ? { providerId } : {}) }),
+  saveAiPreferences: (preferences: AiPreferences) => request<AiProvidersState>('/ai/preferences', { method: 'PUT', body: JSON.stringify(preferences) }),
+  testAiModel: (ref: string, capability: AiCapability, voice?: string | null) => request<{ ok: boolean; detail?: string; error?: string; ms: number }>('/ai/test', { method: 'POST', body: JSON.stringify({ ref, capability, voice }) }),
+  aiReindexStatus: () => request<AiReindexStatus | null>('/ai/reindex'),
   async uploadResearchDocument(file: File) { const response = await fetch(`${root}/research/documents`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Research-Filename': encodeURIComponent(file.name) }, body: file }); if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Document upload failed') } return response.json() as Promise<ResearchDocument> },
   async downloadReport(noteId: string, format: 'html' | 'pdf' | 'docx') { const response = await fetch(`${root}/reports/${noteId}/export?format=${format}`, { credentials: 'include' }); if (!response.ok) throw new Error('Report export failed'); const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `muse-report.${format}`; link.click(); URL.revokeObjectURL(url) },
   async uploadImage(file: File, noteId?: string) { if (activeVaultUser()) return secureUploadImage(file, noteId); const response = await fetch(`${root}/uploads${noteId ? `?noteId=${noteId}` : ''}`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': file.type }, body: file }); if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Image upload failed') } return response.json() as Promise<{ url: string }> },
@@ -519,6 +529,24 @@ export const api = {
   updateTemplate: (id: string, data: Partial<CustomTemplate>) =>
     request<CustomTemplate>(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteTemplate: (id: string) => request<void>(`/templates/${id}`, { method: 'DELETE' })
+}
+
+export type AiCapability = 'chat' | 'embedding' | 'tts' | 'stt'
+export type AiCatalogModel = { ref: string; providerId: string; providerName: string; kind: string; model: string; label: string; capabilities: AiCapability[]; description?: string }
+export type AiProvider = {
+  id: string; kind: string; kindLabel: string; name: string; baseUrl: string | null; enabled: boolean
+  hasKey: boolean; keyHint: string | null; needsKey: boolean
+  models: { id: string; label?: string; capabilities: AiCapability[] }[]; lastFetchedAt: string | null; lastError: string | null
+}
+export type AiPreferences = { chat: string[]; embedding: string | null; tts: string | null; ttsVoice: string | null; stt: string | null }
+export type AiReindexStatus = { running: boolean; total: number; done: number; failed: number; error?: string }
+export type AiProvidersState = {
+  providers: AiProvider[]
+  preferences: AiPreferences
+  catalog: AiCatalogModel[]
+  kinds: { kind: string; label: string; needsKey: boolean; needsBaseUrl: boolean; defaultBaseUrl: string | null }[]
+  voices: Record<string, string[]>
+  reindex: AiReindexStatus | null
 }
 
 export type SettingsResponse = {
