@@ -477,7 +477,9 @@ export const api = {
     })
     if (!response.ok) {
       const body = await response.json().catch(() => ({}))
-      throw new Error(body.error || 'Audio transcription failed')
+      const err = new Error(body.error || 'Audio transcription failed')
+      if (body.useBrowser) (err as any).useBrowser = true
+      throw err
     }
     return response.json()
   },
