@@ -8,6 +8,7 @@ import { chatModel } from '../../services/settings'
 import { robotAudio, loadVoiceSettings, saveVoiceSettings } from '../../services/robot-audio.service'
 import { tts } from '../../services/tts.service'
 import { stt } from '../../services/stt.service'
+import { useQueryClient } from '@tanstack/react-query'
 import type { ActionCard } from '../../types'
 import './bip.css'
 
@@ -27,7 +28,7 @@ interface Message {
 
 const DEFAULT_GREETING: Message = {
   role: 'assistant',
-  text: "Beep boop! 🤖 I'm Bip, your autonomous helper! I can create notes, add tasks, schedule events, and remember facts — just ask!"
+  text: "Beep boop! 🤖 I'm Bip, your autonomous helper! I can create notes, manage tasks, schedule events, remember facts, or delete anything you don't need — just ask!"
 }
 
 const BIP_WIDTH = 76
@@ -46,6 +47,7 @@ function clampPosition(x: number, y: number) {
 }
 
 export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps) {
+  const queryClient = useQueryClient()
   const [isOpen, setIsOpen] = useState(false)
   const [mood, setMood] = useState<BipMood>('idle')
   const [eyeOffset, setEyeOffset] = useState({ x: 0, y: 0 })
@@ -407,6 +409,14 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
         }
         return nextList
       })
+
+      // Invalidate queries so deleted/created items reflect across views
+      if (hasActions) {
+        queryClient.invalidateQueries({ queryKey: ['notes'] })
+        queryClient.invalidateQueries({ queryKey: ['tasks'] })
+        queryClient.invalidateQueries({ queryKey: ['calendar'] })
+        queryClient.invalidateQueries({ queryKey: ['specialized-templates'] })
+      }
 
       setMood(hasActions ? 'excited' : 'happy')
       window.setTimeout(() => setMood('idle'), 3500)

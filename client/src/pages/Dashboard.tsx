@@ -2,6 +2,7 @@ import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, Folder
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import type { Note } from '../types'
+import { ConfirmModal } from '../components/ConfirmModal'
 
 type Counts = { all: number; favorites: number; archive: number; trash: number }
 
@@ -88,7 +89,26 @@ export function Dashboard({
   }, [notes])
 
   const toggleSelect = (id: string) => setSelected(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id])
-  const confirmDelete = (action: () => void, message: string) => { if (window.confirm(message)) action() }
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean
+    title?: string
+    message: string
+    confirmText?: string
+    danger?: boolean
+    onConfirm: () => void
+  } | null>(null)
+
+  const confirmDelete = (action: () => void, message: string, title?: string, confirmText?: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: title || (message.toLowerCase().includes('trash') && message.toLowerCase().includes('every') ? 'Empty Trash' : 'Confirm Deletion'),
+      message,
+      confirmText: confirmText || 'Delete',
+      danger: true,
+      onConfirm: action
+    })
+  }
   const toggleSidebar = () => setCollapsed(current => {
     localStorage.setItem('muse-sidebar', current ? 'expanded' : 'collapsed')
     return !current
@@ -163,14 +183,16 @@ export function Dashboard({
               <i className="pulse"/>{aiWorking === 'research' ? 'Researching' : 'Working'}
             </span>
           ) : null}
-          {linkPhone && (
-            <button className="theme top-link-phone" onClick={linkPhone} title="Link Phone Companion">
-              <Smartphone size={18}/>
+          <div className="topbar-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {linkPhone && (
+              <button className="theme" style={{ margin: 0 }} onClick={linkPhone} title="Link Phone Companion">
+                <Smartphone size={18}/>
+              </button>
+            )}
+            <button className="theme" style={{ margin: 0 }} onClick={toggleTheme} title={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+              {dark ? <Sun size={18}/> : <Moon size={18}/>}
             </button>
-          )}
-          <button className="theme" onClick={toggleTheme}>{dark ? <Sun size={18}/> : <Moon size={18}/>}</button>
-          <button className="ask-muse top-ask" onClick={ask} title="Bip Autonomous AI Assistant"><Bot size={17}/> <span>Ask Muse</span></button>
-          <button className="new-note top-new" onClick={create} title="New note (Ctrl+M / ⌘M)"><Plus size={17}/> <span>New note</span></button>
+          </div>
         </header>
 
         <section className="dashboard-content">
@@ -194,12 +216,12 @@ export function Dashboard({
                   <button onClick={() => restoreSelected(selected)}><RotateCcw size={14}/> Restore {selected.length}</button>
                 ) : null}
                 {selected.length ? (
-                  <button className="danger" onClick={() => confirmDelete(() => deleteSelected(selected), `Permanently delete ${selected.length} note${selected.length === 1 ? '' : 's'}?`)}>
+                  <button className="danger" onClick={() => confirmDelete(() => { deleteSelected(selected); setSelected([]) }, `Permanently delete ${selected.length} note${selected.length === 1 ? '' : 's'}? This action cannot be undone.`, 'Permanently Delete', 'Delete permanently')}>
                     <Trash2 size={14}/> Delete
                   </button>
                 ) : null}
                 {counts.trash > 0 && (
-                  <button onClick={() => confirmDelete(() => emptyTrash(), 'Permanently delete every note in the trash?')}>
+                  <button onClick={() => confirmDelete(() => emptyTrash(), 'Permanently delete every note in the trash? This action cannot be undone.', 'Empty Trash', 'Empty trash')}>
                     <Trash2 size={14}/> Empty trash
                   </button>
                 )}
@@ -210,7 +232,7 @@ export function Dashboard({
                 <button onClick={() => setSelected(visible.map(n => n.id))}>Select all ({visible.length})</button>
                 <button
                   className="danger"
-                  onClick={() => confirmDelete(() => { trashSelected(selected); setSelected([]) }, `Move ${selected.length} note${selected.length === 1 ? '' : 's'} to trash?`)}
+                  onClick={() => confirmDelete(() => { trashSelected(selected); setSelected([]) }, `Move ${selected.length} note${selected.length === 1 ? '' : 's'} to trash?`, 'Move to Trash', 'Move to trash')}
                 >
                   <Trash2 size={14}/> Move to trash ({selected.length})
                 </button>
@@ -279,7 +301,7 @@ export function Dashboard({
                           <button title="Restore note" onClick={event => { event.stopPropagation(); restoreSelected([note.id]) }}>
                             <RotateCcw size={15}/>
                           </button>
-                          <button className="danger" title="Delete permanently" onClick={event => { event.stopPropagation(); confirmDelete(() => deleteSelected([note.id]), 'Permanently delete this note?') }}>
+                          <button className="danger" title="Delete permanently" onClick={event => { event.stopPropagation(); confirmDelete(() => deleteSelected([note.id]), 'Permanently delete this note? This action cannot be undone.', 'Delete Note', 'Delete permanently') }}>
                             <Trash2 size={15}/>
                           </button>
                         </div>
@@ -382,6 +404,22 @@ export function Dashboard({
           )}
         </section>
       </main>
+
+      {confirmDialog && (
+        <ConfirmModal
+          isOpen={confirmDialog.isOpen}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmText={confirmDialog.confirmText}
+          danger={confirmDialog.danger}
+          onConfirm={() => {
+            const action = confirmDialog.onConfirm
+            setConfirmDialog(null)
+            action()
+          }}
+          onCancel={() => setConfirmDialog(null)}
+        />
+      )}
     </div>
   )
 }

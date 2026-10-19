@@ -25,6 +25,7 @@ import {
   RotateCcw,
   Loader2
 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { chatModel } from '../services/settings'
 import { robotAudio, loadVoiceSettings } from '../services/robot-audio.service'
@@ -33,6 +34,7 @@ import { stt } from '../services/stt.service'
 import { FormattedMessage } from './FormattedMessage'
 import { ActionCards } from './ActionCards'
 import { MemoryModal } from './MemoryModal'
+import { ConfirmModal } from './ConfirmModal'
 import type { ChatMessage, ChatSession } from '../types'
 
 interface AssistantWorkspaceProps {
@@ -48,6 +50,7 @@ export function AssistantWorkspace({
   onNavigate,
   initialSessionId
 }: AssistantWorkspaceProps) {
+  const queryClient = useQueryClient()
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(initialSessionId || null)
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null)
@@ -188,24 +191,11 @@ export function AssistantWorkspace({
     }
   }
 
-  const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (!window.confirm('Delete this chat conversation?')) return
+  const [deleteSessionConfirmId, setDeleteSessionConfirmId] = useState<string | null>(null)
 
-    try {
-      await api.deleteChatSession(id)
-      const remaining = sessions.filter(s => s.id !== id)
-      setSessions(remaining)
-      if (activeSessionId === id) {
-        if (remaining.length > 0) {
-          setActiveSessionId(remaining[0].id)
-        } else {
-          void handleNewSession()
-        }
-      }
-    } catch (err) {
-      console.error('Failed to delete session:', err)
-    }
+  const handleDeleteSession = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDeleteSessionConfirmId(id)
   }
 
   const handleStartRename = (session: ChatSession, e: React.MouseEvent) => {
@@ -284,9 +274,22 @@ export function AssistantWorkspace({
         }, 150)
       }
 
-      // Refresh memory count if tool saved memory
-      if (res.assistantMessage.action_cards?.some(c => c.type === 'memory')) {
+      // Refresh memory count if tool saved or deleted memory
+      if (res.assistantMessage.action_cards?.some(c => c.type === 'memory' || (c.type === 'item_deleted' && c.category === 'memory'))) {
         void loadMemoryCount()
+      }
+
+      // If a chat session was deleted, reload sessions
+      if (res.assistantMessage.action_cards?.some(c => c.type === 'item_deleted' && c.category === 'chat_session')) {
+        void loadSessions()
+      }
+
+      // Invalidate relevant queries if any action card was returned
+      if (res.assistantMessage.action_cards && res.assistantMessage.action_cards.length > 0) {
+        queryClient.invalidateQueries({ queryKey: ['notes'] })
+        queryClient.invalidateQueries({ queryKey: ['tasks'] })
+        queryClient.invalidateQueries({ queryKey: ['calendar'] })
+        queryClient.invalidateQueries({ queryKey: ['specialized-templates'] })
       }
     } catch (err) {
       robotAudio.stopThinkingLoop()
@@ -831,6 +834,35 @@ export function AssistantWorkspace({
         onClose={() => setMemoryModalOpen(false)}
         onMemoryChanged={() => void loadMemoryCount()}
       />
+
+      {deleteSessionConfirmId && (
+        <ConfirmModal
+          isOpen={true}
+          title="Delete Conversation"
+          message="Delete this chat conversation? All messages in this thread will be permanently removed."
+          confirmText="Delete conversation"
+          danger={true}
+          onConfirm={async () => {
+            const id = deleteSessionConfirmId
+            setDeleteSessionConfirmId(null)
+            try {
+              await api.deleteChatSession(id)
+              const remaining = sessions.filter(s => s.id !== id)
+              setSessions(remaining)
+              if (activeSessionId === id) {
+                if (remaining.length > 0) {
+                  setActiveSessionId(remaining[0].id)
+                } else {
+                  void handleNewSession()
+                }
+              }
+            } catch (err) {
+              console.error('Failed to delete session:', err)
+            }
+          }}
+          onCancel={() => setDeleteSessionConfirmId(null)}
+        />
+      )}
     </div>
   )
 }

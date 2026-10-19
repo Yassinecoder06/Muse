@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { chatModel } from './settings'
 import type { AiJob, GraphData, Note, NoteInput, Task, CalendarEvent, DetectionResult, ChatSession, ChatMessage, UserMemory } from '../types'
 import type { SpecializedCategory } from '../types'
+import type { CustomTemplate } from './templates'
 import { activeVaultUser, decryptNote, encryptNote, encryptRecord, newSecureNote } from './vault'
 import type { VaultRecord, SecureNote } from './vault'
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
@@ -14,26 +15,37 @@ export function relativizeApiImageSrc(src: string) {
   return src.startsWith(`${origin}/api/images/`) ? src.slice(origin.length) : src
 }
 
+// App.tsx listens for this and shows the owner unlock screen.
+export const AUTH_REQUIRED_EVENT = 'muse:auth-required'
+
+async function failure(response: Response, fallback: string): Promise<never> {
+  const body = await response.json().catch(() => ({}))
+  if (response.status === 401 && body.code === 'auth_required') window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT))
+  throw new Error(body.error || fallback)
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const userName = localStorage.getItem('muse-user-name') || 'Local User'
   const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
   const response = await fetch(`${root}${path}`, {
+    ...options,
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       'X-Muse-User-Name': encodeURIComponent(userName),
+      // Natural-language dates ("tomorrow at 8pm") resolve in this zone.
+      'X-Muse-Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
       ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
       ...(options?.headers || {})
-    },
-    ...options
+    }
   })
-  if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Request failed') }
+  if (!response.ok) await failure(response, 'Request failed')
   return response.status === 204 ? undefined as T : response.json()
 }
 
 async function publicRequest<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${root}${path}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) }, ...options })
-  if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Request failed') }
+  const response = await fetch(`${root}${path}`, { ...options, credentials: 'include', headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) } })
+  if (!response.ok) await failure(response, 'Request failed')
   return response.status === 204 ? undefined as T : response.json()
 }
 
@@ -77,14 +89,25 @@ const specializedDefaults: Record<SpecializedCategory, { title: string; fields: 
   custom: { title: 'Custom note', fields: { 'Field 1': '' }, aiInstruction: 'Follow this template’s fields and propose only supported updates.' }
 }
 
-async function createSpecializedSecureNote(category: SpecializedCategory, customTemplate?: { title?: string; fields?: Record<string, unknown>; aiInstruction?: string; color?: string }) {
+async function createSpecializedSecureNote(category: SpecializedCategory, customTemplate?: { title?: string; fields?: Record<string, unknown>; aiInstruction?: string; color?: string; syncWithCalendar?: boolean }) {
   if (!activeVaultUser()) throw new Error('Unlock your Secure Vault before creating a specialized note.')
   const defaults = specializedDefaults[category]
   const title = customTemplate?.title || defaults.title
   const fields = customTemplate?.fields ? { ...customTemplate.fields } : { ...defaults.fields }
   const aiInstruction = customTemplate?.aiInstruction || defaults.aiInstruction
   const color = customTemplate?.color || 'blue'
-  const note = newSecureNote({ title, kind: 'specialized', specialized: { category, fields, aiInstruction, color } })
+  const note = newSecureNote({
+    title,
+    kind: 'specialized',
+    specialized: {
+      category,
+      templateId: customTemplate?.title,
+      fields,
+      aiInstruction,
+      color,
+      syncWithCalendar: customTemplate?.syncWithCalendar
+    }
+  })
   return persistSecureNote(note)
 }
 
@@ -138,7 +161,8 @@ async function runSecureAi(input: { action: 'summary' | 'tasks' | 'title' | 'tag
     headers: { 'Content-Type': 'application/json', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
     body: JSON.stringify({ ...input, ...(chatModel() ? { model: chatModel() } : {}) })
   })
-  if (!response.ok || !response.body) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Muse AI is unavailable right now.') }
+  if (!response.ok || !response.body) await failure(response, 'Muse AI is unavailable right now.')
+  if (!response.body) throw new Error('Muse AI is unavailable right now.')
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -176,17 +200,18 @@ export const api = {
   permanentlyDeleteNote: async (id: string) => { if (activeVaultUser()) { const { note, record } = await secureNote(id); await persistSecureNote({ ...note, deleted_at: new Date().toISOString() }, (record.revision || 1) + 1); return } return request<void>(`/notes/${id}/permanent`, { method: 'DELETE' }) },
   clearSummary: (id: string) => activeVaultUser() ? secureNote(id).then(({ note, record }) => persistSecureNote({ ...note, summary: null }, (record.revision || 1) + 1)) : request<Note>(`/notes/${id}/summary`, { method: 'DELETE' }),
   clearTasks: (id: string) => activeVaultUser() ? secureNote(id).then(({ note, record }) => persistSecureNote({ ...note, tasks: [] }, (record.revision || 1) + 1)) : request<Note>(`/notes/${id}/tasks`, { method: 'DELETE' }),
-  createSpecializedNote: (category: SpecializedCategory, customTemplate?: { title?: string; fields?: Record<string, unknown>; aiInstruction?: string; color?: string }) => {
+  createSpecializedNote: async (category: SpecializedCategory, customTemplate?: { title?: string; fields?: Record<string, unknown>; aiInstruction?: string; color?: string; syncWithCalendar?: boolean }) => {
     if (activeVaultUser()) return createSpecializedSecureNote(category, customTemplate)
     const defaults = specializedDefaults[category]
     const title = customTemplate?.title || defaults.title
     const fields = customTemplate?.fields ? { ...customTemplate.fields } : { ...defaults.fields }
     const aiInstruction = customTemplate?.aiInstruction || defaults.aiInstruction
     const color = customTemplate?.color || 'blue'
+    const syncWithCalendar = Boolean(customTemplate?.syncWithCalendar || category === 'workout' || category === 'daily')
     const initialContent = category === 'workout'
       ? '<h3>Workout Log</h3><p><strong>Exercises & Sets:</strong></p><p>• </p>'
       : ''
-    return request<Note>('/notes', {
+    const created = await request<Note>('/notes', {
       method: 'POST',
       body: JSON.stringify({
         title,
@@ -197,10 +222,27 @@ export const api = {
           templateId: customTemplate?.title,
           fields,
           aiInstruction,
-          color
+          color,
+          syncWithCalendar
         }
       })
     })
+
+    if (syncWithCalendar) {
+      try {
+        if (category === 'workout') {
+          await api.syncWorkoutToCalendar(created.id, fields)
+        } else if (category === 'daily') {
+          await api.syncDailyToCalendar(created.id, fields)
+        } else {
+          await api.syncSpecializedToCalendar(created.id, title, fields)
+        }
+      } catch (syncErr) {
+        console.warn('[api] Auto calendar sync error:', syncErr)
+      }
+    }
+
+    return created
   },
   runSecureAi,
   setTask: async (id: string, completed: boolean) => {
@@ -221,9 +263,9 @@ export const api = {
   createResearch: (input: { topic: string; depth: 'concise' | 'standard' | 'in-depth'; documentIds?: string[]; title?: string; reportType?: string; objective?: string; audience?: string; instructions?: string; outputFormat?: 'html' | 'pdf' | 'docx' }) => request<AiJob>('/ai/jobs', { method: 'POST', body: JSON.stringify({ type: 'research', ...input }) }),
   getAiJob: (id: string) => request<AiJob>(`/ai/jobs/${id}`),
   listModels: () => request<string[]>(`/models`),
-  async uploadResearchDocument(file: File) { const response = await fetch(`${root}/research/documents`, { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Research-Filename': encodeURIComponent(file.name) }, body: file }); if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Document upload failed') } return response.json() as Promise<ResearchDocument> },
-  async downloadReport(noteId: string, format: 'html' | 'pdf' | 'docx') { const response = await fetch(`${root}/reports/${noteId}/export?format=${format}`); if (!response.ok) throw new Error('Report export failed'); const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `muse-report.${format}`; link.click(); URL.revokeObjectURL(url) },
-  async uploadImage(file: File, noteId?: string) { if (activeVaultUser()) return secureUploadImage(file, noteId); const response = await fetch(`${root}/uploads${noteId ? `?noteId=${noteId}` : ''}`, { method: 'POST', headers: { 'Content-Type': file.type }, body: file }); if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Image upload failed') } return response.json() as Promise<{ url: string }> },
+  async uploadResearchDocument(file: File) { const response = await fetch(`${root}/research/documents`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Research-Filename': encodeURIComponent(file.name) }, body: file }); if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Document upload failed') } return response.json() as Promise<ResearchDocument> },
+  async downloadReport(noteId: string, format: 'html' | 'pdf' | 'docx') { const response = await fetch(`${root}/reports/${noteId}/export?format=${format}`, { credentials: 'include' }); if (!response.ok) throw new Error('Report export failed'); const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `muse-report.${format}`; link.click(); URL.revokeObjectURL(url) },
+  async uploadImage(file: File, noteId?: string) { if (activeVaultUser()) return secureUploadImage(file, noteId); const response = await fetch(`${root}/uploads${noteId ? `?noteId=${noteId}` : ''}`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': file.type }, body: file }); if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || 'Image upload failed') } return response.json() as Promise<{ url: string }> },
   askNote: (noteId: string, question: string, history?: { role: 'user' | 'assistant'; text: string }[]) => request<AiJob>('/chat/note', { method: 'POST', body: JSON.stringify({ noteId, question, history, ...(chatModel() && { model: chatModel() }) }) }),
   askNotes: (question: string, history?: { role: 'user' | 'assistant'; text: string }[]) => request<AiJob>('/chat/search', { method: 'POST', body: JSON.stringify({ question, history, ...(chatModel() && { model: chatModel() }) }) }),
   getSettings: () => request<SettingsResponse>('/settings'),
@@ -310,6 +352,57 @@ export const api = {
 
     return request<CalendarEvent>('/calendar/events', { method: 'POST', body: JSON.stringify(payload) })
   },
+  syncSpecializedToCalendar: async (noteId: string, noteTitle: string, fields: Record<string, unknown>, currentEventId?: string | null) => {
+    let rawDate: string | undefined
+    let rawTime: string | undefined
+    for (const [key, val] of Object.entries(fields)) {
+      const lower = key.toLowerCase()
+      if (!rawDate && (lower.includes('date') || lower.includes('day'))) {
+        rawDate = String(val || '')
+      }
+      if (!rawTime && (lower.includes('time') || lower.includes('hour'))) {
+        rawTime = String(val || '')
+      }
+    }
+    const finalDate = (rawDate && rawDate.trim()) || new Date().toISOString().slice(0, 10)
+    const start = new Date(finalDate)
+    if (isNaN(start.getTime())) {
+      start.setTime(Date.now())
+    }
+    if (rawTime && rawTime.includes(':')) {
+      const [hours, minutes] = rawTime.split(':').map(Number)
+      start.setHours(isNaN(hours) ? 9 : hours, isNaN(minutes) ? 0 : minutes, 0, 0)
+    } else {
+      start.setHours(9, 0, 0, 0)
+    }
+    const end = new Date(start.getTime() + 60 * 60 * 1000)
+
+    const descParts = Object.entries(fields)
+      .filter(([k]) => !k.toLowerCase().includes('date') && !k.toLowerCase().includes('time'))
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n')
+
+    const payload = {
+      title: noteTitle.trim() || 'Specialized Event',
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
+      all_day: !rawTime,
+      note_id: noteId,
+      description: descParts || 'Specialized note event'
+    }
+
+    if (currentEventId) {
+      return request<CalendarEvent>(`/calendar/events/${currentEventId}`, { method: 'PUT', body: JSON.stringify(payload) })
+    }
+
+    const existingEvents = await request<CalendarEvent[]>('/calendar/events')
+    const existing = existingEvents.find(e => e.note_id === noteId)
+    if (existing) {
+      return request<CalendarEvent>(`/calendar/events/${existing.id}`, { method: 'PUT', body: JSON.stringify(payload) })
+    }
+
+    return request<CalendarEvent>('/calendar/events', { method: 'POST', body: JSON.stringify(payload) })
+  },
 
   // Tasks
   listTasks: (dueDate?: string) => request<Task[]>(`/tasks${dueDate ? `?due_date=${dueDate}` : ''}`),
@@ -321,6 +414,10 @@ export const api = {
   detectSchedule: (noteId?: string, raw?: { title: string; content: string }) => request<DetectionResult>(noteId ? `/notes/${noteId}/detect` : '/notes/detect', { method: 'POST', body: JSON.stringify({ ...raw, ...(chatModel() ? { model: chatModel() } : {}) }) }),
   applyDetections: (noteId: string | null, payload: { events: any[]; tasks: any[] }) => request<{ success: boolean; addedEvents: number; addedTasks: number }>(noteId ? `/notes/${noteId}/apply-detections` : '/notes/apply-detections', { method: 'POST', body: JSON.stringify(payload) }),
 
+  ownerStatus: () => publicRequest<{ configured: boolean; authenticated: boolean }>('/auth/owner'),
+  setupOwner: (passphrase: string, setupCode: string) => publicRequest<{ authenticated: boolean }>('/auth/owner/setup', { method: 'POST', body: JSON.stringify({ passphrase, setupCode }) }),
+  loginOwner: (passphrase: string) => publicRequest<{ authenticated: boolean }>('/auth/owner/login', { method: 'POST', body: JSON.stringify({ passphrase }) }),
+  confirmAgentAction: (token: string) => request<{ result: Record<string, unknown>; actionCard?: unknown }>('/agent/confirm', { method: 'POST', body: JSON.stringify({ token }) }),
   createAppSession: () => request<{ authenticated: boolean; userId: string; email: string | null }>('/auth/session', { method: 'POST' }),
   getAppSession: () => request<{ authenticated: boolean; userId: string; email: string | null; method: string }>('/auth/session'),
   deleteAppSession: () => publicRequest<void>('/auth/session', { method: 'DELETE' }),
@@ -382,6 +479,27 @@ export const api = {
     return response.json()
   },
 
+  // Neural Speech Synthesis
+  synthesizeSpeech: async (text: string, voice = 'en-US-JennyNeural'): Promise<Blob> => {
+    const userName = localStorage.getItem('muse-user-name') || 'Local User'
+    const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
+    const response = await fetch(`${root}/voice/speak`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Muse-User-Name': encodeURIComponent(userName),
+        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+      },
+      body: JSON.stringify({ text, voice })
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}))
+      throw new Error(body.error || 'Speech synthesis failed')
+    }
+    return response.blob()
+  },
+
   // Remote Mobile Companion
   getNetworkInfo: () => request<NetworkInfo>('/remote/network-info'),
   createPairingSession: (serverUrl?: string) =>
@@ -389,7 +507,15 @@ export const api = {
   checkPairingStatus: (token: string) =>
     request<{ claimed: boolean; device?: { name: string; model: string; platform: string } }>(`/remote/pairing/status?token=${encodeURIComponent(token)}`),
   listRemoteDevices: () => request<RemoteDevice[]>('/remote/devices'),
-  revokeRemoteDevice: (id: string) => request<{ success: boolean }>(`/remote/devices/${id}`, { method: 'DELETE' })
+  revokeRemoteDevice: (id: string) => request<{ success: boolean }>(`/remote/devices/${id}`, { method: 'DELETE' }),
+
+  // Specialized Templates
+  listTemplates: () => request<CustomTemplate[]>('/templates'),
+  createTemplate: (data: Partial<CustomTemplate>) =>
+    request<CustomTemplate>('/templates', { method: 'POST', body: JSON.stringify(data) }),
+  updateTemplate: (id: string, data: Partial<CustomTemplate>) =>
+    request<CustomTemplate>(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTemplate: (id: string) => request<void>(`/templates/${id}`, { method: 'DELETE' })
 }
 
 export type SettingsResponse = {

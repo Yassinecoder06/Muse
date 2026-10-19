@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { marked } from 'marked'
 import { Check, Copy, BookmarkPlus } from 'lucide-react'
 import katex from 'katex'
+import DOMPurify from 'dompurify'
 import 'katex/dist/katex.min.css'
 
 marked.setOptions({
@@ -96,8 +97,10 @@ export function FormattedMessage({ text, role = 'assistant', onCreateNote }: For
     }
 
     const mainHtml = processLatexAndMarkdown(clean)
+    // Model output can echo text from notes, documents, or web pages, so it is
+    // untrusted HTML once marked has rendered it.
     return {
-      html: `${disclaimerHtml}${mainHtml}`,
+      html: DOMPurify.sanitize(`${disclaimerHtml}${mainHtml}`),
       title: detectedTitle
     }
   }, [text, role])

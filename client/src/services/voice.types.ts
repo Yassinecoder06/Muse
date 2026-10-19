@@ -8,7 +8,18 @@ export interface VoiceSettings {
   soundEffectsVolume: number  // 0.0 - 1.0, default 0.6
   lang: string       // default 'en-US'
   sttEngine?: 'gemini' | 'native' // 'gemini' (Gemini 3.5 Flash ASR) or 'native' (Web Speech API)
+  ttsEngine?: 'neural' | 'native' // 'neural' (High-fidelity Neural AI Voice) or 'native' (Browser SpeechSynthesis)
+  neuralVoice?: string // 'en-US-JennyNeural', 'en-US-AriaNeural', 'en-GB-SoniaNeural', etc.
 }
+
+export const CURATED_NEURAL_VOICES = [
+  { id: 'en-US-JennyNeural', name: 'Jenny (US · Smooth, Clear & Warm Female · Recommended)', isRecommended: true },
+  { id: 'en-US-AriaNeural', name: 'Aria (US · Confident, Crisp & Expressive Female)' },
+  { id: 'en-US-AvaNeural', name: 'Ava (US · Soft, Gentle & Natural Female)' },
+  { id: 'en-GB-SoniaNeural', name: 'Sonia (UK · Elegant & Melodic British Female)' },
+  { id: 'en-AU-NatashaNeural', name: 'Natasha (AU · Bright & Clear Australian Female)' },
+] as const
+
 
 export type STTState = 'idle' | 'listening' | 'processing' | 'error'
 
@@ -28,6 +39,7 @@ export interface STTOptions {
 
 export interface TTSOptions {
   voiceURI?: string
+  neuralVoice?: string
   rate?: number
   pitch?: number
   volume?: number

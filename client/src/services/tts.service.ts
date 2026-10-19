@@ -1,5 +1,6 @@
+import { api } from './api'
 import { loadVoiceSettings } from './robot-audio.service'
-import type { TTSOptions } from './voice.types'
+import type { TTSOptions, VoiceSettings } from './voice.types'
 
 /**
  * Unicode regex matching emojis, pictographs, flags, variation selectors,
@@ -75,6 +76,10 @@ export function cleanMarkdownForSpeech(text: string): string {
 
 class TTSService {
   private currentUtterance: SpeechSynthesisUtterance | null = null
+  private currentAudio: HTMLAudioElement | null = null
+  private currentAudioUrl: string | null = null
+  private activeAbortController: AbortController | null = null
+  private isSynthesizing = false
   private voices: SpeechSynthesisVoice[] = []
   private voicesLoaded = false
 
@@ -123,30 +128,137 @@ class TTSService {
       if (match) return match
     }
 
-    // Rank preferred natural English voices
-    const priorityKeywords = [
-      'natural',
-      'google us english',
-      'google uk english female',
-      'samantha',
-      'daniel',
-      'karen',
-      'alex',
+    // High-priority keywords for smooth, natural female voices
+    const preferredFemaleKeywords = [
       'jenny',
-      'guy'
+      'aria',
+      'ava',
+      'victoria',
+      'samantha',
+      'karen',
+      'serena',
+      'stephanie',
+      'zira',
+      'google uk english female',
+      'female',
+      'natural'
     ]
 
-    for (const kw of priorityKeywords) {
-      const match = englishVoices.find(v => v.name.toLowerCase().includes(kw))
+    // Disfavor overtly robotic or male voices when selecting default female voice
+    const isRoboticOrMale = (name: string) => {
+      const lower = name.toLowerCase()
+      return (
+        lower.includes('espeak') ||
+        lower.includes('speech-dispatcher') ||
+        lower.includes('david') ||
+        lower.includes('daniel') ||
+        lower.includes('mark') ||
+        lower.includes('george') ||
+        lower.includes('alex') ||
+        lower.includes('guy')
+      )
+    }
+
+    for (const kw of preferredFemaleKeywords) {
+      const match = englishVoices.find(v => v.name.toLowerCase().includes(kw) && !isRoboticOrMale(v.name))
       if (match) return match
     }
+
+    // Fall back to any non-robotic English voice
+    const nonRobotic = englishVoices.find(v => !isRoboticOrMale(v.name))
+    if (nonRobotic) return nonRobotic
 
     // Default to first English US/GB voice or first English voice
     const usOrGb = englishVoices.find(v => v.lang.includes('US') || v.lang.includes('GB'))
     return usOrGb || englishVoices[0]
   }
 
-  public speak(text: string, options: TTSOptions = {}): boolean {
+  private cleanupAudio() {
+    if (this.currentAudio) {
+      this.currentAudio.pause()
+      this.currentAudio.removeAttribute('src')
+      this.currentAudio.load()
+      this.currentAudio = null
+    }
+    if (this.currentAudioUrl) {
+      URL.revokeObjectURL(this.currentAudioUrl)
+      this.currentAudioUrl = null
+    }
+  }
+
+  /**
+   * Synthesize and play speech using the neural AI voice backend.
+   * If the neural service fails (e.g. offline or network error), it seamlessly falls back to native browser speech.
+   */
+  public async speakNeural(
+    text: string,
+    options: TTSOptions = {},
+    settings: VoiceSettings = loadVoiceSettings()
+  ): Promise<boolean> {
+    this.stop()
+
+    const cleanedText = cleanMarkdownForSpeech(text)
+    if (!cleanedText) {
+      options.onEnd?.()
+      return false
+    }
+
+    const voice = options.neuralVoice || settings.neuralVoice || 'en-US-JennyNeural'
+    const abortController = new AbortController()
+    this.activeAbortController = abortController
+    this.isSynthesizing = true
+
+    try {
+      const blob = await api.synthesizeSpeech(cleanedText, voice)
+
+      if (abortController.signal.aborted) {
+        return false
+      }
+
+      this.isSynthesizing = false
+      const url = URL.createObjectURL(blob)
+      this.currentAudioUrl = url
+      const audio = new Audio(url)
+      this.currentAudio = audio
+
+      audio.playbackRate = options.rate ?? settings.rate ?? 1.0
+      audio.volume = options.volume ?? settings.volume ?? 1.0
+
+      audio.onplay = () => {
+        options.onStart?.()
+      }
+
+      audio.onended = () => {
+        this.cleanupAudio()
+        options.onEnd?.()
+      }
+
+      audio.onerror = (e) => {
+        this.cleanupAudio()
+        console.warn('[TTS] Neural audio playback error, falling back to browser speech:', e)
+        this.speakNative(text, options, settings)
+      }
+
+      await audio.play()
+      return true
+    } catch (err: any) {
+      this.isSynthesizing = false
+      if (abortController.signal.aborted) {
+        return false
+      }
+      console.warn('[TTS] Neural synthesis failed, falling back to browser voice:', err)
+      return this.speakNative(text, options, settings)
+    }
+  }
+
+  /**
+   * Synthesize speech using the browser native Web Speech API (offline fallback).
+   */
+  public speakNative(
+    text: string,
+    options: TTSOptions = {},
+    settings: VoiceSettings = loadVoiceSettings()
+  ): boolean {
     if (typeof window === 'undefined' || !window.speechSynthesis) {
       return false
     }
@@ -159,7 +271,6 @@ class TTSService {
       return false
     }
 
-    const settings = loadVoiceSettings()
     const utterance = new SpeechSynthesisUtterance(cleanedText)
     this.currentUtterance = utterance
 
@@ -192,7 +303,6 @@ class TTSService {
 
     utterance.onerror = (event) => {
       this.currentUtterance = null
-      // 'canceled' or 'interrupted' is normal when user switches note/message
       if (event.error !== 'canceled' && event.error !== 'interrupted') {
         options.onError?.(event)
       } else {
@@ -204,7 +314,31 @@ class TTSService {
     return true
   }
 
+  /**
+   * Primary entry point for speech synthesis.
+   * By default, routes to high-fidelity Neural AI Voice (smooth female voice),
+   * or to Browser Voice if configured by the user.
+   */
+  public speak(text: string, options: TTSOptions = {}): boolean {
+    const settings = loadVoiceSettings()
+    const engine = settings.ttsEngine || 'neural'
+
+    if (engine === 'neural' || options.neuralVoice) {
+      void this.speakNeural(text, options, settings)
+      return true
+    }
+
+    return this.speakNative(text, options, settings)
+  }
+
   public stop() {
+    if (this.activeAbortController) {
+      this.activeAbortController.abort()
+      this.activeAbortController = null
+    }
+    this.isSynthesizing = false
+    this.cleanupAudio()
+
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.cancel()
       this.currentUtterance = null
@@ -212,20 +346,28 @@ class TTSService {
   }
 
   public pause() {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
+    if (this.currentAudio && !this.currentAudio.paused) {
+      this.currentAudio.pause()
+    } else if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.pause()
     }
   }
 
   public resume() {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
+    if (this.currentAudio && this.currentAudio.paused) {
+      void this.currentAudio.play().catch(() => {})
+    } else if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.resume()
     }
   }
 
   public isSpeaking(): boolean {
-    if (typeof window === 'undefined' || !window.speechSynthesis) return false
-    return window.speechSynthesis.speaking
+    if (this.isSynthesizing) return true
+    if (this.currentAudio && !this.currentAudio.paused) return true
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      return window.speechSynthesis.speaking
+    }
+    return false
   }
 }
 
