@@ -11,9 +11,10 @@ import { resolveReminder } from '../controllers/tasks.controller.js'
 import { searchWeb } from './web-search.service.js'
 import { evaluateMath } from './calculator.service.js'
 import { executeInSandbox } from './sandbox.service.js'
+import { getAvailableSongs } from '../controllers/music.controller.js'
 
 export interface AgentActionCard {
-  type: 'note' | 'note_updated' | 'task' | 'task_updated' | 'event' | 'memory' | 'template' | 'specialized_note' | 'item_deleted' | 'confirm_required'
+  type: 'note' | 'note_updated' | 'task' | 'task_updated' | 'event' | 'memory' | 'template' | 'specialized_note' | 'item_deleted' | 'confirm_required' | 'music'
   id?: string
   title?: string
   contentSnippet?: string
@@ -400,6 +401,19 @@ export const agentToolDeclarations = [
         title_query: { type: 'STRING', description: 'Title or keywords of the chat session to delete' }
       }
     }
+  },
+  {
+    name: 'play_music',
+    description: 'Play a song from the music folder and make Bip hold a microphone and sing along to the music. Use this whenever the user asks Bip to sing, play a song, or play music.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        song_name: {
+          type: 'STRING',
+          description: 'Optional name, artist, or partial title of the song to play (e.g. "Dua Lipa"). If omitted, plays the first available song.'
+        }
+      }
+    }
   }
 ]
 
@@ -709,6 +723,50 @@ export async function executeAgentTool(
             error: exec.error,
             executionTimeMs: exec.executionTimeMs
           }
+        }
+      }
+
+      case 'play_music':
+      case 'sing_song': {
+        const query = typeof args.song_name === 'string' ? args.song_name.trim().toLowerCase() : ''
+        const songs = getAvailableSongs()
+        if (songs.length === 0) {
+          return {
+            toolName: name,
+            args,
+            result: {
+              success: false,
+              message: 'No music files found in the music/ directory. Please place .mp3, .wav, or .ogg songs in the music/ folder!'
+            }
+          }
+        }
+
+        let selected = songs[0]
+        if (query) {
+          const match = songs.find(s => s.title.toLowerCase().includes(query) || s.filename.toLowerCase().includes(query))
+          if (match) selected = match
+        }
+
+        const actionCard: AgentActionCard = {
+          type: 'music',
+          title: selected.title,
+          status: 'playing',
+          data: {
+            filename: selected.filename,
+            title: selected.title,
+            url: selected.url
+          }
+        }
+
+        return {
+          toolName: name,
+          args,
+          result: {
+            success: true,
+            message: `Now singing and playing "${selected.title}"! 🎤🎶`,
+            song: selected
+          },
+          actionCard
         }
       }
 

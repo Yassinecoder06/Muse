@@ -944,3 +944,121 @@
   cursor: pointer;
 }
 
+/* Music Action Card & Live Singing Player */
+.action-card.action-card-music {
+  border-left: 3px solid #ec4899;
+  background: rgba(253, 242, 248, 0.95);
+  box-shadow: 0 4px 14px rgba(236, 72, 153, 0.12);
+}
+
+[data-theme='dark'] .action-card.action-card-music {
+  background: rgba(43, 22, 38, 0.9);
+  border-left-color: #f472b6;
+}
+
+.bip-music-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.bip-music-bars span {
+  display: inline-block;
+  width: 2.5px;
+  background: #db2777;
+  border-radius: 2px;
+  animation: musicBarHop 0.7s ease-in-out infinite alternate;
+}
+
+.bip-music-bars span:nth-child(1) {
+  height: 5px;
+  animation-delay: 0.1s;
+}
+.bip-music-bars span:nth-child(2) {
+  height: 11px;
+  animation-delay: 0.3s;
+}
+.bip-music-bars span:nth-child(3) {
+  height: 7px;
+  animation-delay: 0.2s;
+}
+
+@keyframes musicBarHop {
+  0% {
+    height: 3px;
+  }
+  100% {
+    height: 12px;
+  }
+}
+
+.bip-music-ctrl-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid #f472b6;
+  background: #ffffff;
+  color: #db2777;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bip-music-ctrl-btn:hover {
+  background: #fdf2f8;
+  transform: scale(1.05);
+}
+
+.bip-music-ctrl-btn.stop {
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+
+.bip-music-ctrl-btn.stop:hover {
+  background: #fee2e2;
+  color: #ef4444;
+  border-color: #fca5a5;
+}
+
+[data-theme='dark'] .bip-music-ctrl-btn {
+  background: #3a2235;
+  border-color: #ec4899;
+  color: #f472b6;
+}
+
+/* Floating Hint Bubble in Singing State */
+.bip-hint-bubble.singing {
+  background: #fdf2f8;
+  border-color: #f472b6;
+  color: #9d174d;
+  box-shadow: 0 6px 20px rgba(236, 72, 153, 0.2);
+  pointer-events: auto;
+}
+
+.bip-hint-bubble.singing::after {
+  border-color: #fdf2f8 transparent transparent transparent;
+}
+
+.bip-hint-stop-btn {
+  border: none;
+  background: #fee2e2;
+  color: #dc2626;
+  border-radius: 4px;
+  padding: 2px 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 4px;
+  transition: all 0.15s ease;
+}
+
+.bip-hint-stop-btn:hover {
+  background: #fecaca;
+  transform: scale(1.1);
+}
+
+

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
@@ -14,9 +14,13 @@ import {
   Layers3,
   Trash2,
   ShieldAlert,
-  X
+  X,
+  Music,
+  Play,
+  Pause
 } from 'lucide-react'
 import { api } from '../services/api'
+import { robotMusic, type MusicPlayerState } from '../services/robot-music.service'
 import type {
   ActionCard,
   NoteActionCard,
@@ -26,7 +30,8 @@ import type {
   TemplateActionCard,
   SpecializedNoteActionCard,
   DeletedItemActionCard,
-  ConfirmRequiredActionCard
+  ConfirmRequiredActionCard,
+  MusicActionCard
 } from '../types'
 
 interface ActionCardsProps {
@@ -116,6 +121,16 @@ function normalizeCard(raw: any): ActionCard {
       status: raw.status || d.status || 'Deleted'
     }
   }
+  if (type === 'music' || type === 'song') {
+    return {
+      type: 'music',
+      id: raw.id || d.id || '',
+      title: raw.title || d.title || 'Music Track',
+      filename: raw.filename || d.filename || '',
+      url: raw.url || d.url || '',
+      status: raw.status || d.status || 'playing'
+    }
+  }
   return raw
 }
 
@@ -126,6 +141,9 @@ export function ActionCards({ cards, onOpenNote, onNavigate }: ActionCardsProps)
     <div className="action-cards-container">
       {cards.map((rawCard, idx) => {
         const card = normalizeCard(rawCard)
+        if (card.type === 'music') {
+          return <MusicCard key={`music-${card.id || idx}-${idx}`} card={card} />
+        }
         if (card.type === 'note') {
           return (
             <NoteCard
@@ -472,3 +490,73 @@ function TemplateCard({ card }: { card: TemplateActionCard }) {
     </div>
   )
 }
+
+function MusicCard({ card }: { card: MusicActionCard }) {
+  const [musicState, setMusicState] = useState<MusicPlayerState>(robotMusic.getState())
+
+  useEffect(() => {
+    return robotMusic.subscribe(setMusicState)
+  }, [])
+
+  const isCurrentPlaying = musicState.isPlaying && (musicState.currentTrack?.title === card.title || !musicState.currentTrack)
+
+  const handleToggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (musicState.currentTrack?.title === card.title) {
+      robotMusic.togglePlayPause()
+    } else {
+      void robotMusic.playSong({
+        title: card.title,
+        filename: card.filename,
+        url: card.url
+      })
+    }
+  }
+
+  const handleStop = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    robotMusic.stop()
+  }
+
+  return (
+    <div className="action-card action-card-music" style={{ borderLeft: '3px solid #ec4899', background: 'rgba(253, 242, 248, 0.9)' }}>
+      <div className="action-card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span className="action-card-badge" style={{ color: '#db2777', background: '#fce7f3' }}>
+          <Music size={13} />
+          <span>Bip Singing · Live Stage</span>
+        </span>
+        {isCurrentPlaying && (
+          <div className="bip-music-bars">
+            <span />
+            <span />
+            <span />
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 4 }}>
+        <h4 className="action-card-title" style={{ margin: 0, fontSize: 13 }}>
+          🎤 {card.title}
+        </h4>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            type="button"
+            className="bip-music-ctrl-btn"
+            onClick={handleToggle}
+            title={isCurrentPlaying ? 'Pause song' : 'Play song'}
+          >
+            {isCurrentPlaying ? <Pause size={13} /> : <Play size={13} />}
+          </button>
+          <button
+            type="button"
+            className="bip-music-ctrl-btn stop"
+            onClick={handleStop}
+            title="Stop singing"
+          >
+            <Square size={11} fill="currentColor" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+

@@ -94,6 +94,8 @@ services:
       SUPABASE_URL: http://kong:8000
       QDRANT_URL: http://qdrant:6333
       OLLAMA_EMBEDDING_BASE_URL: ${OLLAMA_EMBEDDING_BASE_URL_DOCKER:-http://host.docker.internal:11434}
+    volumes:
+      - ./music:/app/music:ro
     depends_on:
       migrate: { condition: service_completed_successfully }
       kong: { condition: service_started }
