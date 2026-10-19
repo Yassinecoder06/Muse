@@ -288,7 +288,7 @@ function MuseApp() {
         <Route path="/graph" element={<GraphView onBack={() => navigate('/')} create={() => create.mutate()}/>}/>
         <Route path="/calendar" element={<CalendarView onBack={() => navigate('/')}/>}/>
         <Route path="/tasks" element={<TasksView onBack={() => navigate('/')}/>}/>
-        <Route path="/analytics" element={<AnalyticsView onBack={() => navigate('/')}/>}/>
+        <Route path="/analytics" element={<AnalyticsView onBack={() => navigate('/')} onOpenNote={id => navigate(`/note/${id}`)} onOpenTasks={() => navigate('/tasks')}/>}/>
         <Route path="/assistant" element={<AssistantWorkspace onBack={() => navigate('/')} onCreateNote={input => create.mutate(input)} onNavigate={path => navigate(path)}/>}/>
         <Route path="*" element={dashboard}/>
       </Routes>
