@@ -5,7 +5,7 @@ import { agentToolDeclarations } from './agent-tools.service.js'
 test('agent tool declarations include all required autonomous skills', () => {
   const toolNames = agentToolDeclarations.map(t => t.name)
   
-  // Verify core tools exist
+  // Verify core and specialized tools exist
   assert.ok(toolNames.includes('create_note'), 'Missing create_note')
   assert.ok(toolNames.includes('update_note'), 'Missing update_note')
   assert.ok(toolNames.includes('search_notes'), 'Missing search_notes')
@@ -16,6 +16,19 @@ test('agent tool declarations include all required autonomous skills', () => {
   assert.ok(toolNames.includes('list_calendar_events'), 'Missing list_calendar_events')
   assert.ok(toolNames.includes('save_memory'), 'Missing save_memory')
   assert.ok(toolNames.includes('get_memories'), 'Missing get_memories')
+  assert.ok(toolNames.includes('list_specialized_templates'), 'Missing list_specialized_templates')
+  assert.ok(toolNames.includes('create_specialized_template'), 'Missing create_specialized_template')
+  assert.ok(toolNames.includes('create_specialized_note'), 'Missing create_specialized_note')
+
+  // Verify deletion tools exist
+  assert.ok(toolNames.includes('trash_note'), 'Missing trash_note')
+  assert.ok(toolNames.includes('permanently_delete_note'), 'Missing permanently_delete_note')
+  assert.ok(toolNames.includes('empty_trash'), 'Missing empty_trash')
+  assert.ok(toolNames.includes('delete_task'), 'Missing delete_task')
+  assert.ok(toolNames.includes('delete_calendar_event'), 'Missing delete_calendar_event')
+  assert.ok(toolNames.includes('delete_memory'), 'Missing delete_memory')
+  assert.ok(toolNames.includes('delete_specialized_template'), 'Missing delete_specialized_template')
+  assert.ok(toolNames.includes('delete_chat_session'), 'Missing delete_chat_session')
 })
 
 test('agent tool parameter schemas define proper required fields', () => {
@@ -32,4 +45,13 @@ test('agent tool parameter schemas define proper required fields', () => {
 
   const saveMemory = agentToolDeclarations.find(t => t.name === 'save_memory')!
   assert.ok(saveMemory.parameters.required?.includes('fact'))
+})
+
+test('matchNoteByTitle never guesses between several notes', async () => {
+  const { matchNoteByTitle } = await import('./agent-tools.service.js')
+  const notes = [{ id: '1', title: 'Gym log' }, { id: '2', title: 'Gym plan' }, { id: '3', title: 'Groceries' }]
+  assert.equal(matchNoteByTitle(notes, 'groceries').match?.id, '3')
+  assert.equal(matchNoteByTitle(notes, 'gym').ambiguous?.length, 2)
+  assert.equal(matchNoteByTitle(notes, 'Gym Plan').match?.id, '2')
+  assert.deepEqual(matchNoteByTitle(notes, 'taxes'), {})
 })

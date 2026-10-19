@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
+import { chronoReference, localDateString, requestTimezone } from '../utils/timezone.js'
 import * as chrono from 'chrono-node'
 import { supabase } from '../supabase/client.js'
 import { settings } from '../services/settings.repository.js'
@@ -51,6 +52,7 @@ export async function detectFromNote(req: Request, res: Response, next: NextFunc
     }
 
     const refDate = new Date()
+    const zone = requestTimezone(req)
     let events: any[] = []
     let tasks: any[] = []
 
@@ -61,9 +63,9 @@ export async function detectFromNote(req: Request, res: Response, next: NextFunc
     let aiSucceeded = false
 
     try {
-      const todayIso = refDate.toISOString().slice(0, 10)
-      const prompt = `Current date is ${todayIso} (${refDate.toLocaleDateString('en-US', { weekday: 'long' })}).
-Current time is ${refDate.toLocaleTimeString('en-US', { hour12: false })}.
+      const todayIso = localDateString(zone, refDate)
+      const prompt = `Current date is ${todayIso} (${refDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: zone })}).
+Current time is ${refDate.toLocaleTimeString('en-US', { hour12: false, timeZone: zone })} in ${zone}. Give event times as ISO 8601 with that zone's UTC offset.
 
 Analyze this personal note text and extract:
 1. Calendar events, meetings, workouts, appointments, or scheduled sessions.
@@ -138,7 +140,7 @@ Reply strictly with valid JSON:
           continue
         }
 
-        const chronoParsed = chrono.parse(line, refDate)
+        const chronoParsed = chrono.parse(line, chronoReference(zone, refDate))
         if (chronoParsed.length > 0) {
           const item = chronoParsed[0]
           // If chrono only parsed "today" or "tomorrow" on a header-like line without time or verb, skip
@@ -185,7 +187,7 @@ Reply strictly with valid JSON:
             if (cleanTask.length > 2) {
               tasks.push({
                 text: cleanTask.charAt(0).toUpperCase() + cleanTask.slice(1),
-                due_date: refDate.toISOString().slice(0, 10),
+                due_date: localDateString(zone, refDate),
                 priority: 'medium'
               })
             }

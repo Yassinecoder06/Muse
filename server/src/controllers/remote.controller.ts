@@ -1,9 +1,9 @@
 import type { Request, Response, NextFunction } from 'express'
-import { randomBytes } from 'crypto'
+import { randomBytes, randomInt } from 'crypto'
 import os from 'os'
 import { z } from 'zod'
 import { supabase } from '../supabase/client.js'
-import { DEFAULT_LOCAL_USER_ID } from '../middleware/auth.js'
+import { DEFAULT_LOCAL_USER_ID, forgetDevice, hashDeviceToken } from '../middleware/auth.js'
 
 function detectNetworkIps() {
   const interfaces = os.networkInterfaces()
@@ -30,13 +30,10 @@ function detectNetworkIps() {
     }
   }
 
-  // Fallback to detected LAN IP from host if inside container
-  if (localIp === '127.0.0.1') {
-    localIp = '192.168.100.136'
-  }
-  if (!tailscaleIp) {
-    tailscaleIp = '100.84.254.110'
-  }
+  // Inside Docker only the bridge address is visible; let the host say which
+  // address phones should use instead of guessing.
+  if (localIp === '127.0.0.1' && process.env.MUSE_LAN_IP) localIp = process.env.MUSE_LAN_IP
+  if (!tailscaleIp && process.env.MUSE_TAILSCALE_IP) tailscaleIp = process.env.MUSE_TAILSCALE_IP
 
   return { localIp, tailscaleIp }
 }
@@ -78,7 +75,7 @@ export async function createPairingSession(req: Request, res: Response, next: Ne
         : `http://${localIp}:8080`)
 
     const token = `muse_pair_${randomBytes(16).toString('hex')}`
-    const pinCode = String(Math.floor(100000 + Math.random() * 900000))
+    const pinCode = String(randomInt(100000, 1000000))
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
 
     const { error } = await supabase.from('pairing_tokens').insert({
@@ -127,10 +124,13 @@ export async function claimPairingSession(req: Request, res: Response, next: Nex
       return res.status(400).json({ error: 'Either a pairing token or PIN code is required.' })
     }
 
+    // Claim and validate in one conditional UPDATE so two phones racing on the
+    // same code cannot both succeed.
+    const now = new Date().toISOString()
     let query = supabase
       .from('pairing_tokens')
-      .select('*')
-      .gt('expires_at', new Date().toISOString())
+      .update({ claimed_at: now })
+      .gt('expires_at', now)
       .is('claimed_at', null)
 
     if (body.token) {
@@ -139,7 +139,7 @@ export async function claimPairingSession(req: Request, res: Response, next: Nex
       query = query.eq('pin_code', effectivePin)
     }
 
-    const { data: tokenRow, error: findError } = await query.maybeSingle()
+    const { data: tokenRow, error: findError } = await query.select('*').maybeSingle()
 
     if (findError || !tokenRow) {
       return res.status(400).json({ error: 'Invalid or expired pairing code. Please generate a new code on your desktop.' })
@@ -155,7 +155,7 @@ export async function claimPairingSession(req: Request, res: Response, next: Nex
         device_name: body.deviceName.trim(),
         device_model: body.deviceModel?.trim() || null,
         platform: body.platform,
-        device_token: deviceToken,
+        token_hash: hashDeviceToken(deviceToken),
         last_ip: clientIp,
         last_seen_at: new Date().toISOString()
       })
@@ -166,13 +166,9 @@ export async function claimPairingSession(req: Request, res: Response, next: Nex
       throw devError || new Error('Could not register device.')
     }
 
-    // Mark pairing token as claimed
     await supabase
       .from('pairing_tokens')
-      .update({
-        claimed_at: new Date().toISOString(),
-        claimed_by_device: newDevice.id
-      })
+      .update({ claimed_by_device: newDevice.id })
       .eq('token', tokenRow.token)
 
     res.json({
@@ -196,6 +192,7 @@ export async function checkPairingStatus(req: Request, res: Response, next: Next
       .from('pairing_tokens')
       .select('claimed_at, claimed_by_device, remote_devices(device_name, device_model, platform)')
       .eq('token', token)
+      .eq('user_id', req.userId!)
       .maybeSingle()
 
     if (!row) {
@@ -248,6 +245,7 @@ export async function revokeDevice(req: Request, res: Response, next: NextFuncti
       .eq('user_id', userId)
 
     if (error) throw error
+    forgetDevice(String(id))
     res.json({ success: true, revokedId: id })
   } catch (err) {
     next(err)
