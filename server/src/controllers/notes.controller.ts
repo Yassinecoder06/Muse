@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { notes } from '../services/note.repository.js'
 import { jobs } from '../services/ai-job.service.js'
 import { vectors } from '../services/vector.service.js'
+import { stripImages } from '../utils/images.js'
 
 const noteSchema = z.object({
   title: z.string().max(300).optional(),
@@ -15,24 +16,43 @@ const noteSchema = z.object({
     category: z.string(),
     templateId: z.string().optional(),
     fields: z.record(z.any()),
-    aiInstruction: z.string().optional()
-  }).optional()
+    aiInstruction: z.string().optional(),
+    color: z.string().optional(),
+    syncWithCalendar: z.boolean().optional()
+  }).passthrough().optional()
 })
 const id = (value: unknown) => z.string().uuid().parse(value)
 const noteIds = (value: unknown) => z.object({ ids: z.array(z.string().uuid()).min(1).max(100) }).parse(value).ids
 const user = (req: Request) => req.userId!
 export async function listNotes(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.list(user(req), z.enum(['all', 'favorites', 'archive', 'trash']).catch('all').parse(req.query.scope))) } catch (error) { next(error) } }
+// Keyword hits first (title before body), then semantic matches from Qdrant,
+// which find notes by meaning when the words differ. Active notes only.
+export async function searchNotes(req: Request, res: Response, next: NextFunction) {
+  try {
+    const query = z.string().trim().min(1).max(200).parse(req.query.q)
+    const userId = user(req)
+    const active = await notes.list(userId, 'all')
+    const needle = query.toLowerCase()
+    const inTitle = active.filter(note => note.title.toLowerCase().includes(needle))
+    const inBody = active.filter(note => !inTitle.includes(note) && stripImages(note.content).toLowerCase().includes(needle))
+    let semanticIds: string[] = []
+    try { semanticIds = await vectors.searchSimilarNotes(userId, query, 10) } catch { /* embeddings offline: keyword results still work */ }
+    const byId = new Map(active.map(note => [note.id, note]))
+    const ranked = [...inTitle, ...inBody, ...semanticIds.map(noteId => byId.get(noteId)).filter(note => note !== undefined)]
+    res.json([...new Map(ranked.map(note => [note.id, note])).values()].slice(0, 30))
+  } catch (error) { next(error) }
+}
 export async function getNote(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.get(user(req), id(req.params.id))) } catch (error) { next(error) } }
 export async function createNote(req: Request, res: Response, next: NextFunction) { try { res.status(201).json(await notes.create(user(req), noteSchema.parse(req.body))) } catch (error) { next(error) } }
 export async function updateNote(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.update(user(req), id(req.params.id), noteSchema.parse(req.body))) } catch (error) { next(error) } }
 export async function organizeNote(req: Request, res: Response, next: NextFunction) { try { const job = await jobs.enqueue(user(req), id(req.params.id), 'organize'); res.status(202).json(job) } catch (error) { next(error) } }
 export async function deleteNote(req: Request, res: Response, next: NextFunction) { try { await notes.trash(user(req), id(req.params.id)); res.status(204).end() } catch (error) { next(error) } }
 export async function bulkTrashNotes(req: Request, res: Response, next: NextFunction) { try { const selectIds = noteIds(req.body); await notes.trashMany(user(req), selectIds); res.status(204).end() } catch (error) { next(error) } }
-export async function emptyTrash(req: Request, res: Response, next: NextFunction) { try { const userId = user(req); const ids = await notes.trashIds(userId); await notes.deleteMany(userId, ids); void vectors.deleteVectors(ids); res.status(204).end() } catch (error) { next(error) } }
-export async function bulkDeleteNotes(req: Request, res: Response, next: NextFunction) { try { const selectIds = noteIds(req.body); await notes.deleteMany(user(req), selectIds); void vectors.deleteVectors(selectIds); res.status(204).end() } catch (error) { next(error) } }
+export async function emptyTrash(req: Request, res: Response, next: NextFunction) { try { const userId = user(req); const ids = await notes.trashIds(userId); await notes.deleteMany(userId, ids); void vectors.deleteVectors(ids, userId); res.status(204).end() } catch (error) { next(error) } }
+export async function bulkDeleteNotes(req: Request, res: Response, next: NextFunction) { try { const selectIds = noteIds(req.body); await notes.deleteMany(user(req), selectIds); void vectors.deleteVectors(selectIds, user(req)); res.status(204).end() } catch (error) { next(error) } }
 export async function bulkRestoreNotes(req: Request, res: Response, next: NextFunction) { try { await notes.restoreMany(user(req), noteIds(req.body)); res.status(204).end() } catch (error) { next(error) } }
 export async function restoreNote(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.restore(user(req), id(req.params.id))) } catch (error) { next(error) } }
-export async function deleteNotePermanently(req: Request, res: Response, next: NextFunction) { try { const noteId = id(req.params.id); await notes.deletePermanently(user(req), noteId); void vectors.deleteVector(noteId); res.status(204).end() } catch (error) { next(error) } }
+export async function deleteNotePermanently(req: Request, res: Response, next: NextFunction) { try { const noteId = id(req.params.id); await notes.deletePermanently(user(req), noteId); void vectors.deleteVector(noteId, user(req)); res.status(204).end() } catch (error) { next(error) } }
 export async function clearSummary(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.setGenerated(user(req), id(req.params.id), { summary: null })) } catch (error) { next(error) } }
 export async function clearTasks(req: Request, res: Response, next: NextFunction) { try { const noteId = id(req.params.id); await notes.replaceTasks(user(req), noteId, []); res.json(await notes.get(user(req), noteId)) } catch (error) { next(error) } }
 export async function updateTask(req: Request, res: Response, next: NextFunction) { try { res.json(await notes.setTask(user(req), id(req.params.taskId), z.object({ completed: z.boolean() }).parse(req.body).completed)) } catch (error) { next(error) } }

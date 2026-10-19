@@ -6,6 +6,6 @@ export default defineConfig({
   // The application keeps its single shared .env file at the repository root.
   envDir: fileURLToPath(new URL('..', import.meta.url)),
   plugins: [react()],
-  server: { port: 5173 },
+  server: { port: 5174 },
   build: { sourcemap: true },
 })

@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { jobs } from '../services/ai-job.service.js'
-import { AI_KEY_REQUIRED, ai, fetchAccountUsage, listModels as getModels, OLLAMA_LOCAL_URL } from '../services/ai.service.js'
+import { AI_KEY_REQUIRED, ai, fetchAccountUsage, listModels as getModels, OLLAMA_LOCAL_URL, isCloudModel, isGeminiModel } from '../services/ai.service.js'
 import { settings } from '../services/settings.repository.js'
 import { supabase } from '../supabase/client.js'
 import { researchArtifacts, researchDocuments } from '../services/research-document.repository.js'
@@ -25,12 +25,13 @@ const secureRun = z.object({
 })
 const user = (req: Request) => req.userId!
 async function requireKey(userId: string) {
+  if (await settings.hasGeminiKey(userId)) return
   if (await settings.hasKey(userId)) return
   try {
     const res = await fetch(`${OLLAMA_LOCAL_URL}/api/tags`, { method: 'GET' })
     if (res.ok) return
   } catch {}
-  const error = new Error('No local Ollama found on port 11434 and no Ollama API key configured in Settings.')
+  const error = new Error('No Gemini or Ollama API key configured in Settings, and no local Ollama found on port 11434.')
   ;(error as any).statusCode = 400
   throw error
 }
@@ -77,36 +78,51 @@ export async function active(req: Request, res: Response, next: NextFunction) { 
 export async function secureStream(req: Request, res: Response, next: NextFunction) {
   try {
     const body = secureRun.parse(req.body)
-    const apiKey = await settings.getKey(user(req))
-    if (!apiKey) { res.status(400).json({ error: AI_KEY_REQUIRED }); return }
+    const { geminiKey, ollamaKey } = await settings.getEffectiveAiKeys(user(req))
+    if (!geminiKey && !ollamaKey) {
+      try {
+        const res = await fetch(`${OLLAMA_LOCAL_URL}/api/tags`, { method: 'GET' })
+        if (!res.ok) throw new Error()
+      } catch {
+        res.status(400).json({ error: AI_KEY_REQUIRED }); return
+      }
+    }
+    const keyContext = { geminiKey, ollamaKey, userId: user(req) }
     res.status(200).set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
     res.flushHeaders()
-    const emit = (event: 'progress' | 'result' | 'error', value: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`)
+    // Closing the tab ends the request; stop before starting the next model
+    // call instead of finishing work nobody will receive.
+    let clientGone = false
+    res.on('close', () => { if (!res.writableEnded) clientGone = true })
+    const stillWanted = () => { if (clientGone) throw Object.assign(new Error('Client disconnected.'), { clientGone: true }) }
+    const emit = (event: 'progress' | 'result' | 'error', value: unknown) => { stillWanted(); res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`) }
     const source = stripImages(body.note.content)
     const specialty = body.note.specialized?.aiInstruction ? ` Follow this specialized-note instruction: ${body.note.specialized.aiInstruction}` : ''
     const patch: Record<string, unknown> = {}
     emit('progress', { message: 'Muse is thinking' })
-    if (body.action === 'summary') { patch.summary = await ai.summarize(`${source}${specialty}`, body.model, apiKey) }
-    else if (body.action === 'tasks') { patch.tasks = await ai.extractTasks(`${source}${specialty}`, body.model, apiKey) }
-    else if (body.action === 'title') { patch.title = await ai.generateTitle(`${source}${specialty}`, body.model, apiKey) }
-    else if (body.action === 'tags') { patch.tags = await ai.generateTags(`${source}${specialty}`, body.model, apiKey) }
+    if (body.action === 'summary') { patch.summary = await ai.summarize(`${source}${specialty}`, body.model, keyContext) }
+    else if (body.action === 'tasks') { patch.tasks = await ai.extractTasks(`${source}${specialty}`, body.model, keyContext) }
+    else if (body.action === 'title') { patch.title = await ai.generateTitle(`${source}${specialty}`, body.model, keyContext) }
+    else if (body.action === 'tags') { patch.tags = await ai.generateTags(`${source}${specialty}`, body.model, keyContext) }
     else if (body.action === 'rewrite') {
       if (!body.mode) throw new Error('Choose a rewrite mode.')
       // The browser replaces image tags with [IMAGE n] markers before this
       // request and restores them after the stream. This keeps both inline
       // attachment bytes and their URLs out of the AI request.
-      patch.content = await ai.rewrite(body.note.content, body.mode, body.model, apiKey)
+      patch.content = await ai.rewrite(body.note.content, body.mode, body.model, keyContext)
     } else {
       emit('progress', { message: 'Creating a title' })
-      patch.title = body.note.title.trim() || await ai.generateTitle(`${source}${specialty}`, body.model, apiKey)
+      patch.title = body.note.title.trim() || await ai.generateTitle(`${source}${specialty}`, body.model, keyContext)
+      stillWanted()
       emit('progress', { message: 'Finding key themes' })
-      patch.tags = await ai.generateTags(`${source}${specialty}`, body.model, apiKey)
+      patch.tags = await ai.generateTags(`${source}${specialty}`, body.model, keyContext)
       emit('progress', { message: 'Writing a summary' })
-      patch.summary = await ai.summarize(`${source}${specialty}`, body.model, apiKey)
+      patch.summary = await ai.summarize(`${source}${specialty}`, body.model, keyContext)
     }
     emit('result', { patch })
     res.end()
   } catch (error) {
+    if ((error as { clientGone?: boolean })?.clientGone) return
     if (res.headersSent) { res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Muse could not complete this request.' })}\n\n`); res.end(); return }
     next(error)
   }
@@ -114,10 +130,81 @@ export async function secureStream(req: Request, res: Response, next: NextFuncti
 export async function listModels(_req: Request, res: Response, next: NextFunction) { try { res.json(await getModels()) } catch (error) { next(error) } }
 export async function askNote(req: Request, res: Response, next: NextFunction) { try { const body = z.object({ noteId: z.string().uuid(), question: z.string().min(1).max(2000), history, model }).parse(req.body); await requireKey(user(req)); res.status(202).json(await jobs.enqueue(user(req), body.noteId, 'ask_note', { question: body.question, history: body.history, model: body.model })) } catch (error) { next(error) } }
 export async function askSearch(req: Request, res: Response, next: NextFunction) { try { const { question, history: turns, model: chatModel } = z.object({ question: z.string().min(1).max(2000), history, model }).parse(req.body); await requireKey(user(req)); res.status(202).json(await jobs.enqueue(user(req), null, 'ask_search', { question, history: turns, model: chatModel })) } catch (error) { next(error) } }
-export async function usage(_req: Request, res: Response, next: NextFunction) {
+export async function usage(req: Request, res: Response, next: NextFunction) {
   try {
-    const key = await settings.getKey(user(_req))
-    if (!key) { res.json({ configured: false }); return }
-    res.json({ configured: true, ...(await fetchAccountUsage(key)) })
+    const userId = user(req)
+    const [geminiKey, ollamaKey] = await Promise.all([
+      settings.getGeminiKey(userId),
+      settings.getKey(userId)
+    ])
+
+    const requestedModel = typeof req.query.model === 'string' ? req.query.model : undefined
+    const requestedProvider = typeof req.query.provider === 'string' ? req.query.provider : undefined
+
+    let targetProvider: 'gemini' | 'ollama'
+    if (requestedProvider === 'ollama') {
+      targetProvider = 'ollama'
+    } else if (requestedProvider === 'gemini') {
+      targetProvider = 'gemini'
+    } else if (requestedModel) {
+      if (isGeminiModel(requestedModel)) {
+        targetProvider = 'gemini'
+      } else if (isCloudModel(requestedModel) || requestedModel.includes('ollama')) {
+        targetProvider = 'ollama'
+      } else {
+        targetProvider = geminiKey ? 'gemini' : (ollamaKey ? 'ollama' : 'gemini')
+      }
+    } else {
+      targetProvider = geminiKey ? 'gemini' : (ollamaKey ? 'ollama' : 'gemini')
+    }
+
+    if (targetProvider === 'ollama') {
+      if (!ollamaKey) {
+        res.json({ configured: false, provider: 'ollama' })
+        return
+      }
+      res.json({ configured: true, provider: 'ollama', ...(await fetchAccountUsage(ollamaKey)) })
+      return
+    }
+
+    if (!geminiKey) {
+      if (ollamaKey && !requestedProvider && !requestedModel) {
+        res.json({ configured: true, provider: 'ollama', ...(await fetchAccountUsage(ollamaKey)) })
+        return
+      }
+      res.json({ configured: false, provider: 'gemini' })
+      return
+    }
+
+    const dailyStats = await settings.getAiDailyUsage(userId, 'gemini')
+    const dailyLimit = dailyStats.dailyLimit || 1500
+    const requestsToday = dailyStats.requestsToday || 0
+    const usedPct = Math.min(100, Math.round((requestsToday / dailyLimit) * 1000) / 10)
+    const totalTokens = dailyStats.totalTokens || 0
+    const tokenPct = Math.min(100, Math.round((totalTokens / 1_000_000) * 1000) / 10)
+
+    res.json({
+      configured: true,
+      provider: 'gemini',
+      plan: 'Google AI Studio · Free Tier',
+      dailyLimit,
+      requestsToday,
+      totalTokens,
+      session: {
+        usedPct,
+        models: (dailyStats.models || []).map(m => ({
+          name: m.name,
+          requests: m.requests,
+          tokens: m.tokens
+        }))
+      },
+      weekly: {
+        usedPct: tokenPct,
+        models: (dailyStats.models || []).map(m => ({
+          name: m.name,
+          requests: m.requests
+        }))
+      }
+    })
   } catch (error) { next(error) }
 }

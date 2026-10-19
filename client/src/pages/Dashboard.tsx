@@ -1,7 +1,8 @@
-import { Archive, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, PanelLeftClose, Plus, RotateCcw, Search, Settings, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
+import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, Plus, RotateCcw, Search, Settings, Smartphone, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import type { Note } from '../types'
+import { ConfirmModal } from '../components/ConfirmModal'
 
 type Counts = { all: number; favorites: number; archive: number; trash: number }
 
@@ -14,6 +15,7 @@ export function Dashboard({
   setQuery,
   create,
   open,
+  toggleFavorite,
   dark,
   toggleTheme,
   ask,
@@ -23,7 +25,9 @@ export function Dashboard({
   graph,
   calendar,
   tasks,
+  analytics,
   settings,
+  linkPhone,
   userEmail,
   userName,
   emptyTrash,
@@ -40,6 +44,7 @@ export function Dashboard({
   setQuery: (value: string) => void
   create: () => void
   open: (note: Note) => void
+  toggleFavorite?: (id: string, current: boolean) => void
   dark: boolean
   toggleTheme: () => void
   ask: () => void
@@ -49,7 +54,9 @@ export function Dashboard({
   graph: () => void
   calendar: () => void
   tasks: () => void
+  analytics: () => void
   settings: () => void
+  linkPhone?: () => void
   userEmail: string
   userName: string
   emptyTrash: () => void
@@ -82,7 +89,26 @@ export function Dashboard({
   }, [notes])
 
   const toggleSelect = (id: string) => setSelected(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id])
-  const confirmDelete = (action: () => void, message: string) => { if (window.confirm(message)) action() }
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean
+    title?: string
+    message: string
+    confirmText?: string
+    danger?: boolean
+    onConfirm: () => void
+  } | null>(null)
+
+  const confirmDelete = (action: () => void, message: string, title?: string, confirmText?: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: title || (message.toLowerCase().includes('trash') && message.toLowerCase().includes('every') ? 'Empty Trash' : 'Confirm Deletion'),
+      message,
+      confirmText: confirmText || 'Delete',
+      danger: true,
+      onConfirm: action
+    })
+  }
   const toggleSidebar = () => setCollapsed(current => {
     localStorage.setItem('muse-sidebar', current ? 'expanded' : 'collapsed')
     return !current
@@ -93,9 +119,6 @@ export function Dashboard({
       <aside className="sidebar">
         <div className="brand">
           <i><span/></i> Muse
-          <button className="sidebar-toggle" onClick={toggleSidebar} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-            {collapsed ? <PanelLeft size={18}/> : <PanelLeftClose size={18}/>}
-          </button>
         </div>
         <button className="new-note" onClick={create} title="New note (Ctrl+M / ⌘M)">
           <Plus size={17}/>New note <kbd>⌘ M</kbd>
@@ -103,14 +126,19 @@ export function Dashboard({
         <nav>
           {nav.map(item => {
             const Icon = item.icon
+            const isFav = item.id === 'favorites'
             return (
               <button
                 key={item.id}
                 title={item.name}
-                className={scope === item.id ? 'active' : ''}
+                className={`${scope === item.id ? 'active' : ''} ${isFav ? 'nav-item-favorites' : ''}`}
                 onClick={() => setScope(item.id)}
               >
-                <Icon size={17}/>
+                <Icon
+                  size={17}
+                  className={isFav ? 'fav-star-icon' : undefined}
+                  fill={isFav && scope === 'favorites' ? 'currentColor' : 'none'}
+                />
                 <span>{item.name}</span>
                 <em>{counts[item.id as keyof Counts]}</em>
               </button>
@@ -118,12 +146,19 @@ export function Dashboard({
           })}
         </nav>
         <div className="sidebar-tools">
+          <button title="AI Assistant" onClick={ask}><Bot size={17}/><span> AI Assistant</span></button>
           <button title="Calendar" onClick={calendar}><Calendar size={17}/><span> Calendar</span></button>
           <button title="Tasks" onClick={tasks}><CheckSquare size={17}/><span> Tasks</span></button>
+          <button title="Analytics" onClick={analytics}><BarChart3 size={17}/><span> Analytics</span></button>
         </div>
         <div className="sidebar-footer">
           <button title="Collections" onClick={collections}><FolderOpen size={17}/><span> Collections</span></button>
           <button title="Graph" onClick={graph}><Waypoints size={17}/><span> Graph</span></button>
+          {linkPhone && (
+            <button title="Link Phone Companion" onClick={linkPhone} className="link-phone-btn">
+              <Smartphone size={17}/><span> Link Phone</span>
+            </button>
+          )}
           <button title="Settings" onClick={settings}><Settings size={17}/><span> Settings</span></button>
           <div className="user">
             <div>{initials}</div>
@@ -148,9 +183,16 @@ export function Dashboard({
               <i className="pulse"/>{aiWorking === 'research' ? 'Researching' : 'Working'}
             </span>
           ) : null}
-          <button className="theme" onClick={toggleTheme}>{dark ? <Sun size={18}/> : <Moon size={18}/>}</button>
-          <button className="ask-muse top-ask" onClick={ask} title="Ask Muse AI"><Sparkles size={17}/> <span>Ask Muse</span></button>
-          <button className="new-note top-new" onClick={create} title="New note (Ctrl+M / ⌘M)"><Plus size={17}/> <span>New note</span></button>
+          <div className="topbar-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {linkPhone && (
+              <button className="theme" style={{ margin: 0 }} onClick={linkPhone} title="Link Phone Companion">
+                <Smartphone size={18}/>
+              </button>
+            )}
+            <button className="theme" style={{ margin: 0 }} onClick={toggleTheme} title={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+              {dark ? <Sun size={18}/> : <Moon size={18}/>}
+            </button>
+          </div>
         </header>
 
         <section className="dashboard-content">
@@ -161,8 +203,6 @@ export function Dashboard({
               <span>A quiet space for your thoughts.</span>
             </div>
             <div className="hero-actions">
-              <button className="calendar-muse" onClick={calendar}><Calendar size={17}/> Calendar</button>
-              <button className="tasks-muse" onClick={tasks}><CheckSquare size={17}/> Tasks</button>
               <button className="specialized-muse" onClick={specialized}><Layers3 size={17}/> Specialized</button>
               <button className="research-muse" onClick={research}><Globe size={17}/> Research</button>
             </div>
@@ -176,13 +216,15 @@ export function Dashboard({
                   <button onClick={() => restoreSelected(selected)}><RotateCcw size={14}/> Restore {selected.length}</button>
                 ) : null}
                 {selected.length ? (
-                  <button className="danger" onClick={() => confirmDelete(() => deleteSelected(selected), `Permanently delete ${selected.length} note${selected.length === 1 ? '' : 's'}?`)}>
+                  <button className="danger" onClick={() => confirmDelete(() => { deleteSelected(selected); setSelected([]) }, `Permanently delete ${selected.length} note${selected.length === 1 ? '' : 's'}? This action cannot be undone.`, 'Permanently Delete', 'Delete permanently')}>
                     <Trash2 size={14}/> Delete
                   </button>
                 ) : null}
-                <button onClick={() => confirmDelete(() => emptyTrash(), 'Permanently delete every note in the trash?')}>
-                  <Trash2 size={14}/> Empty trash
-                </button>
+                {counts.trash > 0 && (
+                  <button onClick={() => confirmDelete(() => emptyTrash(), 'Permanently delete every note in the trash? This action cannot be undone.', 'Empty Trash', 'Empty trash')}>
+                    <Trash2 size={14}/> Empty trash
+                  </button>
+                )}
               </div>
             ) : selected.length > 0 ? (
               <div className="trash-toolbar">
@@ -190,7 +232,7 @@ export function Dashboard({
                 <button onClick={() => setSelected(visible.map(n => n.id))}>Select all ({visible.length})</button>
                 <button
                   className="danger"
-                  onClick={() => confirmDelete(() => { trashSelected(selected); setSelected([]) }, `Move ${selected.length} note${selected.length === 1 ? '' : 's'} to trash?`)}
+                  onClick={() => confirmDelete(() => { trashSelected(selected); setSelected([]) }, `Move ${selected.length} note${selected.length === 1 ? '' : 's'} to trash?`, 'Move to Trash', 'Move to trash')}
                 >
                   <Trash2 size={14}/> Move to trash ({selected.length})
                 </button>
@@ -259,13 +301,28 @@ export function Dashboard({
                           <button title="Restore note" onClick={event => { event.stopPropagation(); restoreSelected([note.id]) }}>
                             <RotateCcw size={15}/>
                           </button>
-                          <button className="danger" title="Delete permanently" onClick={event => { event.stopPropagation(); confirmDelete(() => deleteSelected([note.id]), 'Permanently delete this note?') }}>
+                          <button className="danger" title="Delete permanently" onClick={event => { event.stopPropagation(); confirmDelete(() => deleteSelected([note.id]), 'Permanently delete this note? This action cannot be undone.', 'Delete Note', 'Delete permanently') }}>
                             <Trash2 size={15}/>
                           </button>
                         </div>
                       ) : (
-                        <button onClick={event => { event.stopPropagation(); open(note) }}>
-                          <Star size={16} fill={note.favorite ? 'currentColor' : 'none'}/>
+                        <button
+                          className={`note-favorite-btn ${note.favorite ? 'is-favorite' : ''}`}
+                          title={note.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                          onClick={event => {
+                            event.stopPropagation()
+                            if (toggleFavorite) {
+                              toggleFavorite(note.id, note.favorite)
+                            } else {
+                              open(note)
+                            }
+                          }}
+                        >
+                          <Star
+                            size={16}
+                            className={`star-icon ${note.favorite ? 'fav-star-icon is-favorite' : ''}`}
+                            fill={note.favorite ? 'currentColor' : 'none'}
+                          />
                         </button>
                       )}
                     </div>
@@ -281,30 +338,88 @@ export function Dashboard({
               })}
             </div>
           ) : (
-            <div className="empty">
-              <div><FileText size={24}/></div>
-              <h3>{query ? 'No matching notes' : 'Nothing here yet'}</h3>
-              <p>{query ? 'Try a different word or tag.' : 'Your next thought is a great place to begin.'}</p>
-              <button onClick={create}><Plus size={16}/> Create a note</button>
+            <div className={`empty ${scope === 'favorites' ? 'empty-favorites' : ''}`}>
+              <div className={scope === 'favorites' ? 'empty-icon-favorites' : undefined}>
+                {scope === 'trash' ? (
+                  <Trash2 size={24}/>
+                ) : scope === 'favorites' ? (
+                  <Star size={24} className="fav-star-icon is-favorite" fill="currentColor"/>
+                ) : scope === 'archive' ? (
+                  <Archive size={24}/>
+                ) : (
+                  <FileText size={24}/>
+                )}
+              </div>
+              <h3>
+                {query
+                  ? 'No matching notes'
+                  : scope === 'trash'
+                  ? 'Trash is empty'
+                  : scope === 'favorites'
+                  ? 'No favorites yet'
+                  : scope === 'archive'
+                  ? 'Archive is empty'
+                  : 'Nothing here yet'}
+              </h3>
+              <p style={!query && scope !== 'all' ? { marginBottom: 0 } : undefined}>
+                {query
+                  ? 'Try a different word or tag.'
+                  : scope === 'trash'
+                  ? 'Notes you delete will appear here.'
+                  : scope === 'favorites'
+                  ? 'Star your favorite notes to keep them close at hand.'
+                  : scope === 'archive'
+                  ? 'Archived notes will be stored here.'
+                  : 'Your next thought is a great place to begin.'}
+              </p>
+              {query ? (
+                <button onClick={() => setQuery('')}>
+                  <RotateCcw size={15}/> Clear search
+                </button>
+              ) : scope === 'all' ? (
+                <button onClick={create}>
+                  <Plus size={16}/> Create a note
+                </button>
+              ) : null}
             </div>
           )}
 
-          <div className="list-heading pinned">
-            <h2>Pinned</h2>
-            <span>Your favorite thoughts, close at hand</span>
-          </div>
-          <article className="reflection">
-            <div>✦</div>
-            <span>
-              <h3>Weekly reflection</h3>
-              <p>What gave me energy this week? What do I want more of?</p>
-              <b className="tag">rituals</b>
-              <b className="tag">personal</b>
-            </span>
-            <strong>↗</strong>
-          </article>
+          {scope === 'all' && (
+            <>
+              <div className="list-heading pinned">
+                <h2>Pinned</h2>
+                <span>Your favorite thoughts, close at hand</span>
+              </div>
+              <article className="reflection">
+                <div>✦</div>
+                <span>
+                  <h3>Weekly reflection</h3>
+                  <p>What gave me energy this week? What do I want more of?</p>
+                  <b className="tag">rituals</b>
+                  <b className="tag">personal</b>
+                </span>
+                <strong>↗</strong>
+              </article>
+            </>
+          )}
         </section>
       </main>
+
+      {confirmDialog && (
+        <ConfirmModal
+          isOpen={confirmDialog.isOpen}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmText={confirmDialog.confirmText}
+          danger={confirmDialog.danger}
+          onConfirm={() => {
+            const action = confirmDialog.onConfirm
+            setConfirmDialog(null)
+            action()
+          }}
+          onCancel={() => setConfirmDialog(null)}
+        />
+      )}
     </div>
   )
 }

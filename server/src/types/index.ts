@@ -11,3 +11,17 @@ export type ScheduleDetectionResult = {
   events: { title: string; start_time: string; end_time?: string; all_day?: boolean; location?: string }[]
   tasks: { text: string; due_date?: string; priority?: string }[]
 }
+
+export type SpecializedTemplate = {
+  id: string
+  user_id: string
+  title: string
+  description?: string | null
+  fields: { name: string; defaultValue?: string }[]
+  ai_instruction?: string | null
+  color?: string
+  sync_with_calendar?: boolean
+  created_at: string
+  updated_at: string
+}
+

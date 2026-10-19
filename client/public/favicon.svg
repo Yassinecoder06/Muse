@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1c1a24" />
+      <stop offset="50%" stop-color="#14131b" />
+      <stop offset="100%" stop-color="#0c0b10" />
+    </linearGradient>
+
+    <!-- Border Glow -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22" />
+      <stop offset="50%" stop-color="#8b5cf6" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.05" />
+    </linearGradient>
+
+    <!-- Muse Left Ribbon Gradient -->
+    <linearGradient id="leftPillar" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e0d4fc" />
+      <stop offset="35%" stop-color="#a78bfa" />
+      <stop offset="100%" stop-color="#6d28d9" />
+    </linearGradient>
+
+    <!-- Center Fold Left -->
+    <linearGradient id="foldLeft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a78bfa" />
+      <stop offset="60%" stop-color="#7c3aed" />
+      <stop offset="100%" stop-color="#4c1d95" />
+    </linearGradient>
+
+    <!-- Center Fold Right -->
+    <linearGradient id="foldRight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8" />
+      <stop offset="60%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#3730a3" />
+    </linearGradient>
+
+    <!-- Muse Right Ribbon Gradient -->
+    <linearGradient id="rightPillar" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#93c5fd" />
+      <stop offset="40%" stop-color="#60a5fa" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+
+    <!-- Inspiration Spark Gradient -->
+    <linearGradient id="sparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fffbeb" />
+      <stop offset="40%" stop-color="#fde047" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+
+    <!-- Ambient Shadow & Glow -->
+    <radialGradient id="ambientGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.35" />
+      <stop offset="70%" stop-color="#6366f1" stop-opacity="0.12" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+    <filter id="glowFilter" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+    <filter id="sparkGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Squircle Base Canvas -->
+  <rect x="16" y="16" width="480" height="480" rx="116" fill="url(#bgGrad)" />
+  <rect x="16.5" y="16.5" width="479" height="479" rx="115.5" fill="none" stroke="url(#borderGrad)" stroke-width="1.5" />
+
+  <!-- Ambient Internal Glow behind Logo -->
+  <circle cx="256" cy="270" r="170" fill="url(#ambientGlow)" />
+
+  <!-- Stylized Geometric 'M' Ribbon Wings -->
+  <g filter="url(#glowFilter)">
+    <!-- Left Upward Wing Pillar -->
+    <path
+      d="M118 360 C 118 360, 118 200, 118 190 C 118 160, 142 144, 168 158 L 228 195 C 242 204, 246 222, 238 236 L 174 348 C 164 366, 142 374, 124 366 Z"
+      fill="url(#leftPillar)"
+    />
+
+    <!-- Left Valley to Peak Ribbon -->
+    <path
+      d="M174 348 L 244 226 C 250 216, 262 216, 268 226 L 338 348 C 346 362, 336 380, 320 380 C 310 380, 302 374, 296 364 L 256 292 L 216 364 C 210 374, 202 380, 192 380 C 176 380, 166 362, 174 348 Z"
+      fill="url(#foldLeft)"
+    />
+
+    <!-- Right Peak Valley Ribbon -->
+    <path
+      d="M256 292 L 296 222 C 304 208, 322 204, 334 212 L 394 250 C 404 256, 408 268, 404 278 L 368 348 C 360 364, 340 372, 322 364 L 256 292 Z"
+      fill="url(#foldRight)"
+      opacity="0.95"
+    />
+
+    <!-- Right Wing Pillar -->
+    <path
+      d="M394 190 C 394 160, 370 144, 344 158 L 284 195 C 270 204, 266 222, 274 236 L 338 348 C 348 366, 370 374, 388 366 C 394 362, 394 210, 394 190 Z"
+      fill="url(#rightPillar)"
+      opacity="0.9"
+    />
+  </g>
+
+  <!-- Modern Facet Highlight Overlay for Glass/Lustre Finish -->
+  <path
+    d="M168 158 L 256 280 L 344 158 C 328 146, 304 154, 288 174 L 256 216 L 224 174 C 208 154, 184 146, 168 158 Z"
+    fill="#ffffff"
+    opacity="0.18"
+  />
+
+  <!-- Brilliant Spark of Inspiration (Upper Right Pinnacle) -->
+  <g filter="url(#sparkGlow)" transform="translate(376, 136)">
+    <!-- 4-Point Star Core -->
+    <path
+      d="M 0 -36 C 0 -14, 14 0, 36 0 C 14 0, 0 14, 0 36 C 0 14, -14 0, -36 0 C -14 0, 0 -14, 0 -36 Z"
+      fill="url(#sparkGrad)"
+    />
+    <!-- Spark Center Diamond Glow -->
+    <circle cx="0" cy="0" r="7" fill="#ffffff" />
+  </g>
+
+  <!-- Secondary Micro Spark (Soft Creativity Accent) -->
+  <g transform="translate(142, 132) scale(0.42)">
+    <path
+      d="M 0 -28 C 0 -10, 10 0, 28 0 C 10 0, 0 10, 0 28 C 0 10, -10 0, -28 0 C -10 0, 0 -10, 0 -28 Z"
+      fill="#c4b5fd"
+      opacity="0.85"
+    />
+  </g>
+</svg>
