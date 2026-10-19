@@ -6,7 +6,8 @@ import { templates } from './template.repository.js'
 import { normalizeTimePhrases } from '../controllers/detection.controller.js'
 import { stripImages } from '../utils/images.js'
 import { createConfirmationToken } from './agent-confirmation.service.js'
-import { chronoReference, localDateString, offsetMinutes } from '../utils/timezone.js'
+import { chronoReference, localDateString, normalizeClock, offsetMinutes } from '../utils/timezone.js'
+import { resolveReminder } from '../controllers/tasks.controller.js'
 
 export interface AgentActionCard {
   type: 'note' | 'note_updated' | 'task' | 'task_updated' | 'event' | 'memory' | 'template' | 'specialized_note' | 'item_deleted' | 'confirm_required'
@@ -97,7 +98,9 @@ export const agentToolDeclarations = [
           enum: ['low', 'medium', 'high'],
           description: 'Task priority level'
         },
-        note_id: { type: 'STRING', description: 'Optional associated note UUID' }
+        note_id: { type: 'STRING', description: 'Optional associated note UUID' },
+        remind_minutes_before: { type: 'NUMBER', description: 'Alert this many minutes before the due time (0 = at the due time). Needs a due date.' },
+        remind_at: { type: 'STRING', description: 'Exact alert time instead, e.g. "today at 7:45pm" or an ISO datetime' },
       },
       required: ['text']
     }
@@ -115,13 +118,17 @@ export const agentToolDeclarations = [
   },
   {
     name: 'update_task',
-    description: 'Update a task text or mark it completed/uncompleted.',
+    description: 'Update a task: text, completion, due date/time, or its reminder (set remind_minutes_before to -1 to remove the reminder).',
     parameters: {
       type: 'OBJECT',
       properties: {
         id: { type: 'STRING', description: 'The UUID of the task' },
         completed: { type: 'BOOLEAN', description: 'Set true to complete, false to uncomplete' },
-        text: { type: 'STRING', description: 'Updated task description (optional)' }
+        text: { type: 'STRING', description: 'Updated task description (optional)' },
+        due_date: { type: 'STRING', description: 'New due date (YYYY-MM-DD or natural, e.g. "tomorrow")' },
+        due_time: { type: 'STRING', description: 'New due time, e.g. "15:00"' },
+        remind_minutes_before: { type: 'NUMBER', description: 'Alert this many minutes before the due time (0 = at the due time). Needs a due date.' },
+        remind_at: { type: 'STRING', description: 'Exact alert time instead, e.g. "today at 7:45pm" or an ISO datetime' },
       },
       required: ['id']
     }
@@ -422,6 +429,19 @@ function ambiguityResult(name: string, args: Record<string, any>, matches: { id:
   }
 }
 
+// Turns Bip's reminder arguments into the API's reminder fields.
+function reminderArgs(args: Record<string, any>, zone: string): { reminder_minutes_before?: number | null; reminder_at?: string | null } {
+  if (typeof args.remind_minutes_before === 'number') {
+    return { reminder_minutes_before: args.remind_minutes_before < 0 ? null : Math.round(args.remind_minutes_before) }
+  }
+  if (typeof args.remind_at === 'string' && args.remind_at.trim()) {
+    const { date } = resolveDateTime(args.remind_at, zone)
+    if (!date) throw new Error(`Could not understand the reminder time "${args.remind_at}".`)
+    return { reminder_at: date.toISOString() }
+  }
+  return {}
+}
+
 function confirmationRequest(
   userId: string,
   name: string,
@@ -549,7 +569,8 @@ export async function executeAgentTool(
         const text = String(args.text || '').trim()
         if (!text) throw new Error('Task text cannot be empty')
         const dueDate = resolveDueDate(args.due_date, zone)
-        const dueTime = typeof args.due_time === 'string' ? args.due_time : null
+        // Store "3pm" as "15:00" so reminders compute from the right time.
+        const dueTime = typeof args.due_time === 'string' ? normalizeClock(args.due_time) : null
         const priority = ['low', 'medium', 'high'].includes(args.priority) ? args.priority : 'medium'
         let noteId: string | null = null
         if (args.note_id) {
@@ -567,7 +588,8 @@ export async function executeAgentTool(
             due_date: dueDate,
             due_time: dueTime,
             priority,
-            note_id: noteId
+            note_id: noteId,
+            ...resolveReminder({ due_date: dueDate, due_time: dueTime, ...reminderArgs(args, zone) }, null, zone)
           })
           .select()
           .single()
@@ -612,6 +634,22 @@ export async function executeAgentTool(
         const patch: Record<string, any> = {}
         if (typeof args.completed === 'boolean') patch.completed = args.completed
         if (typeof args.text === 'string') patch.text = args.text
+        if (typeof args.due_date === 'string' && args.due_date.trim()) {
+          const dueDate = resolveDueDate(args.due_date, zone)
+          if (!dueDate) throw new Error(`Could not understand the date "${args.due_date}". Nothing was changed.`)
+          patch.due_date = dueDate
+        }
+        if (typeof args.due_time === 'string' && args.due_time.trim()) {
+          const dueTime = normalizeClock(args.due_time)
+          if (!dueTime) throw new Error(`Could not understand the time "${args.due_time}". Nothing was changed.`)
+          patch.due_time = dueTime
+        }
+        const reminder = reminderArgs(args, zone)
+        if (Object.keys(reminder).length || patch.due_date !== undefined || patch.due_time !== undefined) {
+          const { data: current } = await supabase.from('tasks').select('due_date, due_time, reminder_minutes_before, reminder_at').eq('id', id).eq('user_id', userId).maybeSingle()
+          if (!current) throw new Error('Task not found.')
+          Object.assign(patch, resolveReminder({ ...patch, ...reminder }, current, zone))
+        }
 
         const { data, error } = await supabase
           .from('tasks')

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { GoogleGenAI } from '@google/genai'
 import { env } from '../utils/env.js'
 import { settings } from './settings.repository.js'
@@ -26,12 +27,29 @@ export const LOCAL_MODEL = 'gemma4-ab-qat:e4b'
 export const curatedModels = ['beam:cloud', 'gpt-oss:120b-cloud', 'nemotron-3-super:cloud', 'gemma4:31b-cloud']
 export const ALLOWED_MODELS = [...geminiModels, ...curatedModels]
 
-export function getCascadeCandidates(requestedModel?: string): string[] {
-  if (requestedModel && GEMINI_MODEL_HIERARCHY.includes(requestedModel as any)) {
-    const startIdx = GEMINI_MODEL_HIERARCHY.indexOf(requestedModel as any)
-    return [...GEMINI_MODEL_HIERARCHY.slice(startIdx)]
-  }
-  return [...GEMINI_MODEL_HIERARCHY]
+// Models that just answered 429 for a given API key. Without this, every
+// request walked the whole cascade waiting on each exhausted model first,
+// and Bip replies took long enough for nginx to cut them off (504).
+const exhaustedUntil = new Map<string, number>()
+const keyId = (apiKey: string) => createHash('sha256').update(apiKey).digest('hex').slice(0, 16)
+
+export function markModelExhausted(apiKey: string, model: string, err: any) {
+  const message = String(err?.message || err || '')
+  if (!/429|RESOURCE_EXHAUSTED|quota/i.test(message)) return
+  // Daily caps are re-probed hourly; per-minute rate limits after a minute.
+  const cooldown = /per ?day|daily/i.test(message) ? 60 * 60_000 : 60_000
+  exhaustedUntil.set(`${keyId(apiKey)}:${model}`, Date.now() + cooldown)
+}
+
+export function getCascadeCandidates(requestedModel?: string, apiKey?: string): string[] {
+  const all = requestedModel && GEMINI_MODEL_HIERARCHY.includes(requestedModel as any)
+    ? [...GEMINI_MODEL_HIERARCHY.slice(GEMINI_MODEL_HIERARCHY.indexOf(requestedModel as any))]
+    : [...GEMINI_MODEL_HIERARCHY]
+  if (!apiKey) return all
+  const now = Date.now()
+  const available = all.filter(model => (exhaustedUntil.get(`${keyId(apiKey)}:${model}`) || 0) <= now)
+  // Everything cooling down: still try the last (lightest) model.
+  return available.length ? available : all.slice(-1)
 }
 
 export function isRetryableGeminiError(err: any): boolean {
@@ -224,7 +242,7 @@ async function callGemini(
       }))
     : [{ role: 'user', parts: [{ text: '' }] }]
 
-  const candidateModels = getCascadeCandidates(model)
+  const candidateModels = getCascadeCandidates(model, apiKey)
   let lastError: any = null
 
   for (let i = 0; i < candidateModels.length; i++) {
@@ -252,6 +270,7 @@ async function callGemini(
       return String(response.text || '').trim()
     } catch (err: any) {
       lastError = err
+      markModelExhausted(apiKey, candidate, err)
       if (isRetryableGeminiError(err)) {
         const nextModel = candidateModels[i + 1]
         if (nextModel) {

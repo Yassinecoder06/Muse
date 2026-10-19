@@ -26,30 +26,28 @@ services:
       #   chmod 644 docker/pgsodium_root.key
       - ./docker/pgsodium_root.key:/etc/postgresql-custom/pgsodium_root.key:ro
       - ./docker/supabase/roles.sql:/docker-entrypoint-initdb.d/z0_roles.sql:ro
-      # The Supabase image's migrate.sh creates its database roles first.  This
-      # application migration must run afterward because it grants privileges
-      # to those roles.
-      - ./supabase/migrations/001_initial.sql:/docker-entrypoint-initdb.d/zz_001_initial.sql:ro
-      - ./supabase/migrations/002_images.sql:/docker-entrypoint-initdb.d/zz_002_images.sql:ro
-      - ./supabase/migrations/003_api_keys.sql:/docker-entrypoint-initdb.d/zz_003_api_keys.sql:ro
-      - ./supabase/migrations/004_research_documents.sql:/docker-entrypoint-initdb.d/zz_004_research_documents.sql:ro
-      - ./supabase/migrations/005_research_pipeline.sql:/docker-entrypoint-initdb.d/zz_005_research_pipeline.sql:ro
-      - ./supabase/migrations/006_modular_reports.sql:/docker-entrypoint-initdb.d/zz_006_modular_reports.sql:ro
-      - ./supabase/migrations/007_document_scan.sql:/docker-entrypoint-initdb.d/zz_007_document_scan.sql:ro
-      - ./supabase/migrations/008_secure_vault.sql:/docker-entrypoint-initdb.d/zz_008_secure_vault.sql:ro
-      - ./supabase/migrations/009_calendar_and_tasks.sql:/docker-entrypoint-initdb.d/zz_009_calendar_and_tasks.sql:ro
-      - ./supabase/migrations/010_specialized_notes.sql:/docker-entrypoint-initdb.d/zz_010_specialized_notes.sql:ro
-      - ./supabase/migrations/011_gemini_and_usage.sql:/docker-entrypoint-initdb.d/zz_011_gemini_and_usage.sql:ro
-      - ./supabase/migrations/012_chat_sessions_and_memory.sql:/docker-entrypoint-initdb.d/zz_012_chat_sessions_and_memory.sql:ro
-      - ./supabase/migrations/013_remote_companion.sql:/docker-entrypoint-initdb.d/zz_013_remote_companion.sql:ro
-      - ./supabase/migrations/014_specialized_templates.sql:/docker-entrypoint-initdb.d/zz_014_specialized_templates.sql:ro
-      - ./supabase/migrations/015_security_hardening.sql:/docker-entrypoint-initdb.d/zz_015_security_hardening.sql:ro
-      - ./supabase/migrations/016_ai_job_per_user.sql:/docker-entrypoint-initdb.d/zz_016_ai_job_per_user.sql:ro
+      # App schema is NOT applied here (that only happens on an empty volume):
+      # the one-shot `migrate` service below applies supabase/migrations on
+      # every `docker compose up`.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 10
+  # Applies new supabase/migrations/*.sql in order (tracked in
+  # public.schema_migrations), then exits. The API waits for it, so a fresh
+  # or existing database is always up to date before Muse starts.
+  migrate:
+    image: supabase/postgres:15.8.1.060
+    restart: "no"
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - ./supabase/migrations:/migrations:ro
+      - ./docker/migrate/migrate.sh:/migrate.sh:ro
+    entrypoint: ["sh", "/migrate.sh"]
   kong:
     image: kong:2.8.1
     restart: unless-stopped
@@ -97,6 +95,7 @@ services:
       QDRANT_URL: http://qdrant:6333
       OLLAMA_EMBEDDING_BASE_URL: ${OLLAMA_EMBEDDING_BASE_URL_DOCKER:-http://host.docker.internal:11434}
     depends_on:
+      migrate: { condition: service_completed_successfully }
       kong: { condition: service_started }
       qdrant: { condition: service_started }
     extra_hosts: ["host.docker.internal:host-gateway"]

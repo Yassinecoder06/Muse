@@ -205,7 +205,14 @@ Reply strictly with valid JSON:
 export async function applyDetections(req: Request, res: Response, next: NextFunction) {
   try {
     const paramId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
-    const noteId = paramId || req.body.note_id || null
+    const requestedNoteId = paramId || req.body.note_id || null
+    // Only link to the caller's own server-side note. Secure-vault notes live
+    // in vault_records, so linking them broke the events/tasks foreign key.
+    let noteId: string | null = null
+    if (typeof requestedNoteId === 'string' && /^[0-9a-f-]{36}$/i.test(requestedNoteId)) {
+      const { data: owned } = await supabase.from('notes').select('id').eq('id', requestedNoteId).eq('user_id', req.userId!).maybeSingle()
+      noteId = owned?.id ?? null
+    }
     const events = Array.isArray(req.body.events) ? req.body.events : []
     const tasks = Array.isArray(req.body.tasks) ? req.body.tasks : []
 
