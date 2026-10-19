@@ -11,7 +11,9 @@ const DEFAULT_SETTINGS: VoiceSettings = {
   soundEffectsEnabled: true,
   soundEffectsVolume: 0.5,
   lang: 'en-US',
-  sttEngine: 'gemini'
+  sttEngine: 'gemini',
+  ttsEngine: 'neural',
+  neuralVoice: 'en-US-JennyNeural'
 }
 
 export function loadVoiceSettings(): VoiceSettings {

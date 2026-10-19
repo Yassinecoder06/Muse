@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom'
-import { Bot, Cpu, KeyRound, Mic, Moon, RefreshCw, Settings, Smartphone, Sun, User, Volume2, X } from 'lucide-react'
+import { Bot, Cpu, KeyRound, Mic, Moon, RefreshCw, Settings, Smartphone, Sparkles, Sun, User, Volume2, X } from 'lucide-react'
 import { api, type AiUsage, type SettingsResponse } from './services/api'
 import { chatModel, setChatModel } from './services/settings'
 import { robotAudio, loadVoiceSettings, saveVoiceSettings } from './services/robot-audio.service'
 import { tts } from './services/tts.service'
+import { CURATED_NEURAL_VOICES } from './services/voice.types'
 import type { Note, NoteInput, SpecializedCategory } from './types'
 import { Dashboard } from './pages/Dashboard'
 import { Editor } from './components/Editor'
@@ -21,6 +22,7 @@ import { Toast } from './components/Toast'
 import { SpecializedNotePanel } from './components/SpecializedNotePanel'
 import { RobotCompanion } from './components/RobotCompanion/RobotCompanion'
 import { RemotePairingModal } from './components/RemotePairingModal'
+import { OwnerGate } from './components/OwnerGate'
 import type { CustomTemplate } from './services/templates'
 
 function MuseApp() {
@@ -93,7 +95,8 @@ function MuseApp() {
         title: customTemplate.title,
         fields: customTemplate.fields.reduce((acc, f) => ({ ...acc, [f.name]: f.defaultValue || '' }), {}),
         aiInstruction: customTemplate.aiInstruction,
-        color: color || customTemplate.color || 'blue'
+        color: color || customTemplate.color || 'blue',
+        syncWithCalendar: customTemplate.syncWithCalendar
       } : { color: color || 'blue' }
       return api.createSpecializedNote(category, templatePayload)
     },
@@ -617,23 +620,64 @@ function MuseApp() {
             <span>
               <Volume2 size={17}/>
               <span>
-                <strong>English Speech Voice</strong>
-                <small>Voice used for reading notes and Bip responses.</small>
+                <strong>Text-to-Speech (TTS) Engine</strong>
+                <small>Voice synthesis engine for reading notes and Bip speech.</small>
               </span>
             </span>
             <select
               className="setting-select"
-              value={voiceSettings.voiceURI}
-              onChange={e => updateVoicePref({ voiceURI: e.target.value })}
+              value={voiceSettings.ttsEngine || 'neural'}
+              onChange={e => updateVoicePref({ ttsEngine: e.target.value as 'neural' | 'native' })}
             >
-              <option value="">Default (Auto-select best English voice)</option>
-              {availableVoices.map(v => (
-                <option key={v.voiceURI} value={v.voiceURI}>
-                  {v.name} ({v.lang})
-                </option>
-              ))}
+              <option value="neural">Neural AI Voice (Smooth, Ultra-Realistic & Clear · Recommended)</option>
+              <option value="native">Browser Built-in Voice (SpeechSynthesis · Local Offline)</option>
             </select>
           </div>
+
+          {(voiceSettings.ttsEngine || 'neural') === 'neural' ? (
+            <div className="setting-row">
+              <span>
+                <Sparkles size={17}/>
+                <span>
+                  <strong>Neural Voice (Female)</strong>
+                  <small>Smooth, expressive, human-grade female voice.</small>
+                </span>
+              </span>
+              <select
+                className="setting-select"
+                value={voiceSettings.neuralVoice || 'en-US-JennyNeural'}
+                onChange={e => updateVoicePref({ neuralVoice: e.target.value })}
+              >
+                {CURATED_NEURAL_VOICES.map(v => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="setting-row">
+              <span>
+                <Volume2 size={17}/>
+                <span>
+                  <strong>Browser English Voice</strong>
+                  <small>Voice used when running browser native speech.</small>
+                </span>
+              </span>
+              <select
+                className="setting-select"
+                value={voiceSettings.voiceURI}
+                onChange={e => updateVoicePref({ voiceURI: e.target.value })}
+              >
+                <option value="">Default (Auto-select best English female voice)</option>
+                {availableVoices.map(v => (
+                  <option key={v.voiceURI} value={v.voiceURI}>
+                    {v.name} ({v.lang})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="setting-row">
             <span>
@@ -739,7 +783,7 @@ function MuseApp() {
               className="setting-test-btn"
               onClick={() => {
                 robotAudio.play('chirp')
-                tts.speak("Hello! I'm Bip, your Muse AI assistant. Voice synthesis is ready!")
+                tts.speak("Hello! I'm Bip, your Muse AI assistant. My voice is smooth, clear, and ready to assist you!")
               }}
             >
               <Volume2 size={14}/> Test Voice
@@ -754,11 +798,16 @@ function MuseApp() {
             </button>
           </div>
 
+          {/* Mobile Companion */}
+          <div className="setting-section-header">
+            <span><Smartphone size={16}/> Mobile Companion</span>
+          </div>
+
           <div className="setting-row">
             <span>
               <Smartphone size={17}/>
               <span>
-                <strong>Mobile Companion</strong>
+                <strong>Pair Phone & Devices</strong>
                 <small>Pair your Android phone to access notes, tasks, and talk with Bip remotely.</small>
               </span>
             </span>
@@ -778,6 +827,7 @@ function MuseApp() {
             setNamePrompt(true)
             setSettings(false)
           }}>Switch / Change Name</button>
+          <button className="sign-out" onClick={() => { void api.deleteAppSession().finally(() => window.location.reload()) }}>Lock Muse</button>
         </section>
       </div>
     )}
@@ -849,4 +899,4 @@ function NoteRoute({ toast }: { toast: (message: string) => void }) {
   return <Editor note={noteQuery.data} onBack={() => navigate('/')} save={input => update.mutateAsync(input)} refresh={refresh} trash={trash} restore={restore} permanentlyDelete={removePermanently} onToast={toast}/>
 }
 
-export default function App() { return <MuseApp/> }
+export default function App() { return <OwnerGate><MuseApp/></OwnerGate> }
