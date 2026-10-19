@@ -293,109 +293,111 @@ class _NotesTabState extends State<NotesTab> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-          left: 20,
-          right: 20,
-          top: 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'New Note',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+      builder: (ctx) => SingleChildScrollView(
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+            left: 20,
+            right: 20,
+            top: 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'New Note',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: AppTheme.textSecondary),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: titleController,
+                autofocus: true,
+                style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
+                decoration: InputDecoration(
+                  hintText: 'Note Title',
+                  hintStyle: const TextStyle(color: AppTheme.textSecondary),
+                  filled: true,
+                  fillColor: AppTheme.background,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: AppTheme.textSecondary),
-                  onPressed: () => Navigator.pop(ctx),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: contentController,
+                maxLines: 6,
+                style: const TextStyle(color: AppTheme.textPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Type your thoughts or paste ideas…',
+                  hintStyle: const TextStyle(color: AppTheme.textSecondary),
+                  filled: true,
+                  fillColor: AppTheme.background,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: titleController,
-              autofocus: true,
-              style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
-              decoration: InputDecoration(
-                hintText: 'Note Title',
-                hintStyle: const TextStyle(color: AppTheme.textSecondary),
-                filled: true,
-                fillColor: AppTheme.background,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: contentController,
-              maxLines: 6,
-              style: const TextStyle(color: AppTheme.textPrimary),
-              decoration: InputDecoration(
-                hintText: 'Type your thoughts or paste ideas…',
-                hintStyle: const TextStyle(color: AppTheme.textSecondary),
-                filled: true,
-                fillColor: AppTheme.background,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () async {
-                final title = titleController.text.trim();
-                final content = contentController.text.trim();
-                if (title.isEmpty && content.isEmpty) return;
+              const SizedBox(height: 16),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () async {
+                  final title = titleController.text.trim();
+                  final content = contentController.text.trim();
+                  if (title.isEmpty && content.isEmpty) return;
 
-                Navigator.pop(ctx);
-                try {
-                  final Note created;
+                  Navigator.pop(ctx);
                   try {
-                    created = await _api.createNote(
-                      title: title.isEmpty ? 'Untitled Note' : title,
-                      content: content,
-                      tags: ['mobile'],
-                    );
+                    final Note created;
+                    try {
+                      created = await _api.createNote(
+                        title: title.isEmpty ? 'Untitled Note' : title,
+                        content: content,
+                        tags: ['mobile'],
+                      );
+                    } catch (e) {
+                      // Desktop unreachable: keep the note on the phone and sync later.
+                      if (!OfflineQueue.isNetworkError(e)) rethrow;
+                      final local = await OfflineQueue.queueNote(title: title.isEmpty ? 'Untitled Note' : title, content: content, tags: ['mobile']);
+                      await _loadNotes(silent: true);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Saved on your phone. It will sync when Muse is reachable.')),
+                        );
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => NoteDetailView(note: local))).then((_) => _loadNotes(silent: true));
+                      }
+                      return;
+                    }
+                    await _loadNotes();
+                    if (mounted) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => NoteDetailView(note: created)),
+                      ).then((_) => _loadNotes());
+                    }
                   } catch (e) {
-                    // Desktop unreachable: keep the note on the phone and sync later.
-                    if (!OfflineQueue.isNetworkError(e)) rethrow;
-                    final local = await OfflineQueue.queueNote(title: title.isEmpty ? 'Untitled Note' : title, content: content, tags: ['mobile']);
-                    await _loadNotes(silent: true);
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Saved on your phone. It will sync when Muse is reachable.')),
+                        SnackBar(content: Text('Failed to save note: $e'), backgroundColor: Colors.redAccent),
                       );
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => NoteDetailView(note: local))).then((_) => _loadNotes(silent: true));
                     }
-                    return;
                   }
-                  await _loadNotes();
-                  if (mounted) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => NoteDetailView(note: created)),
-                    ).then((_) => _loadNotes());
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to save note: $e'), backgroundColor: Colors.redAccent),
-                    );
-                  }
-                }
-              },
-              child: const Text('Create Note', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-            ),
-          ],
+                },
+                child: const Text('Create Note', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -5,6 +5,7 @@ import '../../data/models/chat_message.dart';
 import '../../data/services/api_service.dart';
 import '../../data/services/app_events.dart';
 import '../../data/services/note_store.dart';
+import '../../data/services/tts_service.dart';
 import '../../data/services/voice_service.dart';
 import '../theme/app_theme.dart';
 import 'note_detail_view.dart';
@@ -19,11 +20,13 @@ class BipChatTab extends StatefulWidget {
 class _BipChatTabState extends State<BipChatTab> {
   final ApiService _api = ApiService();
   final VoiceService _voice = VoiceService();
+  final TtsService _tts = TtsService();
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<BipMessage> _messages = [];
   bool _loading = false;
   bool _isListening = false;
+  bool _autoReadAloud = true;
   // The server keeps the conversation; the phone only remembers which one.
   String? _sessionId;
   bool _historyLoading = true;
@@ -47,6 +50,9 @@ class _BipChatTabState extends State<BipChatTab> {
     super.initState();
     _messages.add(_welcome);
     _loadHistory();
+    _tts.getAutoReadAloud().then((on) {
+      if (mounted) setState(() => _autoReadAloud = on);
+    });
     AppEvents.launchAction.addListener(_onLaunchAction);
     WidgetsBinding.instance.addPostFrameCallback((_) => _onLaunchAction());
   }
@@ -121,6 +127,7 @@ class _BipChatTabState extends State<BipChatTab> {
   void dispose() {
     AppEvents.launchAction.removeListener(_onLaunchAction);
     _voice.cancel();
+    _tts.stop();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -133,6 +140,7 @@ class _BipChatTabState extends State<BipChatTab> {
       await _voice.stop();
       return;
     }
+    await _tts.stop();
     _initialVoiceText = _textController.text.trim();
     final started = await _voice.startDictation(
       onText: (words) {
@@ -204,9 +212,10 @@ class _BipChatTabState extends State<BipChatTab> {
       final toolCalls = res['toolCalls'] as List<dynamic>?;
       if (actionCards != null && actionCards.isNotEmpty) AppEvents.notifyDataChanged();
 
+      final assistantMsgId = DateTime.now().microsecondsSinceEpoch.toString();
       setState(() {
         _messages.add(BipMessage(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          id: assistantMsgId,
           role: 'assistant',
           text: replyText,
           timestamp: DateTime.now(),
@@ -215,6 +224,10 @@ class _BipChatTabState extends State<BipChatTab> {
         ));
         _loading = false;
       });
+
+      if (_autoReadAloud) {
+        _tts.speak(replyText, utteranceId: assistantMsgId);
+      }
     } catch (e) {
       setState(() {
         _messages.add(BipMessage(
@@ -231,202 +244,252 @@ class _BipChatTabState extends State<BipChatTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        // Top status banner
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: AppTheme.surface,
-          child: Row(
-            children: [
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final view = View.of(context);
+        final isKeyboardOpen = view.viewInsets.bottom > 0 || MediaQuery.of(context).viewInsets.bottom > 0;
+        final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+        final availableHeight = constraints.maxHeight;
+
+        // When space is constrained (keyboard is up, landscape orientation, or short window):
+        // 1. Hide quick suggestions strip to leave space for messages and input field.
+        // 2. Hide top banner when height is low or when typing or in landscape.
+        final isCompact = isKeyboardOpen || isLandscape || availableHeight < 320;
+        final showSuggestions = !_loading && !isCompact && availableHeight > 300;
+        final showTopBanner = !isCompact && availableHeight > 260;
+
+        return Column(
+          children: [
+            // Top status banner (conditionally displayed based on available height)
+            if (showTopBanner)
               Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: AppTheme.accent,
-                  shape: BoxShape.circle,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                color: AppTheme.surface,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: AppTheme.accent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _historyLoading ? 'Loading your conversation…' : 'Bip remembers this conversation',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      style: IconButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                      ),
+                      tooltip: _autoReadAloud ? 'Voice replies: ON (tap to mute)' : 'Voice replies: MUTED (tap to unmute)',
+                      icon: Icon(
+                        _autoReadAloud ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+                        size: 18,
+                        color: _autoReadAloud ? AppTheme.primaryLight : AppTheme.textSecondary,
+                      ),
+                      onPressed: () async {
+                        final next = !_autoReadAloud;
+                        await _tts.setAutoReadAloud(next);
+                        setState(() => _autoReadAloud = next);
+                        if (!next) await _tts.stop();
+                      },
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppTheme.accent,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      onPressed: _loading ? null : _startNewChat,
+                      icon: const Icon(Icons.add_comment_outlined, size: 16),
+                      label: const Text('New chat', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _historyLoading ? 'Loading your conversation…' : 'Bip remembers this conversation',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.textSecondary,
-                    fontWeight: FontWeight.w500,
-                  ),
+
+            // Messages list
+            Expanded(
+              child: ListView.builder(
+                controller: _scrollController,
+                padding: EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: isKeyboardOpen && isLandscape ? 6 : 16,
+                ),
+                itemCount: _messages.length + (_loading ? 1 : 0),
+                itemBuilder: (context, index) {
+                  if (index == _messages.length && _loading) {
+                    return _buildThinkingBubble();
+                  }
+                  final message = _messages[index];
+                  return _buildMessageItem(message);
+                },
+              ),
+            ),
+
+            // Quick suggestions strip
+            if (showSuggestions) ...[
+              SizedBox(
+                height: 38,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: _suggestions.length,
+                  itemBuilder: (context, index) {
+                    final text = _suggestions[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ActionChip(
+                        label: Text(text, style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary)),
+                        backgroundColor: AppTheme.surface,
+                        side: const BorderSide(color: AppTheme.surfaceBorder),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        onPressed: () => _sendMessage(text),
+                      ),
+                    );
+                  },
                 ),
               ),
-              TextButton.icon(
-                style: TextButton.styleFrom(
-                  foregroundColor: AppTheme.accent,
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-                onPressed: _loading ? null : _startNewChat,
-                icon: const Icon(Icons.add_comment_outlined, size: 16),
-                label: const Text('New chat', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-              ),
+              const SizedBox(height: 6),
             ],
-          ),
-        ),
 
-        // Messages list
-        Expanded(
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.all(16),
-            itemCount: _messages.length + (_loading ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (index == _messages.length && _loading) {
-                return _buildThinkingBubble();
-              }
-              final message = _messages[index];
-              return _buildMessageItem(message);
-            },
-          ),
-        ),
-
-        // Quick suggestions strip
-        if (!_loading)
-          SizedBox(
-            height: 38,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              itemCount: _suggestions.length,
-              itemBuilder: (context, index) {
-                final text = _suggestions[index];
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ActionChip(
-                    label: Text(text, style: const TextStyle(fontSize: 12, color: AppTheme.textPrimary)),
-                    backgroundColor: AppTheme.surface,
-                    side: const BorderSide(color: AppTheme.surfaceBorder),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    onPressed: () => _sendMessage(text),
-                  ),
-                );
-              },
-            ),
-          ),
-        const SizedBox(height: 6),
-
-        if (_isListening)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            margin: const EdgeInsets.only(bottom: 8, left: 16, right: 16),
-            decoration: BoxDecoration(
-              color: Colors.redAccent.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
-            ),
-            child: Row(
-              children: [
-                const SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
+            if (_isListening)
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 14, vertical: isKeyboardOpen ? 4 : 8),
+                margin: EdgeInsets.only(bottom: isKeyboardOpen ? 4 : 8, left: 16, right: 16),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
                 ),
-                const SizedBox(width: 10),
-                const Text(
-                  'Listening... Speak now',
-                  style: TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.bold),
-                ),
-                const Spacer(),
-                GestureDetector(
-                  onTap: _toggleListening,
-                  child: const Text(
-                    'Done',
-                    style: TextStyle(
-                      color: Colors.redAccent,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      decoration: TextDecoration.underline,
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent),
                     ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-        // Input bar
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-          color: AppTheme.background,
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: _isListening ? Colors.redAccent.withValues(alpha: 0.6) : AppTheme.surfaceBorder,
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Listening... Speak now',
+                      style: TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.bold),
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: TextField(
-                          controller: _textController,
-                          style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
-                          decoration: InputDecoration(
-                            hintText: _isListening ? 'Listening to your voice…' : 'Talk to Bip, search notes, or add tasks…',
-                            hintStyle: TextStyle(
-                              color: _isListening ? Colors.redAccent.withValues(alpha: 0.8) : AppTheme.textSecondary,
-                              fontSize: 13,
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: _toggleListening,
+                      child: const Text(
+                        'Done',
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Input bar
+            Container(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                isCompact ? 4 : 8,
+                16,
+                isCompact ? 4 : 16,
+              ),
+              color: AppTheme.background,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: _isListening ? Colors.redAccent.withValues(alpha: 0.6) : AppTheme.surfaceBorder,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: TextField(
+                              controller: _textController,
+                              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                              decoration: InputDecoration(
+                                hintText: _isListening ? 'Listening to your voice…' : 'Talk to Bip, search notes, or add tasks…',
+                                hintStyle: TextStyle(
+                                  color: _isListening ? Colors.redAccent.withValues(alpha: 0.8) : AppTheme.textSecondary,
+                                  fontSize: 13,
+                                ),
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(
+                                  vertical: isCompact ? 8 : 12,
+                                ),
+                              ),
+                              onSubmitted: _sendMessage,
                             ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 12),
                           ),
-                          onSubmitted: _sendMessage,
-                        ),
+                          IconButton(
+                            tooltip: _isListening ? 'Stop listening' : 'Speak to Bip',
+                            icon: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: _isListening ? Colors.redAccent.withValues(alpha: 0.2) : Colors.transparent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                                color: _isListening ? Colors.redAccent : AppTheme.textSecondary,
+                                size: isCompact ? 20 : 22,
+                              ),
+                            ),
+                            onPressed: _toggleListening,
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        tooltip: _isListening ? 'Stop listening' : 'Speak to Bip',
-                        icon: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: _isListening ? Colors.redAccent.withValues(alpha: 0.2) : Colors.transparent,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
-                            color: _isListening ? Colors.redAccent : AppTheme.textSecondary,
-                            size: 22,
-                          ),
-                        ),
-                        onPressed: _toggleListening,
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  CircleAvatar(
+                    radius: isCompact ? 18 : 22,
+                    backgroundColor: _loading ? AppTheme.surface : AppTheme.primary,
+                    child: IconButton(
+                      icon: _loading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Icon(
+                              Icons.arrow_upward_rounded,
+                              color: Colors.white,
+                              size: isCompact ? 18 : 20,
+                            ),
+                      onPressed: () => _sendMessage(_textController.text),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: _loading ? AppTheme.surface : AppTheme.primary,
-                child: IconButton(
-                  icon: _loading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 20),
-                  onPressed: () => _sendMessage(_textController.text),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -572,15 +635,61 @@ class _BipChatTabState extends State<BipChatTab> {
                             : _ActionCardTile(card: card, onOpenNote: _openNote),
                       ),
 
-                // Timestamp
+                // Timestamp & Read aloud button
                 Padding(
                   padding: const EdgeInsets.only(top: 4, left: 4, right: 4),
-                  child: Text(
-                    DateFormat('h:mm a').format(message.timestamp.toLocal()),
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: AppTheme.textSecondary.withValues(alpha: 0.6),
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        DateFormat('h:mm a').format(message.timestamp.toLocal()),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: AppTheme.textSecondary.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      if (!isUser) ...[
+                        const SizedBox(width: 8),
+                        ValueListenableBuilder<String?>(
+                          valueListenable: _tts.currentUtteranceId,
+                          builder: (context, speakingId, _) {
+                            final isSpeakingThis = speakingId == message.id;
+                            return InkWell(
+                              onTap: () {
+                                if (isSpeakingThis) {
+                                  _tts.stop();
+                                } else {
+                                  _tts.speak(message.text, utteranceId: message.id);
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(8),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isSpeakingThis ? Icons.stop_circle_rounded : Icons.volume_up_rounded,
+                                      size: 13,
+                                      color: isSpeakingThis ? AppTheme.accent : AppTheme.textSecondary,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      isSpeakingThis ? 'Stop' : 'Read aloud',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: isSpeakingThis ? FontWeight.bold : FontWeight.normal,
+                                        color: isSpeakingThis ? AppTheme.accent : AppTheme.textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
