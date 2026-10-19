@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import '../../data/services/api_service.dart';
 import '../../data/services/app_events.dart';
 import '../../data/services/offline_queue.dart';
+import '../../data/services/reminder_service.dart';
+import 'bip_alarm_screen.dart';
 import '../theme/app_theme.dart';
 import '../widgets/quick_capture_sheet.dart';
 import 'bip_chat_tab.dart';
@@ -22,6 +25,13 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
   int _currentIndex = 0;
   final ApiService _api = ApiService();
   StreamSubscription<List<SharedMediaFile>>? _shareSub;
+  // While changes are waiting, keep retrying so they sync as soon as the
+  // connection comes back, even if the app stays open the whole time.
+  Timer? _syncTimer;
+  // Opens the Bip alarm in-app when a reminder is due while Muse is open.
+  Timer? _alarmTimer;
+  String? _alarmScreenFor;
+  bool _inForeground = true;
 
   @override
   void initState() {
@@ -35,6 +45,79 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
 
     AppEvents.launchAction.addListener(_handleLaunchAction);
     WidgetsBinding.instance.addPostFrameCallback((_) => _handleLaunchAction());
+
+    AppEvents.syncMessage.addListener(_showSyncMessage);
+    AppEvents.alarmTapped.addListener(_handleAlarmTap);
+    ReminderService.planned.addListener(_armInAppAlarm);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _handleAlarmTap());
+    _syncTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (OfflineQueue.pending.value > 0) unawaited(OfflineQueue.flush(_api));
+      // Every 5 minutes, refresh lists so reminders set on the web get
+      // scheduled as phone alarms without opening the Tasks tab.
+      if (_inForeground && timer.tick % 10 == 0) AppEvents.notifyDataChanged();
+    });
+  }
+
+  void _armInAppAlarm() {
+    _alarmTimer?.cancel();
+    final now = DateTime.now();
+    final next = ReminderService.planned.value.where((a) => a.at.isAfter(now)).firstOrNull;
+    if (next == null) return;
+    _alarmTimer = Timer(next.at.difference(now), () {
+      if (mounted && _inForeground) _openAlarmScreen(next.taskId, next.title, next.due);
+      _armInAppAlarm();
+    });
+  }
+
+  Future<void> _openAlarmScreen(String taskId, String title, DateTime? due) async {
+    if (_alarmScreenFor == taskId) return; // already showing
+    _alarmScreenFor = taskId;
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => BipAlarmScreen(taskId: taskId, title: title, due: due)));
+    _alarmScreenFor = null;
+  }
+
+  // A Bip alarm notification (or its Done / Snooze button) was tapped.
+  Future<void> _handleAlarmTap() async {
+    final tap = AppEvents.alarmTapped.value;
+    if (tap == null || !mounted) return;
+    AppEvents.alarmTapped.value = null;
+    final Map<String, dynamic> data;
+    try {
+      data = jsonDecode(tap.payload) as Map<String, dynamic>;
+    } catch (_) {
+      return;
+    }
+    final taskId = data['taskId'] as String;
+    final title = data['title'] as String? ?? 'Task';
+    final dueMs = data['due'] as int?;
+    final due = dueMs != null ? DateTime.fromMillisecondsSinceEpoch(dueMs) : null;
+    final messenger = ScaffoldMessenger.of(context);
+
+    final isTest = taskId == ReminderService.testTaskId;
+    if (tap.action == 'done') {
+      await ReminderService.stopAlarm(taskId);
+      if (isTest) return;
+      try {
+        await OfflineQueue.setTaskCompleted(_api, taskId, true);
+        AppEvents.notifyDataChanged();
+        messenger.showSnackBar(SnackBar(content: Text('Nice! "$title" is done ✓')));
+      } catch (_) {}
+      return;
+    }
+    if (tap.action == 'snooze') {
+      await ReminderService.snooze(taskId: taskId, title: title, due: due);
+      if (!isTest) unawaited(_api.updateTaskReminder(taskId, at: DateTime.now().add(const Duration(minutes: 5))).then((_) {}, onError: (_) {}));
+      messenger.showSnackBar(SnackBar(content: Text('Bip will ring again in 5 minutes for "$title"')));
+      return;
+    }
+    await _openAlarmScreen(taskId, title, due);
+  }
+
+  void _showSyncMessage() {
+    final message = AppEvents.syncMessage.value;
+    if (message == null || !mounted) return;
+    AppEvents.syncMessage.value = null;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), duration: const Duration(seconds: 6)));
   }
 
   @override
@@ -42,13 +125,23 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
     WidgetsBinding.instance.removeObserver(this);
     _shareSub?.cancel();
     AppEvents.launchAction.removeListener(_handleLaunchAction);
+    AppEvents.syncMessage.removeListener(_showSyncMessage);
+    AppEvents.alarmTapped.removeListener(_handleAlarmTap);
+    ReminderService.planned.removeListener(_armInAppAlarm);
+    _alarmTimer?.cancel();
+    _syncTimer?.cancel();
     super.dispose();
   }
 
   // Coming back to the app is the natural moment to retry offline captures.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(OfflineQueue.flush(_api));
+    _inForeground = state == AppLifecycleState.resumed;
+    if (state == AppLifecycleState.resumed) {
+      unawaited(OfflineQueue.flush(_api));
+      AppEvents.notifyDataChanged(); // pick up changes made on desktop meanwhile
+      _armInAppAlarm();
+    }
   }
 
   void _handleShared(List<SharedMediaFile> items) {

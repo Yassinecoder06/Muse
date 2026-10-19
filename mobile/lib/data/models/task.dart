@@ -6,6 +6,10 @@ class TodoTask {
   final String? dueTime;
   final String priority;
   final String? noteId;
+  // When Bip should ring (server-computed), and the "minutes before" setting
+  // it came from (null for an exact-time reminder).
+  final DateTime? reminderAt;
+  final int? reminderMinutesBefore;
 
   TodoTask({
     required this.id,
@@ -15,6 +19,8 @@ class TodoTask {
     this.dueTime,
     this.priority = 'medium',
     this.noteId,
+    this.reminderAt,
+    this.reminderMinutesBefore,
   });
 
   factory TodoTask.fromJson(Map<String, dynamic> json) {
@@ -26,7 +32,17 @@ class TodoTask {
       dueTime: json['due_time'] as String?,
       priority: (json['priority'] as String?)?.toLowerCase() ?? 'medium',
       noteId: json['note_id'] as String?,
+      reminderAt: json['reminder_at'] != null ? DateTime.tryParse(json['reminder_at'].toString())?.toLocal() : null,
+      reminderMinutesBefore: (json['reminder_minutes_before'] as num?)?.toInt(),
     );
+  }
+
+  /// The due moment in local time (09:00 for date-only tasks).
+  DateTime? get dueAt {
+    final day = dueDate != null ? DateTime.tryParse(dueDate!) : null;
+    if (day == null) return null;
+    final match = RegExp(r'^(\d{1,2}):(\d{2})').firstMatch(dueTime ?? '');
+    return DateTime(day.year, day.month, day.day, match != null ? int.parse(match[1]!) : 9, match != null ? int.parse(match[2]!) : 0);
   }
 
   Map<String, dynamic> toJson() {
@@ -48,6 +64,8 @@ class TodoTask {
     String? dueTime,
     String? priority,
     String? noteId,
+    DateTime? reminderAt,
+    int? reminderMinutesBefore,
   }) {
     return TodoTask(
       id: id ?? this.id,
@@ -57,6 +75,8 @@ class TodoTask {
       dueTime: dueTime ?? this.dueTime,
       priority: priority ?? this.priority,
       noteId: noteId ?? this.noteId,
+      reminderAt: reminderAt ?? this.reminderAt,
+      reminderMinutesBefore: reminderMinutesBefore ?? this.reminderMinutesBefore,
     );
   }
 }

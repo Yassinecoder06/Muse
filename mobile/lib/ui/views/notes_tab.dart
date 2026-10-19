@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../data/models/note.dart';
 import '../../data/services/api_service.dart';
 import '../../data/services/app_events.dart';
+import '../../data/services/note_store.dart';
 import '../../data/services/offline_queue.dart';
 import '../theme/app_theme.dart';
 import 'note_detail_view.dart';
@@ -22,6 +23,8 @@ class _NotesTabState extends State<NotesTab> {
   bool _loading = true;
   String _search = '';
   String? _error;
+  // Showing the on-device copy because Muse is unreachable.
+  bool _offline = false;
 
   // Server search (keywords + meaning) for the "all" scope; null = not run.
   final _searchController = TextEditingController();
@@ -124,10 +127,12 @@ class _NotesTabState extends State<NotesTab> {
       });
     }
     try {
-      final list = await _api.fetchNotes(scope: _currentScope);
+      // Falls back to the on-device copy (with unsynced edits) when offline.
+      final result = await NoteStore.list(_api, _currentScope);
       if (!mounted) return;
       setState(() {
-        _allNotes = list;
+        _allNotes = result.notes;
+        _offline = result.offline;
         _loading = false;
       });
     } catch (e) {
@@ -157,9 +162,9 @@ class _NotesTabState extends State<NotesTab> {
     });
 
     try {
-      await _api.toggleFavoriteNote(note.id, !nextFav);
+      await NoteStore.save(_api, note, favorite: nextFav); // queued when offline
     } catch (_) {
-      // Revert if error
+      // Revert if the server rejected it
       setState(() {
         final index = _allNotes.indexWhere((n) => n.id == note.id);
         if (index != -1) {
@@ -363,11 +368,13 @@ class _NotesTabState extends State<NotesTab> {
                   } catch (e) {
                     // Desktop unreachable: keep the note on the phone and sync later.
                     if (!OfflineQueue.isNetworkError(e)) rethrow;
-                    await OfflineQueue.queueNote(title: title.isEmpty ? 'Untitled Note' : title, content: content, tags: ['mobile']);
+                    final local = await OfflineQueue.queueNote(title: title.isEmpty ? 'Untitled Note' : title, content: content, tags: ['mobile']);
+                    await _loadNotes(silent: true);
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Saved on your phone. It will sync when Muse is reachable.')),
                       );
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => NoteDetailView(note: local))).then((_) => _loadNotes(silent: true));
                     }
                     return;
                   }
@@ -450,12 +457,16 @@ class _NotesTabState extends State<NotesTab> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Good day, Explorer.',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textPrimary,
+                        Expanded(
+                          child: Text(
+                            now.hour < 12 ? 'Good morning.' : now.hour < 18 ? 'Good afternoon.' : 'Good evening.',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.textPrimary,
+                            ),
                           ),
                         ),
                         IconButton(
@@ -516,6 +527,25 @@ class _NotesTabState extends State<NotesTab> {
                 ),
               ),
             ),
+
+            if (_offline)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(18, 8, 18, 0),
+                  child: Row(
+                    children: [
+                      Icon(Icons.cloud_off_rounded, size: 16, color: Colors.amber),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Offline: showing the copy saved on this phone. Edits sync when Muse is reachable.',
+                          style: TextStyle(fontSize: 12, color: Colors.amber),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             // Search Bar
             SliverToBoxAdapter(
@@ -749,11 +779,18 @@ class _NotesTabState extends State<NotesTab> {
       badgeTextColor = const Color(0xFF34D399);
       badgeText = 'SPECIALIZED';
     }
+    if (note.isLocal) {
+      badgeBg = Colors.amber.withValues(alpha: 0.15);
+      badgeTextColor = Colors.amber;
+      badgeText = 'NOT SYNCED';
+    }
 
     // Swipe right: favorite (or restore, in trash). Swipe left: trash (or
     // delete forever, in trash).
     return Dismissible(
       key: ValueKey('note-${note.id}'),
+      // Unsynced notes are managed from their page (discard), not by swiping.
+      direction: note.isLocal ? DismissDirection.none : DismissDirection.horizontal,
       background: _swipeBackground(
         alignment: Alignment.centerLeft,
         color: isTrash ? AppTheme.accent : Colors.amber,

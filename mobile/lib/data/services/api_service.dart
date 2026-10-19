@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 import '../models/note.dart';
 import '../models/task.dart';
@@ -28,7 +29,14 @@ final _http = _AuthAwareClient();
 class ApiService {
   final StorageService _storage;
 
-  ApiService({StorageService? storage}) : _storage = storage ?? StorageService();
+  /// Screens create `ApiService()` directly; tests set this to render them
+  /// with fake data.
+  @visibleForTesting
+  static ApiService? testOverride;
+
+  factory ApiService({StorageService? storage}) => testOverride ?? ApiService.base(storage: storage);
+
+  ApiService.base({StorageService? storage}) : _storage = storage ?? StorageService();
 
   /// Headers for loading protected resources such as note images.
   Future<Map<String, String>> authHeaders() => _getHeaders();
@@ -281,6 +289,7 @@ class ApiService {
     String? dueTime,
     String priority = 'medium',
     String? noteId,
+    int? reminderMinutesBefore,
   }) async {
     final base = await _getBaseUrl();
     final headers = await _getHeaders();
@@ -293,6 +302,7 @@ class ApiService {
       if (dueTime != null && dueTime.isNotEmpty) 'due_time': dueTime,
       'priority': priority.toLowerCase(),
       'note_id': ?noteId,
+      'reminder_minutes_before': ?reminderMinutesBefore,
     };
 
     final response = await _http
@@ -303,6 +313,37 @@ class ApiService {
       return TodoTask.fromJson(jsonDecode(response.body));
     }
     throw Exception('Failed to create task (${response.statusCode})');
+  }
+
+  /// Sets or clears a task's reminder (and optionally its due date/time).
+  /// Pass `minutesBefore` for "N minutes before", or `at` for an exact time.
+  Future<TodoTask> updateTaskReminder(
+    String taskId, {
+    String? dueDate,
+    String? dueTime,
+    bool clearDueTime = false,
+    int? minutesBefore,
+    DateTime? at,
+    bool clear = false,
+  }) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final payload = <String, dynamic>{
+      'due_date': ?dueDate,
+      if (dueTime != null || clearDueTime) 'due_time': dueTime,
+      if (clear) ...{'reminder_minutes_before': null, 'reminder_at': null},
+      if (!clear && minutesBefore != null) 'reminder_minutes_before': minutesBefore,
+      if (!clear && at != null) 'reminder_at': at.toUtc().toIso8601String(),
+    };
+    final response = await _http
+        .patch(Uri.parse('$base/api/tasks/$taskId'), headers: headers, body: jsonEncode(payload))
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode == 200) return TodoTask.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    String message = 'Could not save the reminder (${response.statusCode})';
+    try {
+      message = (jsonDecode(response.body) as Map<String, dynamic>)['error']?.toString() ?? message;
+    } catch (_) {}
+    throw Exception(message);
   }
 
   Future<void> toggleTaskCompleted(String taskId, bool completed) async {

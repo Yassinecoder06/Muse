@@ -9,6 +9,7 @@ import 'package:muse_mobile/data/services/reminder_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FakeApi extends ApiService {
+  FakeApi() : super.base();
   bool online = false;
   final created = <String>[];
   final toggled = <String, bool>{};
@@ -57,6 +58,26 @@ void main() {
     });
   });
 
+  group('ReminderService.planAlarms', () {
+    final now = DateTime(2026, 10, 19, 12, 0);
+
+    test('tasks with their own reminder become alarms; others stay gentle', () {
+      final tasks = [
+        TodoTask(id: 'r', title: 'Call mom', completed: false, dueDate: '2026-10-19', dueTime: '18:00', reminderAt: DateTime(2026, 10, 19, 17, 58), reminderMinutesBefore: 2),
+        TodoTask(id: 'p', title: 'Past alarm', completed: false, reminderAt: DateTime(2026, 10, 19, 11, 0)),
+        TodoTask(id: 'c', title: 'Completed', completed: true, reminderAt: DateTime(2026, 10, 19, 13, 0)),
+        TodoTask(id: 'g', title: 'Gentle', completed: false, dueDate: '2026-10-19', dueTime: '15:00'),
+      ];
+      final alarms = ReminderService.planAlarms(tasks, now);
+      expect(alarms.map((a) => a.title), ['Call mom']);
+      expect(alarms.single.at, DateTime(2026, 10, 19, 17, 58));
+      expect(alarms.single.due, DateTime(2026, 10, 19, 18, 0)); // countdown target
+
+      // The alarmed task is not also given a gentle reminder.
+      expect(ReminderService.plan(tasks, [], now).map((r) => r.title), ['Gentle']);
+    });
+  });
+
   group('OfflineQueue', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -89,6 +110,7 @@ void main() {
 }
 
 class _RejectingApi extends ApiService {
+  _RejectingApi() : super.base();
   @override
   Future<Note> createNote({required String title, required String content, List<String>? tags}) async =>
       throw Exception('Failed to create note (400)');

@@ -61,7 +61,7 @@ class _QuickCaptureSheetState extends State<_QuickCaptureSheet> {
 
   @override
   void dispose() {
-    _voice.cancelListening();
+    _voice.cancel();
     _title.dispose();
     _content.dispose();
     super.dispose();
@@ -69,34 +69,28 @@ class _QuickCaptureSheetState extends State<_QuickCaptureSheet> {
 
   Future<void> _toggleDictation() async {
     if (_listening) {
-      await _voice.stopListening();
-      if (mounted) setState(() => _listening = false);
-      return;
-    }
-    final ok = await _voice.initialize(
-      onError: (_) {
-        if (mounted) setState(() => _listening = false);
-      },
-      onStatus: (status) {
-        if ((status == 'done' || status == 'notListening') && mounted) setState(() => _listening = false);
-      },
-    );
-    if (!ok) {
-      _toast('Microphone is unavailable. Allow it in system settings.');
+      await _voice.stop();
       return;
     }
     _beforeDictation = _content.text.trim();
-    setState(() => _listening = true);
-    await _voice.startListening(
-      onResult: (words, isFinal) {
+    final started = await _voice.startDictation(
+      onText: (words) {
         if (!mounted) return;
         setState(() {
           _content.text = _beforeDictation.isEmpty ? words : '$_beforeDictation $words';
           _content.selection = TextSelection.collapsed(offset: _content.text.length);
-          if (isFinal) _listening = false;
         });
       },
+      onError: (err) => _toast('Speech error: $err', error: true),
+      onStopped: () {
+        if (mounted) setState(() => _listening = false);
+      },
     );
+    if (!started) {
+      _toast('Microphone is unavailable. Allow it in system settings.');
+      return;
+    }
+    if (mounted) setState(() => _listening = true);
   }
 
   void _toast(String message, {bool error = false}) {
@@ -163,7 +157,9 @@ class _QuickCaptureSheetState extends State<_QuickCaptureSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    // Scrolls when taller than the screen (small phones, larger text).
+    return SingleChildScrollView(
+      child: Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom + 20, left: 20, right: 20, top: 16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -173,8 +169,9 @@ class _QuickCaptureSheetState extends State<_QuickCaptureSheet> {
             children: [
               const Icon(Icons.bolt_rounded, color: AppTheme.primaryLight),
               const SizedBox(width: 8),
-              const Text('Quick capture', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-              const Spacer(),
+              const Expanded(
+                child: Text('Quick capture', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+              ),
               if (widget.imagePath == null)
                 SegmentedButton<bool>(
                   showSelectedIcon: false,
@@ -230,6 +227,7 @@ class _QuickCaptureSheetState extends State<_QuickCaptureSheet> {
           ),
         ],
       ),
+    ),
     );
   }
 }
