@@ -16,5 +16,13 @@ class AppEvents {
   /// or 'ask_bip'. Consumers reset it to null once handled.
   static final ValueNotifier<String?> launchAction = ValueNotifier<String?>(null);
 
+  /// One-off message from background sync (e.g. an edit conflict), shown as
+  /// a snackbar by the main scaffold, which then clears it.
+  static final ValueNotifier<String?> syncMessage = ValueNotifier<String?>(null);
+
+  /// A Bip alarm notification was tapped (or one of its buttons): payload
+  /// JSON plus the action id ('done', 'snooze', or null for a plain tap).
+  static final ValueNotifier<({String payload, String? action})?> alarmTapped = ValueNotifier(null);
+
   static void notifyDataChanged() => dataChanged.value++;
 }

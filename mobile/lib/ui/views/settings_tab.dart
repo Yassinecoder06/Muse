@@ -4,6 +4,7 @@ import '../../data/services/offline_queue.dart';
 import '../../data/services/reminder_service.dart';
 import '../../data/services/storage_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/alarm_setup_card.dart';
 import 'pairing_screen.dart';
 
 class SettingsTab extends StatefulWidget {
@@ -141,13 +142,15 @@ class _SettingsTabState extends State<SettingsTab> {
                   child: Image.asset('assets/images/muse_logo.png', fit: BoxFit.cover),
                 ),
                 const SizedBox(width: 14),
-                const Column(
+                const Expanded(
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('Muse Companion', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
                     SizedBox(height: 2),
                     Text('Encrypted notes & AI partner', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
                   ],
+                ),
                 ),
               ],
             ),
@@ -275,6 +278,9 @@ class _SettingsTabState extends State<SettingsTab> {
           ),
           const SizedBox(height: 16),
 
+          const AlarmSetupCard(),
+          const SizedBox(height: 16),
+
           // AI Quota card
           if (_usage != null) ...[
             Card(
@@ -287,9 +293,11 @@ class _SettingsTabState extends State<SettingsTab> {
                       children: [
                         Icon(Icons.smart_toy_outlined, color: AppTheme.primaryLight, size: 20),
                         SizedBox(width: 8),
-                        Text(
-                          'AI Assistant Quota',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                        Expanded(
+                          child: Text(
+                            'AI Assistant Quota',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                          ),
                         ),
                       ],
                     ),
@@ -323,9 +331,11 @@ class _SettingsTabState extends State<SettingsTab> {
                     children: [
                       Icon(Icons.info_outline_rounded, color: AppTheme.primaryLight, size: 20),
                       SizedBox(width: 8),
-                      Text(
-                        'Connecting Away from Home',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                      Expanded(
+                        child: Text(
+                          'Connecting Away from Home',
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                        ),
                       ),
                     ],
                   ),

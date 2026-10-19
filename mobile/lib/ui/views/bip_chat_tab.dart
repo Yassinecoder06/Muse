@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../data/models/chat_message.dart';
 import '../../data/services/api_service.dart';
 import '../../data/services/app_events.dart';
+import '../../data/services/note_store.dart';
 import '../../data/services/voice_service.dart';
 import '../theme/app_theme.dart';
 import 'note_detail_view.dart';
@@ -101,7 +102,7 @@ class _BipChatTabState extends State<BipChatTab> {
 
   Future<void> _openNote(String noteId) async {
     try {
-      final note = await _api.fetchNote(noteId);
+      final note = await NoteStore.get(_api, noteId);
       if (!mounted) return;
       await Navigator.push(context, MaterialPageRoute(builder: (_) => NoteDetailView(note: note)));
       AppEvents.notifyDataChanged();
@@ -119,86 +120,44 @@ class _BipChatTabState extends State<BipChatTab> {
   @override
   void dispose() {
     AppEvents.launchAction.removeListener(_onLaunchAction);
-    _voice.cancelListening();
+    _voice.cancel();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
+  // Dictation keeps going (across Android's automatic pauses) until the user
+  // taps the mic again.
   Future<void> _toggleListening() async {
     if (_isListening) {
-      await _voice.stopListening();
-      setState(() => _isListening = false);
+      await _voice.stop();
       return;
     }
-
-    try {
-      final available = await _voice.initialize(
-        onError: (err) {
-          if (mounted) {
-            setState(() => _isListening = false);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Speech error: $err'),
-                backgroundColor: Colors.redAccent,
-              ),
-            );
-          }
-        },
-        onStatus: (status) {
-          if (status == 'done' || status == 'notListening') {
-            if (mounted && _isListening) {
-              setState(() => _isListening = false);
-            }
-          }
-        },
+    _initialVoiceText = _textController.text.trim();
+    final started = await _voice.startDictation(
+      onText: (words) {
+        if (!mounted) return;
+        setState(() {
+          _textController.text = _initialVoiceText.isEmpty ? words : '$_initialVoiceText $words';
+          _textController.selection = TextSelection.collapsed(offset: _textController.text.length);
+        });
+      },
+      onError: (err) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Speech error: $err'), backgroundColor: Colors.redAccent));
+      },
+      onStopped: () {
+        if (mounted) setState(() => _isListening = false);
+      },
+    );
+    if (!mounted) return;
+    if (!started) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Microphone access is unavailable or denied. Please grant permission in App Settings.'), backgroundColor: Colors.redAccent),
       );
-
-      if (!available) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Microphone access is unavailable or denied. Please grant permission in App Settings.'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-        }
-        return;
-      }
-
-      _initialVoiceText = _textController.text.trim();
-      setState(() => _isListening = true);
-
-      await _voice.startListening(
-        onResult: (words, isFinal) {
-          if (mounted) {
-            setState(() {
-              if (_initialVoiceText.isEmpty) {
-                _textController.text = words;
-              } else {
-                _textController.text = '$_initialVoiceText $words';
-              }
-              _textController.selection = TextSelection.fromPosition(
-                TextPosition(offset: _textController.text.length),
-              );
-              if (isFinal) {
-                _isListening = false;
-              }
-            });
-          }
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isListening = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Voice dictation error: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
+      return;
     }
+    setState(() => _isListening = true);
   }
 
   void _scrollToBottom() {
@@ -289,15 +248,18 @@ class _BipChatTabState extends State<BipChatTab> {
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                _historyLoading ? 'Loading your conversation…' : 'Bip remembers this conversation',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.textSecondary,
-                  fontWeight: FontWeight.w500,
+              Expanded(
+                child: Text(
+                  _historyLoading ? 'Loading your conversation…' : 'Bip remembers this conversation',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textSecondary,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
-              const Spacer(),
               TextButton.icon(
                 style: TextButton.styleFrom(
                   foregroundColor: AppTheme.accent,
@@ -557,9 +519,12 @@ class _BipChatTabState extends State<BipChatTab> {
                             children: [
                               const Icon(Icons.build_circle_outlined, size: 12, color: AppTheme.primaryLight),
                               const SizedBox(width: 4),
-                              Text(
-                                cleanName,
-                                style: const TextStyle(fontSize: 11, color: AppTheme.primaryLight, fontWeight: FontWeight.bold),
+                              Flexible(
+                                child: Text(
+                                  cleanName,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11, color: AppTheme.primaryLight, fontWeight: FontWeight.bold),
+                                ),
                               ),
                             ],
                           ),

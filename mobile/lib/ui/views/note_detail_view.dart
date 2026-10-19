@@ -3,6 +3,9 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/note.dart';
 import '../../data/services/api_service.dart';
+import '../../data/services/note_cache.dart';
+import '../../data/services/note_store.dart';
+import '../../data/services/offline_queue.dart';
 import '../../data/services/voice_service.dart';
 import '../theme/app_theme.dart';
 
@@ -38,6 +41,10 @@ class _NoteDetailViewState extends State<NoteDetailView> {
   late String _savedContent;
   late List<String> _savedTags;
 
+  // Latest version known from the server; queued offline edits are checked
+  // against it for desktop conflicts when they sync.
+  late Note _base;
+
   // Images in notes are protected, so they load with the device token.
   Map<String, String> _imageHeaders = const {};
   String? _serverBase;
@@ -49,6 +56,7 @@ class _NoteDetailViewState extends State<NoteDetailView> {
     _contentController = TextEditingController(text: widget.note.markdownContent);
     _favorite = widget.note.favorite;
     _tags = List<String>.from(widget.note.tags);
+    _base = widget.note;
     _savedTitle = widget.note.title;
     _savedContent = _contentController.text;
     _savedTags = List<String>.from(_tags);
@@ -118,81 +126,49 @@ class _NoteDetailViewState extends State<NoteDetailView> {
 
   @override
   void dispose() {
-    _voice.cancelListening();
+    _voice.cancel();
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
   }
 
+  // Dictation keeps going (across Android's automatic pauses) until the user
+  // taps the mic again.
   Future<void> _toggleDictating() async {
     if (_isDictating) {
-      await _voice.stopListening();
-      setState(() => _isDictating = false);
+      await _voice.stop();
       return;
     }
-
-    try {
-      final ok = await _voice.initialize(
-        onError: (err) {
-          if (mounted) {
-            setState(() => _isDictating = false);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Speech error: $err'), backgroundColor: Colors.redAccent),
-            );
-          }
-        },
-        onStatus: (status) {
-          if (status == 'done' || status == 'notListening') {
-            if (mounted && _isDictating) {
-              setState(() => _isDictating = false);
-            }
-          }
-        },
+    _initialDictationText = _contentController.text;
+    final started = await _voice.startDictation(
+      onText: (words) {
+        if (!mounted) return;
+        setState(() {
+          final prefix = _initialDictationText.trim().isEmpty ? '' : '$_initialDictationText\n\n';
+          _contentController.text = '$prefix$words';
+          _contentController.selection = TextSelection.collapsed(offset: _contentController.text.length);
+          _hasChanges = true;
+        });
+      },
+      onError: (err) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Speech error: $err'), backgroundColor: Colors.redAccent));
+      },
+      onStopped: () {
+        if (mounted) setState(() => _isDictating = false);
+      },
+    );
+    if (!mounted) return;
+    if (!started) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Microphone access is unavailable or denied. Please grant permission in App Settings.'), backgroundColor: Colors.redAccent),
       );
-
-      if (!ok) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Microphone access is unavailable or denied. Please grant permission in App Settings.'),
-              backgroundColor: Colors.redAccent,
-            ),
-          );
-        }
-        return;
-      }
-
-      _initialDictationText = _contentController.text;
-      setState(() {
-        _isReadingMode = false;
-        _isDictating = true;
-      });
-
-      await _voice.startListening(
-        onResult: (words, isFinal) {
-          if (mounted) {
-            setState(() {
-              final prefix = _initialDictationText.trim().isEmpty ? '' : '$_initialDictationText\n\n';
-              _contentController.text = '$prefix$words';
-              _contentController.selection = TextSelection.fromPosition(
-                TextPosition(offset: _contentController.text.length),
-              );
-              _hasChanges = true;
-              if (isFinal) {
-                _isDictating = false;
-              }
-            });
-          }
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isDictating = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Dictation error: $e'), backgroundColor: Colors.redAccent),
-        );
-      }
+      return;
     }
+    setState(() {
+      _isReadingMode = false;
+      _isDictating = true;
+    });
   }
 
   Future<void> _saveNote() async {
@@ -203,14 +179,17 @@ class _NoteDetailViewState extends State<NoteDetailView> {
 
     final nextTitle = title.isEmpty ? 'Untitled Note' : title;
     try {
-      await _api.updateNote(
-        widget.note.id,
+      // Works offline too: the edit is kept on the phone and synced later.
+      final saved = await NoteStore.save(
+        _api,
+        _base,
         title: nextTitle != _savedTitle ? nextTitle : null,
         content: content != _savedContent ? content : null,
         tags: _sameTags(_tags, _savedTags) ? null : _tags,
       );
 
       setState(() {
+        if (saved != null) _base = saved;
         _saving = false;
         _hasChanges = false;
         _savedTitle = nextTitle;
@@ -220,10 +199,10 @@ class _NoteDetailViewState extends State<NoteDetailView> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Note saved'),
+          SnackBar(
+            content: Text(saved != null ? 'Note saved' : 'Saved on your phone. It will sync when Muse is reachable.'),
             backgroundColor: AppTheme.surface,
-            duration: Duration(seconds: 2),
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -246,13 +225,41 @@ class _NoteDetailViewState extends State<NoteDetailView> {
     setState(() => _favorite = nextFav);
 
     try {
-      await _api.toggleFavoriteNote(widget.note.id, !nextFav);
+      final saved = await NoteStore.save(_api, _base, favorite: nextFav);
+      if (saved != null && mounted) setState(() => _base = saved);
     } catch (_) {
       if (mounted) setState(() => _favorite = !nextFav);
     }
   }
 
   Future<void> _confirmDelete() async {
+    // A note created offline and never synced is simply discarded.
+    final unsynced = _base.isLocal && await NoteCache.serverIdFor(_base.id) == null;
+    if (!mounted) return;
+    if (unsynced) {
+      final discard = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppTheme.surface,
+          title: const Text('Discard this note?', style: TextStyle(color: AppTheme.textPrimary)),
+          content: const Text('It was created offline and has not synced yet, so it will be gone for good.', style: TextStyle(color: AppTheme.textSecondary)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Discard', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      );
+      if (discard == true) {
+        await OfflineQueue.discardLocalNote(_base.id);
+        if (mounted) Navigator.pop(context, true);
+      }
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -278,14 +285,19 @@ class _NoteDetailViewState extends State<NoteDetailView> {
 
     if (confirmed == true) {
       try {
-        await _api.deleteNote(widget.note.id);
+        final serverId = _base.isLocal ? await NoteCache.serverIdFor(_base.id) ?? _base.id : _base.id;
+        await _api.deleteNote(serverId);
         if (mounted) {
           Navigator.pop(context, true);
         }
       } catch (e) {
         if (mounted) {
+          final offline = OfflineQueue.isNetworkError(e);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to delete note: $e'), backgroundColor: Colors.redAccent),
+            SnackBar(
+              content: Text(offline ? 'Moving to trash needs a connection to Muse. Try again when you are back online.' : 'Failed to delete note: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
           );
         }
       }
@@ -375,7 +387,12 @@ class _NoteDetailViewState extends State<NoteDetailView> {
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         backgroundColor: AppTheme.surface,
-        title: Row(
+        titleSpacing: 0,
+        // The Read/Edit switch shrinks to fit next to the action icons.
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
           children: [
             // Mode toggle button (Read vs Edit)
             Container(
@@ -432,6 +449,7 @@ class _NoteDetailViewState extends State<NoteDetailView> {
             ),
           ],
         ),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: _saveAndLeave,
@@ -468,18 +486,12 @@ class _NoteDetailViewState extends State<NoteDetailView> {
               ),
             )
           else if (!_isReadingMode || _hasChanges)
-            TextButton.icon(
+            IconButton(
+              tooltip: 'Save',
               onPressed: _hasChanges ? _saveNote : null,
               icon: Icon(
-                Icons.check_rounded,
+                Icons.check_circle_rounded,
                 color: _hasChanges ? AppTheme.accent : AppTheme.textSecondary.withValues(alpha: 0.3),
-              ),
-              label: Text(
-                'Save',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: _hasChanges ? AppTheme.accent : AppTheme.textSecondary.withValues(alpha: 0.3),
-                ),
               ),
             ),
           const SizedBox(width: 4),
@@ -597,7 +609,8 @@ class _NoteDetailViewState extends State<NoteDetailView> {
               const SizedBox(height: 10),
 
               // Metadata info row (date, word count)
-              Row(
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   if (formattedDate.isNotEmpty)
                     Text(

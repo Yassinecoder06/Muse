@@ -73,6 +73,22 @@ class Note {
     };
   }
 
+  /// Created on the phone while offline; not on the server yet.
+  bool get isLocal => id.startsWith('local-');
+
+  /// Full snapshot (including id and updated_at) for the on-device cache.
+  Map<String, dynamic> toCacheJson() => {
+        'id': id,
+        'title': title,
+        'content': content,
+        'tags': tags,
+        'favorite': favorite,
+        'archived': archived,
+        'kind': kind,
+        'summary': summary,
+        'updated_at': updatedAt,
+      };
+
   String get plainText {
     return FormatUtils.htmlToPlainText(content);
   }

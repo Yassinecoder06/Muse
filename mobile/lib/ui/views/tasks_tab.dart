@@ -8,6 +8,7 @@ import '../../data/services/app_events.dart';
 import '../../data/services/offline_queue.dart';
 import '../../data/services/reminder_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/reminder_sheet.dart';
 
 class TasksTab extends StatefulWidget {
   const TasksTab({super.key});
@@ -154,6 +155,7 @@ class _TasksTabState extends State<TasksTab> {
     String priority = 'medium';
     DateTime dueDate = _selectedDate;
     TimeOfDay? dueTime;
+    int? remindMinutes; // null = no reminder
 
     showModalBottomSheet(
       context: context,
@@ -287,6 +289,32 @@ class _TasksTabState extends State<TasksTab> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+
+              // Bip reminder
+              Row(
+                children: [
+                  const Icon(Icons.alarm_rounded, size: 18, color: AppTheme.primaryLight),
+                  const SizedBox(width: 8),
+                  const Text('Remind me', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DropdownButton<int?>(
+                      value: remindMinutes,
+                      isExpanded: true,
+                      dropdownColor: AppTheme.surface,
+                      underline: const SizedBox.shrink(),
+                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+                      items: [
+                        const DropdownMenuItem<int?>(value: null, child: Text('No reminder')),
+                        for (final (label, minutes) in reminderPresets)
+                          DropdownMenuItem<int?>(value: minutes, child: Text(minutes == 0 ? label : '$label before')),
+                      ],
+                      onChanged: (value) => setSheetState(() => remindMinutes = value),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 18),
 
               ElevatedButton(
@@ -308,12 +336,14 @@ class _TasksTabState extends State<TasksTab> {
 
                   try {
                     // Online: the list refreshes via AppEvents. Offline: queued.
+                    if (remindMinutes != null) await ReminderService.ensureAlarmPermissions();
                     final savedNow = await OfflineQueue.createTask(
                       _api,
                       title: text,
                       dueDate: dateStr,
                       dueTime: timeStr,
                       priority: priority,
+                      reminderMinutesBefore: remindMinutes,
                     );
                     if (!savedNow && mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -724,12 +754,16 @@ class _TasksTabState extends State<TasksTab> {
                               color: _activeSegment == 0 ? Colors.white : AppTheme.textSecondary,
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              'Tasks (${_tasks.where((t) => !t.completed).length})',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                color: _activeSegment == 0 ? Colors.white : AppTheme.textSecondary,
+                            Flexible(
+                              child: Text(
+                                'Tasks (${_tasks.where((t) => !t.completed).length})',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: _activeSegment == 0 ? Colors.white : AppTheme.textSecondary,
+                                ),
                               ),
                             ),
                           ],
@@ -757,12 +791,16 @@ class _TasksTabState extends State<TasksTab> {
                               color: _activeSegment == 1 ? Colors.white : AppTheme.textSecondary,
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              'Schedule (${_events.length})',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                color: _activeSegment == 1 ? Colors.white : AppTheme.textSecondary,
+                            Flexible(
+                              child: Text(
+                                'Schedule (${_events.length})',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: _activeSegment == 1 ? Colors.white : AppTheme.textSecondary,
+                                ),
                               ),
                             ),
                           ],
@@ -930,14 +968,18 @@ class _TasksTabState extends State<TasksTab> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  _showAll
-                      ? 'All Scheduled Items'
-                      : _formatHeaderDate(_selectedDate),
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textSecondary,
+                Expanded(
+                  child: Text(
+                    _showAll
+                        ? 'All Scheduled Items'
+                        : _formatHeaderDate(_selectedDate),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.textSecondary,
+                    ),
                   ),
                 ),
                 if (_activeSegment == 1)
@@ -1159,45 +1201,43 @@ class _TasksTabState extends State<TasksTab> {
               fontWeight: task.completed ? FontWeight.normal : FontWeight.w500,
             ),
           ),
-          subtitle: (task.dueDate != null || task.dueTime != null)
-              ? Row(
-                  children: [
-                    if (task.dueDate != null) ...[
-                      Icon(Icons.calendar_today_rounded, size: 12, color: AppTheme.textSecondary.withValues(alpha: 0.7)),
-                      const SizedBox(width: 4),
-                      Text(
-                        task.dueDate!,
-                        style: TextStyle(fontSize: 11, color: AppTheme.textSecondary.withValues(alpha: 0.7)),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    if (task.dueTime != null) ...[
-                      Icon(Icons.access_time_rounded, size: 12, color: AppTheme.textSecondary.withValues(alpha: 0.7)),
-                      const SizedBox(width: 4),
-                      Text(
-                        task.dueTime!,
-                        style: TextStyle(fontSize: 11, color: AppTheme.textSecondary.withValues(alpha: 0.7)),
-                      ),
-                    ],
-                  ],
-                )
-              : null,
+          // Details wrap onto extra lines instead of squeezing the title.
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (task.dueDate != null) _meta(Icons.calendar_today_rounded, task.dueDate!),
+                if (task.dueTime != null) _meta(Icons.access_time_rounded, task.dueTime!.length > 5 && task.dueTime![2] == ':' ? task.dueTime!.substring(0, 5) : task.dueTime!),
+                if (!task.completed && task.reminderAt != null) _meta(Icons.alarm_on_rounded, reminderLabel(task)!, color: AppTheme.primaryLight),
+                if (priorityText.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(color: priorityColor, borderRadius: BorderRadius.circular(6)),
+                    child: Text(priorityText, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: priorityTextColor)),
+                  ),
+              ],
+            ),
+          ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (priorityText.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: priorityColor,
-                    borderRadius: BorderRadius.circular(6),
+              if (!task.completed)
+                IconButton(
+                  tooltip: task.reminderAt != null ? 'Change reminder' : 'Add reminder',
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    task.reminderAt != null ? Icons.alarm_on_rounded : Icons.alarm_add_rounded,
+                    size: 20,
+                    color: task.reminderAt != null ? AppTheme.primaryLight : AppTheme.textSecondary,
                   ),
-                  child: Text(
-                    priorityText,
-                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: priorityTextColor),
-                  ),
+                  onPressed: () => showReminderSheet(context, task),
                 ),
               IconButton(
+                tooltip: 'Delete',
+                visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.close_rounded, size: 18, color: AppTheme.textSecondary),
                 onPressed: () => _deleteTask(task),
               ),
@@ -1205,6 +1245,18 @@ class _TasksTabState extends State<TasksTab> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _meta(IconData icon, String label, {Color? color}) {
+    final tint = color ?? AppTheme.textSecondary.withValues(alpha: 0.7);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: tint),
+        const SizedBox(width: 4),
+        Flexible(child: Text(label, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: tint))),
+      ],
     );
   }
 
@@ -1268,15 +1320,25 @@ class _TasksTabState extends State<TasksTab> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Row(
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 2,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            const Icon(Icons.access_time_rounded, size: 13, color: AppTheme.accent),
-                            const SizedBox(width: 4),
-                            Text(
-                              timeStr,
-                              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.access_time_rounded, size: 13, color: AppTheme.accent),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    timeStr,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 10),
                             Text(
                               '($dateStr)',
                               style: TextStyle(fontSize: 11, color: AppTheme.textSecondary.withValues(alpha: 0.6)),
