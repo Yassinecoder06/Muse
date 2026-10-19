@@ -8,6 +8,9 @@ import { stripImages } from '../utils/images.js'
 import { createConfirmationToken } from './agent-confirmation.service.js'
 import { chronoReference, localDateString, normalizeClock, offsetMinutes } from '../utils/timezone.js'
 import { resolveReminder } from '../controllers/tasks.controller.js'
+import { searchWeb } from './web-search.service.js'
+import { evaluateMath } from './calculator.service.js'
+import { executeInSandbox } from './sandbox.service.js'
 
 export interface AgentActionCard {
   type: 'note' | 'note_updated' | 'task' | 'task_updated' | 'event' | 'memory' | 'template' | 'specialized_note' | 'item_deleted' | 'confirm_required'
@@ -79,6 +82,53 @@ export const agentToolDeclarations = [
         query: { type: 'STRING', description: 'The search term or question to find relevant notes' }
       },
       required: ['query']
+    }
+  },
+  {
+    name: 'read_note',
+    description: 'Read the full title and Markdown content of a specific note using its UUID or title.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        id: { type: 'STRING', description: 'The UUID of the note (optional if title is provided)' },
+        title: { type: 'STRING', description: 'The title or partial title of the note (optional if id is provided)' }
+      }
+    }
+  },
+  {
+    name: 'search_web',
+    description: 'Search the live web for up-to-date information, facts, research, workout science, recipes, news, or general knowledge.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        query: { type: 'STRING', description: 'The search query or question to look up on the web' }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'calculate',
+    description: 'Perform mathematical calculations, percentages, formulas, and conversions accurately (e.g. "15% of 240", "sqrt(144) + 25 * 4", "(80 * 3) / 12", "pow(2, 8)"). Always use this tool for arithmetic and statistics rather than computing in your head.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        expression: { type: 'STRING', description: 'The mathematical expression to evaluate' }
+      },
+      required: ['expression']
+    }
+  },
+  {
+    name: 'execute_code',
+    description: 'Execute a multi-line JavaScript code snippet in an isolated sandbox for advanced math, statistical modeling, algorithmic calculations, array manipulation, data processing, or simulations. Supports console.log(), standard Math, and statistical helpers: sum(arr), avg(arr), median(arr), stddev(arr), range(start, end), roundTo(num, decimals), percent(val, total), factorial(n). Use "return <value>;" to return the output.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        code: {
+          type: 'STRING',
+          description: 'The JavaScript code snippet to execute. Can contain multi-line code, loops, functions, console.log, and a return statement.'
+        }
+      },
+      required: ['code']
     }
   },
   {
@@ -549,19 +599,116 @@ export async function executeAgentTool(
 
       case 'search_notes': {
         const query = String(args.query || '').trim()
-        const ids = await vectors.searchSimilarNotes(userId, query)
-        const found = (await Promise.all(ids.map(id => notes.get(userId, id).catch(() => null))))
-          .filter(note => note && !note.deleted_at)
-          .slice(0, 5)
-        const snippets = found.map((n: any) => ({
+        const ids = await vectors.searchSimilarNotes(userId, query).catch(() => [])
+        const vectorNotes = (await Promise.all(ids.map(id => notes.get(userId, id).catch(() => null))))
+          .filter((note): note is NonNullable<typeof note> => Boolean(note && !note.deleted_at))
+
+        // Also check direct title matching so titles like "Upper 1" or "Gym" match reliably
+        const allActive = await notes.list(userId, 'all').catch(() => [])
+        const queryLower = query.toLowerCase()
+        const titleMatches = allActive.filter(n => n.title.toLowerCase().includes(queryLower))
+
+        // Merge results without duplicates (title matches first)
+        const merged: any[] = []
+        const seenIds = new Set<string>()
+        for (const n of [...titleMatches, ...vectorNotes]) {
+          if (!seenIds.has(n.id)) {
+            seenIds.add(n.id)
+            merged.push(n)
+          }
+        }
+
+        const snippets = merged.slice(0, 6).map((n: any) => ({
           id: n.id,
           title: n.title,
-          snippet: stripImages(n.content).slice(0, 200)
+          snippet: stripImages(n.content || '').slice(0, 600)
         }))
         return {
           toolName: name,
           args,
           result: { count: snippets.length, notes: snippets }
+        }
+      }
+
+      case 'read_note':
+      case 'get_note': {
+        const id = args.id ? String(args.id).trim() : null
+        const titleQuery = (args.title || args.query || args.title_query) ? String(args.title || args.query || args.title_query).trim() : null
+        let note: any = null
+
+        if (id) {
+          note = await notes.get(userId, id).catch(() => null)
+        }
+        if (!note && titleQuery) {
+          const activeNotes = await notes.list(userId, 'all').catch(() => [])
+          const { match, ambiguous } = matchNoteByTitle(activeNotes, titleQuery)
+          if (ambiguous) return ambiguityResult(name, args, ambiguous)
+          if (match) {
+            note = await notes.get(userId, match.id).catch(() => null)
+          }
+        }
+        if (!note) {
+          throw new Error(`Could not find any note matching "${titleQuery || id}".`)
+        }
+        return {
+          toolName: name,
+          args,
+          result: {
+            id: note.id,
+            title: note.title,
+            content: stripImages(note.content || ''),
+            tags: note.tags || [],
+            tasks: note.tasks || [],
+            created_at: note.created_at,
+            updated_at: note.updated_at
+          }
+        }
+      }
+
+      case 'search_web': {
+        const query = String(args.query || '').trim()
+        if (!query) throw new Error('Search query cannot be empty')
+        const results = await searchWeb(query)
+        return {
+          toolName: name,
+          args,
+          result: {
+            query,
+            count: results.length,
+            results: results.length > 0 ? results : 'No web search results found for this query.'
+          }
+        }
+      }
+
+      case 'calculate': {
+        const expression = String(args.expression || '').trim()
+        if (!expression) throw new Error('Mathematical expression cannot be empty')
+        const value = evaluateMath(expression)
+        return {
+          toolName: name,
+          args,
+          result: {
+            expression,
+            result: value
+          }
+        }
+      }
+
+      case 'execute_code':
+      case 'run_code': {
+        const code = String(args.code || args.script || '').trim()
+        if (!code) throw new Error('Code to execute cannot be empty')
+        const exec = executeInSandbox(code)
+        return {
+          toolName: name,
+          args,
+          result: {
+            success: exec.success,
+            output: exec.result !== undefined ? exec.result : (exec.logs.length > 0 ? exec.logs.join('\n') : null),
+            logs: exec.logs,
+            error: exec.error,
+            executionTimeMs: exec.executionTimeMs
+          }
         }
       }
 

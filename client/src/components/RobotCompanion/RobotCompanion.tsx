@@ -31,6 +31,13 @@ const DEFAULT_GREETING: Message = {
   text: "Beep boop! 🤖 I'm Bip, your autonomous helper! I can create notes, manage tasks, schedule events, remember facts, or delete anything you don't need — just ask!"
 }
 
+const DIZZY_HINTS = [
+  'WoOoOaaah! Too dizzy! 😵💫',
+  'The room is spinning! @___@',
+  'Whoa! Easy on the shaking! 🌀',
+  'Beep... boop... my gyros are reeling! 💫'
+]
+
 const BIP_WIDTH = 76
 const BIP_HEIGHT = 92
 const EDGE_PADDING = 16
@@ -44,6 +51,38 @@ function clampPosition(x: number, y: number) {
     x: Math.min(Math.max(EDGE_PADDING, Math.round(x)), maxX),
     y: Math.min(Math.max(EDGE_PADDING, Math.round(y)), maxY)
   }
+}
+
+function isShakeGesture(history: Array<{ x: number; y: number; time: number }>): boolean {
+  if (history.length < 5) return false
+  const now = history[history.length - 1].time
+  const recent = history.filter(p => now - p.time <= 450)
+  if (recent.length < 5) return false
+
+  let reversalsX = 0
+  let reversalsY = 0
+  let lastDirX = 0
+  let lastDirY = 0
+  let totalDistance = 0
+
+  for (let i = 1; i < recent.length; i++) {
+    const dx = recent[i].x - recent[i - 1].x
+    const dy = recent[i].y - recent[i - 1].y
+    totalDistance += Math.hypot(dx, dy)
+
+    if (Math.abs(dx) > 10) {
+      const dirX = Math.sign(dx)
+      if (lastDirX !== 0 && dirX !== lastDirX) reversalsX++
+      lastDirX = dirX
+    }
+    if (Math.abs(dy) > 10) {
+      const dirY = Math.sign(dy)
+      if (lastDirY !== 0 && dirY !== lastDirY) reversalsY++
+      lastDirY = dirY
+    }
+  }
+
+  return (reversalsX >= 3 || reversalsY >= 3 || (reversalsX >= 2 && reversalsY >= 2)) && totalDistance > 160
 }
 
 export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps) {
@@ -67,6 +106,9 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
   const [isSavingCompanionEdit, setIsSavingCompanionEdit] = useState(false)
   const [soundEnabled, setSoundEnabled] = useState(() => loadVoiceSettings().soundEffectsEnabled)
   const lastHoverSoundRef = useRef<number>(0)
+  const shakeHistoryRef = useRef<Array<{ x: number; y: number; time: number }>>([])
+  const dizzyTimeoutRef = useRef<number | null>(null)
+  const lastShakeSoundRef = useRef<number>(0)
   const [sessionId, setSessionId] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem('muse-bip-session-id')
@@ -132,7 +174,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       // Reset sleep state on movement
       if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current)
       idleTimerRef.current = window.setTimeout(() => {
-        if (!isOpen && !loading) {
+        if (!isOpen && !loading && mood !== 'dizzy') {
           setMood('sleeping')
         }
       }, 75000) // Sleep after 75s of idle
@@ -167,6 +209,13 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     }
   }, [mood, isOpen, loading])
 
+  // Clear dizzy timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (dizzyTimeoutRef.current) window.clearTimeout(dizzyTimeoutRef.current)
+    }
+  }, [])
+
   // Scroll to bottom of chat
   useEffect(() => {
     if (isOpen) {
@@ -183,7 +232,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       'Always ready to help! 🤖'
     ]
     const hintInterval = window.setInterval(() => {
-      if (!isOpen && mood !== 'sleeping' && Math.random() > 0.6) {
+      if (!isOpen && mood !== 'sleeping' && mood !== 'dizzy' && Math.random() > 0.6) {
         const picked = hints[Math.floor(Math.random() * hints.length)]
         setHint(picked)
         window.setTimeout(() => setHint(null), 4500)
@@ -196,6 +245,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return
     robotAudio.play('whoosh')
+    shakeHistoryRef.current = [{ x: e.clientX, y: e.clientY, time: Date.now() }]
     dragRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -211,6 +261,30 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (dragRef.current.pointerId !== e.pointerId) return
+
+    const now = Date.now()
+    shakeHistoryRef.current.push({ x: e.clientX, y: e.clientY, time: now })
+    if (shakeHistoryRef.current.length > 30) {
+      shakeHistoryRef.current = shakeHistoryRef.current.slice(-25)
+    }
+
+    if (isShakeGesture(shakeHistoryRef.current)) {
+      if (now - lastShakeSoundRef.current > 700) {
+        lastShakeSoundRef.current = now
+        robotAudio.play('dizzy')
+      }
+      setMood('dizzy')
+      const picked = DIZZY_HINTS[Math.floor(Math.random() * DIZZY_HINTS.length)]
+      setHint(picked)
+      if (dizzyTimeoutRef.current) {
+        window.clearTimeout(dizzyTimeoutRef.current)
+      }
+      dizzyTimeoutRef.current = window.setTimeout(() => {
+        setMood('idle')
+        setHint(null)
+        dizzyTimeoutRef.current = null
+      }, 3500)
+    }
 
     const dx = e.clientX - dragRef.current.startX
     const dy = e.clientY - dragRef.current.startY
@@ -232,6 +306,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
   function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
     if (dragRef.current.pointerId !== e.pointerId) return
 
+    shakeHistoryRef.current = []
     const moved = dragRef.current.hasMoved
     try {
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -241,7 +316,9 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     dragRef.current.pointerId = null
 
     if (moved) {
-      robotAudio.play('boop')
+      if (mood !== 'dizzy') {
+        robotAudio.play('boop')
+      }
       setPos(current => {
         const clamped = clampPosition(current.x, current.y)
         try {
@@ -266,13 +343,14 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
         }
       } catch {}
       dragRef.current.pointerId = null
+      shakeHistoryRef.current = []
       setIsDragging(false)
       dragRef.current.hasMoved = false
     }
   }
 
   function handleFigureClick() {
-    if (dragRef.current.hasMoved || isDragging) return
+    if (dragRef.current.hasMoved || isDragging || mood === 'dizzy') return
     robotAudio.play(isOpen ? 'boop' : 'chirp')
     setIsOpen(prev => !prev)
     setMood(isOpen ? 'idle' : 'happy')

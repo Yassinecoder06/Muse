@@ -58,3 +58,4 @@ export type BipSoundType =
   | 'error'
   | 'whoosh'
   | 'excited'
+  | 'dizzy'

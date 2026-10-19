@@ -8,7 +8,11 @@ test('agent tool declarations include all required autonomous skills', () => {
   // Verify core and specialized tools exist
   assert.ok(toolNames.includes('create_note'), 'Missing create_note')
   assert.ok(toolNames.includes('update_note'), 'Missing update_note')
+  assert.ok(toolNames.includes('read_note'), 'Missing read_note')
   assert.ok(toolNames.includes('search_notes'), 'Missing search_notes')
+  assert.ok(toolNames.includes('search_web'), 'Missing search_web')
+  assert.ok(toolNames.includes('calculate'), 'Missing calculate')
+  assert.ok(toolNames.includes('execute_code'), 'Missing execute_code')
   assert.ok(toolNames.includes('create_task'), 'Missing create_task')
   assert.ok(toolNames.includes('list_tasks'), 'Missing list_tasks')
   assert.ok(toolNames.includes('update_task'), 'Missing update_task')

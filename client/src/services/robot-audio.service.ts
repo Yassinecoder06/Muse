@@ -92,6 +92,9 @@ class RobotAudioService {
       case 'excited':
         this.playExcited(ctx, masterGain, now)
         break
+      case 'dizzy':
+        this.playDizzy(ctx, masterGain, now)
+        break
     }
   }
 
@@ -292,6 +295,60 @@ class RobotAudioService {
       osc.start(startTime)
       osc.stop(startTime + 0.15)
     })
+  }
+
+  private playDizzy(ctx: AudioContext, master: GainNode, now: number) {
+    // Comic dizzy robot sound: rapid pitch-wobble (vibrato) descending into a quirky blip
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    const lfo = ctx.createOscillator()
+    const lfoGain = ctx.createGain()
+
+    // LFO frequency: wobbles fast (16Hz), slowing down as dizziness settles (6Hz)
+    lfo.frequency.setValueAtTime(16, now)
+    lfo.frequency.exponentialRampToValueAtTime(6, now + 0.75)
+
+    // LFO depth: pitch swings by +/- 110Hz then fades
+    lfoGain.gain.setValueAtTime(110, now)
+    lfoGain.gain.exponentialRampToValueAtTime(20, now + 0.75)
+
+    lfo.connect(lfoGain)
+    lfoGain.connect(osc.frequency)
+
+    // Main oscillator: glides down from 540Hz to 210Hz
+    osc.type = 'triangle'
+    osc.frequency.setValueAtTime(540, now)
+    osc.frequency.exponentialRampToValueAtTime(210, now + 0.75)
+
+    gain.gain.setValueAtTime(0.01, now)
+    gain.gain.linearRampToValueAtTime(0.5, now + 0.04)
+    gain.gain.linearRampToValueAtTime(0.35, now + 0.5)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.78)
+
+    osc.connect(gain)
+    gain.connect(master)
+
+    lfo.start(now)
+    osc.start(now)
+    lfo.stop(now + 0.8)
+    osc.stop(now + 0.8)
+
+    // Secondary quirky wobble bubble for a dizzy robotic texture
+    const bubOsc = ctx.createOscillator()
+    const bubGain = ctx.createGain()
+    bubOsc.type = 'sine'
+    bubOsc.frequency.setValueAtTime(720, now + 0.1)
+    bubOsc.frequency.exponentialRampToValueAtTime(280, now + 0.6)
+
+    bubGain.gain.setValueAtTime(0.01, now + 0.1)
+    bubGain.gain.linearRampToValueAtTime(0.25, now + 0.15)
+    bubGain.gain.exponentialRampToValueAtTime(0.001, now + 0.65)
+
+    bubOsc.connect(bubGain)
+    bubGain.connect(master)
+
+    bubOsc.start(now + 0.1)
+    bubOsc.stop(now + 0.66)
   }
 
   public startThinkingLoop() {
