@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai'
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 import { settings } from '../services/settings.repository.js'
 import { speakFor, transcribeFor } from '../services/providers/router.js'
+import { extractGeminiTranscription } from '../services/providers/media.js'
 
 const ALLOWED_NEURAL_VOICES = [
   'en-US-JennyNeural',
@@ -68,7 +69,8 @@ export async function transcribeAudio(req: Request, res: Response, next: NextFun
 
     if (!geminiKey) {
       return res.status(400).json({
-        error: 'Gemini API key is required for server-assisted audio transcription. Add your key in Settings or use a browser with native speech recognition.'
+        error: 'Gemini API key is required for server-assisted audio transcription. Add your key in Settings or use a browser with native speech recognition.',
+        useBrowser: true
       })
     }
 
@@ -84,7 +86,14 @@ Rules:
 3. Automatically apply correct punctuation and natural capitalization.
 4. If the audio is completely silent or contains only background noise, respond with an empty string.`
 
-    const modelsToTry = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.7-flash']
+    const modelsToTry = [
+      'gemini-3.5-transcribe',
+      'gemini-3.5-flash-lite',
+      'gemini-3.5-flash',
+      'gemini-3.8-flash',
+      'gemini-3.7-flash',
+      'gemini-flash-lite-latest'
+    ]
     let transcribedText = ''
     let lastError: unknown = null
 
@@ -110,11 +119,7 @@ Rules:
           ]
         })
 
-        let text = String(response.text || '').trim()
-        if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
-          text = text.slice(1, -1).trim()
-        }
-
+        const text = extractGeminiTranscription(response)
         transcribedText = text
 
         // Log usage in background

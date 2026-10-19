@@ -128,6 +128,32 @@ export async function speech(p: ResolvedProvider, model: string, text: string, v
 
 const TRANSCRIBE_PROMPT = 'Transcribe the spoken audio verbatim. Output only the transcription: no quotes, labels, timestamps or notes. If there is no speech, output nothing.'
 
+export function extractGeminiTranscription(response: any): string {
+  if (!response) return ''
+
+  const parts = response.candidates?.[0]?.content?.parts
+  if (Array.isArray(parts) && parts.length > 0) {
+    const pieces: string[] = []
+    for (const part of parts) {
+      if (typeof part.text === 'string' && !part.thought && part.text.trim()) {
+        pieces.push(part.text.trim())
+      } else if (part.audioTranscription && typeof part.audioTranscription.text === 'string' && part.audioTranscription.text.trim()) {
+        pieces.push(part.audioTranscription.text.trim())
+      }
+    }
+    if (pieces.length > 0) {
+      return pieces.join(' ').trim().replace(/^["']|["']$/g, '')
+    }
+  }
+
+  try {
+    const text = String(response.text || '').trim().replace(/^["']|["']$/g, '')
+    if (text) return text
+  } catch {}
+
+  return ''
+}
+
 export async function transcribe(p: ResolvedProvider, model: string, audio: Buffer, mime: string): Promise<string> {
   switch (p.kind) {
     case 'openai':
@@ -153,11 +179,22 @@ export async function transcribe(p: ResolvedProvider, model: string, audio: Buff
     }
     case 'gemini': {
       const client = new GoogleGenAI({ apiKey: p.apiKey || '' })
-      const response = await client.models.generateContent({
-        model,
-        contents: [{ role: 'user', parts: [{ inlineData: { mimeType: mime, data: audio.toString('base64') } }, { text: TRANSCRIBE_PROMPT }] }]
-      })
-      return String(response.text || '').trim().replace(/^["']|["']$/g, '')
+      const modelsToTry = [model, 'gemini-3.5-transcribe', 'gemini-3.5-flash-lite', 'gemini-3.5-flash'].filter((m, i, arr) => arr.indexOf(m) === i)
+      let lastErr: unknown = null
+      for (const m of modelsToTry) {
+        try {
+          const response = await client.models.generateContent({
+            model: m,
+            contents: [{ role: 'user', parts: [{ inlineData: { mimeType: mime, data: audio.toString('base64') } }, { text: TRANSCRIBE_PROMPT }] }]
+          })
+          const extracted = extractGeminiTranscription(response)
+          return extracted
+        } catch (err) {
+          lastErr = err
+          console.warn(`[Gemini STT] Model ${m} failed, trying next:`, (err as Error)?.message || err)
+        }
+      }
+      throw lastErr || new ProviderCallError('Gemini speech transcription failed.')
     }
     default:
       throw new ProviderCallError(`${p.name} has no speech-to-text models.`)

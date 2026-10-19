@@ -311,14 +311,26 @@ class STTService {
             }
           } catch (err: any) {
             console.error('[STT Gemini] Server transcription error:', err)
+            if (err?.useBrowser && this.hasNativeSupport()) {
+              console.log('[STT] Switching to native browser speech recognition...')
+              this.startNativeListening(options)
+              return
+            }
             const errMsg = err?.message || 'Gemini speech transcription failed.'
-            if (errMsg.toLowerCase().includes('gemini api key is required')) {
+            if (errMsg.toLowerCase().includes('gemini api key is required') || errMsg.toLowerCase().includes('no speech-to-text')) {
+              if (this.hasNativeSupport()) {
+                console.log('[STT] Falling back to native browser speech recognition...')
+                this.startNativeListening(options)
+                return
+              }
               options.onError?.('Gemini API key required for AI speech recognition. Configure your key in Settings.')
             } else {
               options.onError?.(errMsg)
             }
           } finally {
-            this.setState('idle')
+            if (this.state === 'processing') {
+              this.setState('idle')
+            }
           }
         }
 
