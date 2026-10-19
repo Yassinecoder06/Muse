@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../data/models/note.dart';
 import '../../data/services/api_service.dart';
+import '../../data/services/app_events.dart';
+import '../../data/services/offline_queue.dart';
 import '../theme/app_theme.dart';
 import 'note_detail_view.dart';
 
@@ -20,6 +23,13 @@ class _NotesTabState extends State<NotesTab> {
   String _search = '';
   String? _error;
 
+  // Server search (keywords + meaning) for the "all" scope; null = not run.
+  final _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  List<Note>? _searchResults;
+  String _searchResultsFor = '';
+  bool _searching = false;
+
   // Scopes: 'all', 'favorites', 'archive', 'trash'
   String _currentScope = 'all';
 
@@ -27,20 +37,101 @@ class _NotesTabState extends State<NotesTab> {
   void initState() {
     super.initState();
     _loadNotes();
+    AppEvents.dataChanged.addListener(_onDataChanged);
   }
 
-  Future<void> _loadNotes() async {
+  @override
+  void dispose() {
+    AppEvents.dataChanged.removeListener(_onDataChanged);
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    final query = value.trim();
+    setState(() => _search = query);
+    _searchDebounce?.cancel();
+    if (query.length < 2 || _currentScope != 'all') {
+      setState(() => _searchResults = null);
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () => _runServerSearch(query));
+  }
+
+  Future<void> _runServerSearch(String query) async {
+    setState(() => _searching = true);
+    try {
+      final results = await _api.searchNotes(query);
+      if (!mounted || query != _search) return;
+      setState(() {
+        _searchResults = results;
+        _searchResultsFor = query;
+      });
+    } catch (_) {
+      // Offline: the local title/content filter still works.
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
+
+  void _clearSearch() {
+    _searchDebounce?.cancel();
+    _searchController.clear();
     setState(() {
-      _loading = true;
-      _error = null;
+      _search = '';
+      _searchResults = null;
     });
+  }
+
+  // Trash right away, offer Undo (restore) for a few seconds.
+  Future<void> _trashWithUndo(Note note) async {
+    final index = _allNotes.indexWhere((n) => n.id == note.id);
+    setState(() => _allNotes.removeWhere((n) => n.id == note.id));
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _api.deleteNote(note.id);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _allNotes.insert(index.clamp(0, _allNotes.length), note));
+      messenger.showSnackBar(SnackBar(content: Text('Could not move to trash: ${e.toString().replaceFirst('Exception: ', '')}'), backgroundColor: Colors.redAccent));
+      return;
+    }
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      content: const Text('Moved to trash'),
+      duration: const Duration(seconds: 4),
+      action: SnackBarAction(
+        label: 'Undo',
+        onPressed: () async {
+          try {
+            await _api.restoreNote(note.id);
+            if (mounted) setState(() => _allNotes.insert(index.clamp(0, _allNotes.length), note));
+          } catch (_) {}
+        },
+      ),
+    ));
+  }
+
+  // Bip created or deleted something: refresh quietly, keeping the list on screen.
+  void _onDataChanged() => _loadNotes(silent: true);
+
+  Future<void> _loadNotes({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
     try {
       final list = await _api.fetchNotes(scope: _currentScope);
+      if (!mounted) return;
       setState(() {
         _allNotes = list;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted || silent) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -262,11 +353,24 @@ class _NotesTabState extends State<NotesTab> {
 
                 Navigator.pop(ctx);
                 try {
-                  final created = await _api.createNote(
-                    title: title.isEmpty ? 'Untitled Note' : title,
-                    content: content,
-                    tags: ['mobile'],
-                  );
+                  final Note created;
+                  try {
+                    created = await _api.createNote(
+                      title: title.isEmpty ? 'Untitled Note' : title,
+                      content: content,
+                      tags: ['mobile'],
+                    );
+                  } catch (e) {
+                    // Desktop unreachable: keep the note on the phone and sync later.
+                    if (!OfflineQueue.isNetworkError(e)) rethrow;
+                    await OfflineQueue.queueNote(title: title.isEmpty ? 'Untitled Note' : title, content: content, tags: ['mobile']);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Saved on your phone. It will sync when Muse is reachable.')),
+                      );
+                    }
+                    return;
+                  }
                   await _loadNotes();
                   if (mounted) {
                     Navigator.push(
@@ -295,13 +399,16 @@ class _NotesTabState extends State<NotesTab> {
     final now = DateTime.now();
     final todayStr = DateFormat('EEEE, MMMM d').format(now);
 
-    final filtered = _allNotes.where((n) {
-      if (_search.isEmpty) return true;
-      final q = _search.toLowerCase();
-      return n.title.toLowerCase().contains(q) ||
-          n.plainText.toLowerCase().contains(q) ||
-          n.tags.any((t) => t.toLowerCase().contains(q));
-    }).toList();
+    final useServerResults = _searchResults != null && _searchResultsFor == _search && _currentScope == 'all';
+    final filtered = useServerResults
+        ? _searchResults!
+        : _allNotes.where((n) {
+            if (_search.isEmpty) return true;
+            final q = _search.toLowerCase();
+            return n.title.toLowerCase().contains(q) ||
+                n.plainText.toLowerCase().contains(q) ||
+                n.tags.any((t) => t.toLowerCase().contains(q));
+          }).toList();
 
     // Divide into Starred and Others when in "all" scope
     final starredNotes = _currentScope == 'all' && _search.isEmpty
@@ -415,16 +522,24 @@ class _NotesTabState extends State<NotesTab> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
                 child: TextField(
+                  controller: _searchController,
                   style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
-                  onChanged: (val) => setState(() => _search = val.trim()),
+                  onChanged: _onSearchChanged,
                   decoration: InputDecoration(
-                    hintText: 'Search title, content, or #tag…',
+                    hintText: _currentScope == 'all' ? 'Search by words or meaning…' : 'Search title, content, or #tag…',
+                    helperText: useServerResults ? 'Matches by keyword and by meaning' : null,
+                    helperStyle: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
                     hintStyle: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
-                    prefixIcon: const Icon(Icons.search, color: AppTheme.textSecondary, size: 20),
+                    prefixIcon: _searching
+                        ? const Padding(
+                            padding: EdgeInsets.all(13),
+                            child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryLight)),
+                          )
+                        : const Icon(Icons.search, color: AppTheme.textSecondary, size: 20),
                     suffixIcon: _search.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear, color: AppTheme.textSecondary, size: 18),
-                            onPressed: () => setState(() => _search = ''),
+                            onPressed: _clearSearch,
                           )
                         : null,
                     filled: true,
@@ -635,6 +750,49 @@ class _NotesTabState extends State<NotesTab> {
       badgeText = 'SPECIALIZED';
     }
 
+    // Swipe right: favorite (or restore, in trash). Swipe left: trash (or
+    // delete forever, in trash).
+    return Dismissible(
+      key: ValueKey('note-${note.id}'),
+      background: _swipeBackground(
+        alignment: Alignment.centerLeft,
+        color: isTrash ? AppTheme.accent : Colors.amber,
+        icon: isTrash ? Icons.restore_rounded : (note.favorite ? Icons.star_outline_rounded : Icons.star_rounded),
+      ),
+      secondaryBackground: _swipeBackground(
+        alignment: Alignment.centerRight,
+        color: Colors.redAccent,
+        icon: isTrash ? Icons.delete_forever_rounded : Icons.delete_outline_rounded,
+      ),
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.startToEnd) {
+          if (isTrash) {
+            await _restoreNote(note);
+          } else {
+            await _toggleFavorite(note);
+          }
+          return false;
+        }
+        if (isTrash) {
+          await _deletePermanently(note); // asks first
+          return false;
+        }
+        return true;
+      },
+      onDismissed: (_) => _trashWithUndo(note),
+      child: _buildNoteCardBody(note, isTrash, dateStr, badgeBg, badgeTextColor, badgeText),
+    );
+  }
+
+  Widget _swipeBackground({required Alignment alignment, required Color color, required IconData icon}) => Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        alignment: alignment,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(16)),
+        child: Icon(icon, color: Colors.white),
+      );
+
+  Widget _buildNoteCardBody(Note note, bool isTrash, String dateStr, Color badgeBg, Color badgeTextColor, String badgeText) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       clipBehavior: Clip.antiAlias,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../data/services/api_service.dart';
+import '../../data/services/offline_queue.dart';
+import '../../data/services/reminder_service.dart';
 import '../../data/services/storage_service.dart';
 import '../theme/app_theme.dart';
 import 'pairing_screen.dart';
@@ -21,11 +23,30 @@ class _SettingsTabState extends State<SettingsTab> {
   bool _isOnline = false;
   bool _checking = true;
   Map<String, dynamic>? _usage;
+  bool _remindersOn = false;
 
   @override
   void initState() {
     super.initState();
     _loadInfo();
+    ReminderService.isEnabled().then((on) {
+      if (mounted) setState(() => _remindersOn = on);
+    });
+  }
+
+  Future<void> _setReminders(bool on) async {
+    final enabled = await ReminderService.setEnabled(on);
+    if (!mounted) return;
+    setState(() => _remindersOn = enabled);
+    if (on && !enabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Notifications are blocked. Allow them for Muse in system settings.')),
+      );
+    } else if (enabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reminders on. They update each time your schedule refreshes.')),
+      );
+    }
   }
 
   Future<void> _loadInfo() async {
@@ -173,6 +194,52 @@ class _SettingsTabState extends State<SettingsTab> {
           ),
           const SizedBox(height: 16),
 
+          // Reminders & offline sync
+          Card(
+            child: Column(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.notifications_active_outlined, color: AppTheme.primaryLight),
+                  title: const Text('Reminders', style: TextStyle(fontSize: 15, color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                    'Notify me when timed tasks are due and 10 minutes before events',
+                    style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  ),
+                  value: _remindersOn,
+                  onChanged: _setReminders,
+                ),
+                const Divider(height: 1, color: AppTheme.surfaceBorder),
+                ValueListenableBuilder<int>(
+                  valueListenable: OfflineQueue.pending,
+                  builder: (context, pending, _) => ListTile(
+                    leading: Icon(
+                      pending == 0 ? Icons.cloud_done_outlined : Icons.cloud_upload_outlined,
+                      color: pending == 0 ? AppTheme.accent : Colors.amber,
+                    ),
+                    title: const Text('Offline captures', style: TextStyle(fontSize: 15, color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
+                    subtitle: Text(
+                      pending == 0 ? 'Everything is synced' : '$pending waiting to sync with Muse desktop',
+                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                    ),
+                    trailing: pending == 0
+                        ? null
+                        : TextButton(
+                            onPressed: () async {
+                              final sent = await OfflineQueue.flush(_api);
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(sent > 0 ? 'Synced $sent item${sent == 1 ? '' : 's'}' : 'Muse is still unreachable')),
+                              );
+                            },
+                            child: const Text('Sync now'),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // AI Quota card
           if (_usage != null) ...[
             Card(
@@ -228,11 +295,12 @@ class _SettingsTabState extends State<SettingsTab> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  const Text(
-                    '• Same Wi-Fi: Connects directly via LAN IP (192.168.100.136:8080).\n'
-                    '• Over Internet: Connect via Tailscale VPN (100.84.254.110:8080) or Cloudflare Tunnel.\n'
-                    '• You can switch addresses at any time in the desktop Link Phone modal.',
-                    style: TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
+                  Text(
+                    '• This phone talks to: ${_serverUrl ?? 'not paired'}\n'
+                    '• Same Wi-Fi: pair using your computer\'s LAN address (shown in the desktop Pair Phone dialog).\n'
+                    '• Over the internet: pair through Tailscale or a Cloudflare Tunnel address instead.\n'
+                    '• To switch addresses, unlink below and scan a new code.',
+                    style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
                   ),
                 ],
               ),

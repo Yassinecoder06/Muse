@@ -31,6 +31,17 @@ class _NoteDetailViewState extends State<NoteDetailView> {
   bool _isDictating = false;
   String _initialDictationText = '';
 
+  // What the editor started with. Saving only sends fields that differ, so
+  // opening a rich web note and toggling a tag does not rewrite its HTML body
+  // as lossy Markdown.
+  late String _savedTitle;
+  late String _savedContent;
+  late List<String> _savedTags;
+
+  // Images in notes are protected, so they load with the device token.
+  Map<String, String> _imageHeaders = const {};
+  String? _serverBase;
+
   @override
   void initState() {
     super.initState();
@@ -38,9 +49,65 @@ class _NoteDetailViewState extends State<NoteDetailView> {
     _contentController = TextEditingController(text: widget.note.markdownContent);
     _favorite = widget.note.favorite;
     _tags = List<String>.from(widget.note.tags);
+    _savedTitle = widget.note.title;
+    _savedContent = _contentController.text;
+    _savedTags = List<String>.from(_tags);
 
     _titleController.addListener(_onTextChanged);
     _contentController.addListener(_onTextChanged);
+    _prepareImages();
+  }
+
+  Future<void> _prepareImages() async {
+    try {
+      final headers = await _api.authHeaders();
+      final base = await _api.resolveUrl('/');
+      if (mounted) {
+        setState(() {
+          _imageHeaders = headers;
+          _serverBase = base.replaceAll(RegExp(r'/+$'), '');
+        });
+      }
+    } catch (_) {}
+  }
+
+  Widget _buildImage(MarkdownImageConfig config) {
+    final raw = config.uri.toString();
+    Widget fallback() => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              const Icon(Icons.broken_image_outlined, size: 18, color: AppTheme.textSecondary),
+              const SizedBox(width: 6),
+              Flexible(child: Text(config.alt?.isNotEmpty == true ? config.alt! : 'Image', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13))),
+            ],
+          ),
+        );
+
+    Widget image;
+    if (raw.startsWith('data:image/')) {
+      image = Image.memory(UriData.parse(raw).contentAsBytes(), errorBuilder: (_, _, _) => fallback());
+    } else if (raw.startsWith('http://') || raw.startsWith('https://') || _serverBase != null) {
+      final url = raw.startsWith('http') ? raw : '$_serverBase${raw.startsWith('/') ? '' : '/'}$raw';
+      // Only send the device token to the Muse server itself.
+      final headers = _serverBase != null && url.startsWith(_serverBase!) ? _imageHeaders : const <String, String>{};
+      image = Image.network(url, headers: headers, errorBuilder: (_, _, _) => fallback());
+    } else {
+      return fallback();
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: ClipRRect(borderRadius: BorderRadius.circular(12), child: image),
+    );
+  }
+
+  bool _sameTags(List<String> a, List<String> b) => a.length == b.length && a.every(b.contains);
+
+  // Both the app-bar arrow and Android's back gesture save first, and stay on
+  // the page if the save failed so edits are never silently dropped.
+  Future<void> _saveAndLeave() async {
+    if (_hasChanges) await _saveNote();
+    if (mounted && !_hasChanges) Navigator.pop(context, true);
   }
 
   void _onTextChanged() {
@@ -134,18 +201,21 @@ class _NoteDetailViewState extends State<NoteDetailView> {
 
     setState(() => _saving = true);
 
+    final nextTitle = title.isEmpty ? 'Untitled Note' : title;
     try {
       await _api.updateNote(
         widget.note.id,
-        title: title.isEmpty ? 'Untitled Note' : title,
-        content: content,
-        tags: _tags,
-        favorite: _favorite,
+        title: nextTitle != _savedTitle ? nextTitle : null,
+        content: content != _savedContent ? content : null,
+        tags: _sameTags(_tags, _savedTags) ? null : _tags,
       );
 
       setState(() {
         _saving = false;
         _hasChanges = false;
+        _savedTitle = nextTitle;
+        _savedContent = content;
+        _savedTags = List<String>.from(_tags);
       });
 
       if (mounted) {
@@ -172,14 +242,14 @@ class _NoteDetailViewState extends State<NoteDetailView> {
 
   Future<void> _toggleFavorite() async {
     final nextFav = !_favorite;
-    setState(() {
-      _favorite = nextFav;
-      _hasChanges = true;
-    });
+    // Saved immediately, so it is not an unsaved change.
+    setState(() => _favorite = nextFav);
 
     try {
       await _api.toggleFavoriteNote(widget.note.id, !nextFav);
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) setState(() => _favorite = !nextFav);
+    }
   }
 
   Future<void> _confirmDelete() async {
@@ -288,6 +358,16 @@ class _NoteDetailViewState extends State<NoteDetailView> {
 
   @override
   Widget build(BuildContext context) {
+    return PopScope(
+      canPop: !_hasChanges,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _saveAndLeave();
+      },
+      child: _buildPage(context),
+    );
+  }
+
+  Widget _buildPage(BuildContext context) {
     final formattedDate = _formatDate(widget.note.updatedAt);
     final wordCount = _countWords(_contentController.text);
 
@@ -354,14 +434,7 @@ class _NoteDetailViewState extends State<NoteDetailView> {
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () async {
-            if (_hasChanges) {
-              await _saveNote();
-            }
-            if (context.mounted) {
-              Navigator.pop(context, true);
-            }
-          },
+          onPressed: _saveAndLeave,
         ),
         actions: [
           IconButton(
@@ -618,6 +691,7 @@ class _NoteDetailViewState extends State<NoteDetailView> {
                       ? _contentController.text
                       : '*No content written yet. Tap "Edit" to write.*',
                   selectable: true,
+                  sizedImageBuilder: _buildImage,
                   styleSheet: MarkdownStyleSheet(
                     h1: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.textPrimary, height: 1.4),
                     h2: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary, height: 1.4),

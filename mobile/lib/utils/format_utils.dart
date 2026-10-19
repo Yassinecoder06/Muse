@@ -83,6 +83,24 @@ class FormatUtils {
       return md.toString();
     });
 
+    // Images and links survive the round trip: Muse Web turns this Markdown
+    // back into <img>/<a> when it renders the note, so saving from the phone
+    // no longer strips attachments.
+    s = s.replaceAllMapped(RegExp(r'<img\b[^>]*>', caseSensitive: false), (m) {
+      final tag = m[0] ?? '';
+      final src = RegExp(r'''src\s*=\s*["']([^"']+)["']''', caseSensitive: false).firstMatch(tag)?[1];
+      if (src == null || src.isEmpty) return '';
+      final alt = RegExp(r'''alt\s*=\s*["']([^"']*)["']''', caseSensitive: false).firstMatch(tag)?[1] ?? '';
+      return '\n\n![$alt]($src)\n\n';
+    });
+    s = s.replaceAllMapped(
+      RegExp(r'''<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>(.*?)</a>''', caseSensitive: false, dotAll: true),
+      (m) {
+        final text = (m[2] ?? '').replaceAll(RegExp(r'<[^>]*>'), '').trim();
+        return '[${text.isEmpty ? m[1] : text}](${m[1]})';
+      },
+    );
+
     // Lists
     s = s.replaceAllMapped(RegExp(r'<li[^>]*>(.*?)</li>', caseSensitive: false, dotAll: true), (m) => '\n* ${m[1]?.trim()}');
     s = s.replaceAll(RegExp(r'</?(?:ul|ol)[^>]*>', caseSensitive: false), '\n');
