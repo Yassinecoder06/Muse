@@ -1,4 +1,5 @@
-import { COLLECTION, qdrant } from '../qdrant/client.js'
+import { qdrant } from '../qdrant/client.js'
+import { vectors } from './vector.service.js'
 import { notes } from './note.repository.js'
 
 export type GraphNode = { id: string; title: string; kind: string; tags: string[]; updated_at: string }
@@ -24,19 +25,22 @@ function cosine(a: number[], b: number[]) {
 }
 
 async function userVectors(userId: string) {
-  const vectors = new Map<string, number[]>()
+  const found = new Map<string, number[]>()
+  const collection = await vectors.collectionFor(userId)
   let offset: string | number | undefined
   do {
-    const page = await qdrant.scroll(COLLECTION, { filter: { must: [{ key: 'userId', match: { value: userId } }] }, with_vector: true, limit: 100, ...(offset !== undefined ? { offset } : {}) })
+    // A new embedding model's collection may not exist until its first re-index.
+    const page = await qdrant.scroll(collection, { filter: { must: [{ key: 'userId', match: { value: userId } }] }, with_vector: true, limit: 100, ...(offset !== undefined ? { offset } : {}) }).catch(() => null)
+    if (!page) return found
     for (const point of page.points) {
       const noteId = String((point.payload as Record<string, unknown>)?.noteId || point.id || '')
       const vector = Array.isArray(point.vector) ? point.vector as number[] : []
-      if (noteId && vector.length) vectors.set(noteId, vector)
+      if (noteId && vector.length) found.set(noteId, vector)
     }
     const next = page.next_page_offset
     offset = typeof next === 'string' || typeof next === 'number' ? next : undefined
   } while (offset !== undefined)
-  return vectors
+  return found
 }
 
 export async function graph(userId: string): Promise<GraphData> {

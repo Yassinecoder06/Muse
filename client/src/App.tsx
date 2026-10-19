@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom'
-import { Bot, Cpu, KeyRound, Mic, Moon, RefreshCw, Settings, Smartphone, Sparkles, Sun, User, Volume2, X } from 'lucide-react'
+import { Bot, Cpu, Mic, Moon, RefreshCw, Settings, Smartphone, Sparkles, Sun, User, Volume2, X } from 'lucide-react'
 import { api, type AiUsage, type SettingsResponse } from './services/api'
 import { chatModel, setChatModel } from './services/settings'
 import { robotAudio, loadVoiceSettings, saveVoiceSettings } from './services/robot-audio.service'
@@ -23,6 +23,7 @@ import { SpecializedNotePanel } from './components/SpecializedNotePanel'
 import { RobotCompanion } from './components/RobotCompanion/RobotCompanion'
 import { RemotePairingModal } from './components/RemotePairingModal'
 import { OwnerGate } from './components/OwnerGate'
+import { AiProvidersPanel } from './components/AiProvidersPanel'
 import { BipAlarmCenter } from './components/BipAlarmCenter'
 import type { CustomTemplate } from './services/templates'
 
@@ -41,14 +42,7 @@ function MuseApp() {
   const [settings, setSettings] = useState(false)
   const [remoteModalOpen, setRemoteModalOpen] = useState(false)
   const [toast, setToast] = useState('')
-  const [models, setModels] = useState<string[]>([])
   const [apiKeyState, setApiKeyState] = useState<SettingsResponse | null>(null)
-  const [geminiKeyDraft, setGeminiKeyDraft] = useState('')
-  const [ollamaKeyDraft, setOllamaKeyDraft] = useState('')
-  const [geminiKeySaving, setGeminiKeySaving] = useState(false)
-  const [ollamaKeySaving, setOllamaKeySaving] = useState(false)
-  const [geminiKeyError, setGeminiKeyError] = useState('')
-  const [ollamaKeyError, setOllamaKeyError] = useState('')
   const [usage, setUsage] = useState<AiUsage | null>(null)
   const [usageError, setUsageError] = useState('')
   const [activeModel, setActiveModel] = useState<string>(() => chatModel())
@@ -149,9 +143,11 @@ function MuseApp() {
     localStorage.setItem('muse-show-bip', showBip ? 'true' : 'false')
   }, [showBip])
 
+  // The old per-request model picker is gone (Settings → AI providers holds the
+  // chat model and its fallbacks); drop a stale choice so it can't override them.
   useEffect(() => {
     const current = chatModel()
-    if (current && current.toLowerCase().includes('gemma') && !current.includes('cloud')) {
+    if (current && !/^[0-9a-f-]{36}:/i.test(current)) {
       setChatModel('')
       setActiveModel('')
     }
@@ -160,22 +156,11 @@ function MuseApp() {
   useEffect(() => {
     if (!settings) return
     let cancelled = false
-    void api.listModels().then(list => { if (!cancelled) setModels(Array.isArray(list) ? list : []) }).catch(() => { if (!cancelled) setModels([]) })
-    return () => { cancelled = true }
-  }, [settings])
-
-  useEffect(() => {
-    if (!settings) return
-    let cancelled = false
-    setGeminiKeyError(''); setOllamaKeyError(''); setUsageError('')
+    setUsageError('')
     const currentM = chatModel()
     setActiveModel(currentM)
     void api.getSettings().then(state => {
-      if (!cancelled) {
-        setApiKeyState(state)
-        if (!state.hasGeminiKey) setGeminiKeyDraft('')
-        if (!state.hasOllamaKey) setOllamaKeyDraft('')
-      }
+      if (!cancelled) setApiKeyState(state)
     }).catch(() => { if (!cancelled) setApiKeyState(null) })
     void api.getAiUsage({
       model: currentM || undefined,
@@ -196,64 +181,6 @@ function MuseApp() {
       }))
     }
     catch (error) { setUsage(null); setUsageError(error instanceof Error ? error.message : 'Usage could not be loaded.') }
-  }
-
-  async function saveGeminiKey() {
-    setGeminiKeySaving(true); setGeminiKeyError('')
-    try {
-      const state = await api.saveApiKey(geminiKeyDraft.trim(), 'gemini')
-      setApiKeyState(state)
-      setGeminiKeyDraft('')
-      setToast('Google Gemini API key saved! Auto-routing is active.')
-      void refreshUsage()
-    } catch (error) {
-      setGeminiKeyError(error instanceof Error ? error.message : 'Could not save Gemini key.')
-    } finally {
-      setGeminiKeySaving(false)
-    }
-  }
-
-  async function removeGeminiKey() {
-    setGeminiKeySaving(true); setGeminiKeyError('')
-    try {
-      const state = await api.deleteApiKey('gemini')
-      setApiKeyState(state)
-      setToast('Google Gemini API key removed.')
-      void refreshUsage()
-    } catch (error) {
-      setGeminiKeyError(error instanceof Error ? error.message : 'Could not remove Gemini key.')
-    } finally {
-      setGeminiKeySaving(false)
-    }
-  }
-
-  async function saveOllamaKey() {
-    setOllamaKeySaving(true); setOllamaKeyError('')
-    try {
-      const state = await api.saveApiKey(ollamaKeyDraft.trim(), 'ollama')
-      setApiKeyState(state)
-      setOllamaKeyDraft('')
-      setToast('Ollama API key saved.')
-      void refreshUsage()
-    } catch (error) {
-      setOllamaKeyError(error instanceof Error ? error.message : 'Could not save Ollama key.')
-    } finally {
-      setOllamaKeySaving(false)
-    }
-  }
-
-  async function removeOllamaKey() {
-    setOllamaKeySaving(true); setOllamaKeyError('')
-    try {
-      const state = await api.deleteApiKey('ollama')
-      setApiKeyState(state)
-      setToast('Ollama API key removed.')
-      void refreshUsage()
-    } catch (error) {
-      setOllamaKeyError(error instanceof Error ? error.message : 'Could not remove Ollama key.')
-    } finally {
-      setOllamaKeySaving(false)
-    }
   }
 
   useEffect(() => {
@@ -403,96 +330,7 @@ function MuseApp() {
             <span><Settings size={17}/><span><strong>Appearance</strong><small>Choose the interface theme.</small></span></span>
             <button className="setting-toggle" onClick={() => setDark(!dark)}>{dark ? <><Sun size={16}/> Light</> : <><Moon size={16}/> Dark</>}</button>
           </div>
-          <div className="setting-row">
-            <span>
-              <KeyRound size={17}/>
-              <span>
-                <strong>
-                  Google Gemini API key (Free Tier)
-                  {apiKeyState?.hasGeminiKey ? <em className="saved-badge">Active · Priority</em> : null}
-                </strong>
-                <small>
-                  Priority provider with auto-routing (Gemini 3.8 & 3.5).{' '}
-                  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline', color: 'inherit' }}>
-                    Get free key at Google AI Studio ↗
-                  </a>
-                </small>
-              </span>
-            </span>
-            <span className="api-key-controls">
-              <input
-                type="password"
-                className="setting-input"
-                placeholder={apiKeyState?.hasGeminiKey ? 'Replace key…' : 'AIzaSy… (free key)'}
-                value={geminiKeyDraft}
-                onChange={e => setGeminiKeyDraft(e.target.value)}
-              />
-              <span className="api-key-actions">
-                <button
-                  className="setting-save"
-                  onClick={() => void saveGeminiKey()}
-                  disabled={geminiKeySaving || !geminiKeyDraft.trim()}
-                >
-                  {geminiKeySaving ? 'Saving…' : 'Save'}
-                </button>
-                {apiKeyState?.hasGeminiKey ? (
-                  <button
-                    className="setting-remove"
-                    onClick={() => void removeGeminiKey()}
-                    disabled={geminiKeySaving}
-                  >
-                    Remove
-                  </button>
-                ) : null}
-              </span>
-            </span>
-          </div>
-          {geminiKeyError && <p className="setting-error">{geminiKeyError}</p>}
-          <div className="setting-row">
-            <span>
-              <KeyRound size={17}/>
-              <span>
-                <strong>
-                  Ollama Cloud key (Optional Fallback)
-                  {apiKeyState?.hasOllamaKey ? <em className="saved-badge">Saved</em> : null}
-                </strong>
-                <small>
-                  Fallback when Gemini is unavailable. Local Ollama needs no key.{' '}
-                  <a href="https://ollama.com/settings/keys" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline', color: 'inherit' }}>
-                    Get key at ollama.com ↗
-                  </a>
-                </small>
-              </span>
-            </span>
-            <span className="api-key-controls">
-              <input
-                type="password"
-                className="setting-input"
-                placeholder={apiKeyState?.hasOllamaKey ? 'Replace key…' : 'ollama-… (optional)'}
-                value={ollamaKeyDraft}
-                onChange={e => setOllamaKeyDraft(e.target.value)}
-              />
-              <span className="api-key-actions">
-                <button
-                  className="setting-save"
-                  onClick={() => void saveOllamaKey()}
-                  disabled={ollamaKeySaving || !ollamaKeyDraft.trim()}
-                >
-                  {ollamaKeySaving ? 'Saving…' : 'Save'}
-                </button>
-                {apiKeyState?.hasOllamaKey ? (
-                  <button
-                    className="setting-remove"
-                    onClick={() => void removeOllamaKey()}
-                    disabled={ollamaKeySaving}
-                  >
-                    Remove
-                  </button>
-                ) : null}
-              </span>
-            </span>
-          </div>
-          {ollamaKeyError && <p className="setting-error">{ollamaKeyError}</p>}
+          <AiProvidersPanel onToast={setToast}/>
           <div className="usage-card">
             <header>
               <span>
@@ -577,37 +415,6 @@ function MuseApp() {
             )}
           </div>
           <div className="setting-row">
-            <span><Cpu size={17}/><span><strong>Chat model</strong><small>AI model used for this app's requests.</small></span></span>
-            <select
-              className="setting-select"
-              value={activeModel}
-              onChange={e => {
-                const newModel = e.target.value
-                setChatModel(newModel)
-                setActiveModel(newModel)
-                setToast(newModel ? `Chat model: ${newModel}` : 'Chat model: Default (Auto · Waterfall Cascade)')
-                void refreshUsage(newModel, usageProviderTab)
-              }}
-            >
-              {[{ value: '', label: 'Default (Auto · Waterfall Cascade)' }, ...(Array.isArray(models) ? models : [])
-                .filter(name => name !== 'beam' && !(name.toLowerCase().includes('gemma') && !name.includes('cloud')))
-                .map(name => {
-                  let label = name
-                  if (name === 'beam:cloud') label = 'beam:cloud (Reflection AI · 501B MoE · Cloud)'
-                  else if (name === 'gemini-3.8-flash') label = `${name} (Top Intelligence · 20 Req/Day Limit)`
-                  else if (name === 'gemini-3.7-flash') label = `${name} (Advanced Reasoning)`
-                  else if (name === 'gemini-3.6-flash') label = `${name} (High Capability)`
-                  else if (name === 'gemini-3.5-flash') label = `${name} (Standard · High Quota)`
-                  else if (name === 'gemini-3.5-flash-lite') label = `${name} (Fast · High Quota)`
-                  else if (name === 'gemini-3.1-flash-lite') label = `${name} (Ultra-Fast · High Quota)`
-                  else if (name.startsWith('gemini-')) label = `${name} (Gemini)`
-                  else if (name.includes('cloud')) label = `${name} (Cloud)`
-                  else label = `${name} (Local)`
-                  return { value: name, label }
-                })].map(option => <option key={option.value || 'default'} value={option.value}>{option.label}</option>)}
-            </select>
-          </div>
-          <div className="setting-row">
             <span><Bot size={17}/><span><strong>Bip the Robot Helper</strong><small>Cute companion that moves around and helps you.</small></span></span>
             <button className="setting-toggle" onClick={() => setShowBip(!showBip)}>{showBip ? 'Enabled' : 'Hidden'}</button>
           </div>
@@ -630,8 +437,8 @@ function MuseApp() {
               value={voiceSettings.ttsEngine || 'neural'}
               onChange={e => updateVoicePref({ ttsEngine: e.target.value as 'neural' | 'native' })}
             >
-              <option value="neural">Neural AI Voice (Smooth, Ultra-Realistic & Clear · Recommended)</option>
-              <option value="native">Browser Built-in Voice (SpeechSynthesis · Local Offline)</option>
+              <option value="neural">Muse voice (your read-aloud choice in AI providers)</option>
+              <option value="native">Browser built-in voice (offline)</option>
             </select>
           </div>
 
@@ -640,8 +447,8 @@ function MuseApp() {
               <span>
                 <Sparkles size={17}/>
                 <span>
-                  <strong>Neural Voice (Female)</strong>
-                  <small>Smooth, expressive, human-grade female voice.</small>
+                  <strong>Edge neural voice</strong>
+                  <small>Used when read-aloud is set to the Edge voices.</small>
                 </span>
               </span>
               <select
@@ -693,8 +500,8 @@ function MuseApp() {
               value={voiceSettings.sttEngine || 'gemini'}
               onChange={e => updateVoicePref({ sttEngine: e.target.value as 'gemini' | 'native' })}
             >
-              <option value="gemini">Gemini 3.5 Flash ASR (High Accuracy AI · Recommended)</option>
-              <option value="native">Browser Web Speech API (Local Built-in)</option>
+              <option value="gemini">Muse server (your dictation choice in AI providers)</option>
+              <option value="native">Browser speech recognition (built-in)</option>
             </select>
           </div>
 

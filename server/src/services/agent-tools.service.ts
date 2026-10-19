@@ -1154,7 +1154,7 @@ export async function executeAgentTool(
 
         if (!options.confirmed) return confirmationRequest(userId, name, args, { id: targetId, title: targetTitle, itemType: 'Note', status: 'Permanently delete' })
         await notes.deletePermanently(userId, targetId)
-        void vectors.deleteVector(targetId)
+        void vectors.deleteVector(targetId, userId)
 
         return {
           toolName: name,
@@ -1184,7 +1184,7 @@ export async function executeAgentTool(
 
         if (!options.confirmed) return confirmationRequest(userId, name, args, { title: `${ids.length} note${ids.length === 1 ? '' : 's'} in trash`, itemType: 'Trash', status: 'Permanently delete' })
         await notes.deleteMany(userId, ids)
-        void vectors.deleteVectors(ids)
+        void vectors.deleteVectors(ids, userId)
 
         return {
           toolName: name,

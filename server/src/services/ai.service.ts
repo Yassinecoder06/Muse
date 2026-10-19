@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { GoogleGenAI } from '@google/genai'
 import { env } from '../utils/env.js'
 import { settings } from './settings.repository.js'
+import { generateText } from './providers/router.js'
 
 export const OLLAMA_CLOUD_URL = 'https://ollama.com'
 export const OLLAMA_LOCAL_URL = (env.OLLAMA_EMBEDDING_BASE_URL || 'http://localhost:11434').replace(/\/$/, '')
@@ -309,6 +310,18 @@ async function chat(
   taskType: TaskType = 'general'
 ): Promise<string> {
   const { geminiKey, ollamaKey, userId } = extractKeys(keyContext)
+
+  // 0. The user's own models (Settings → AI providers): chosen chat model,
+  // then their fallbacks. Returns null when none are set, or all failed.
+  if (userId) {
+    const system = messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n')
+    const turns = messages.filter((m): m is Message & { role: 'user' | 'assistant' } => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content }))
+    const text = await generateText(userId, { system: system || undefined, messages: turns }, model, taskType).catch(() => null)
+    if (text !== null) return text
+  }
+  // A provider model ref ("<provider id>:<model>") means nothing to the
+  // built-in routing below.
+  if (model && /^[0-9a-f-]{36}:/i.test(model)) model = undefined
 
   // 1. Try Gemini first if key is present (Gemini Priority)
   if (geminiKey) {
