@@ -42,6 +42,9 @@ services:
       - ./supabase/migrations/011_gemini_and_usage.sql:/docker-entrypoint-initdb.d/zz_011_gemini_and_usage.sql:ro
       - ./supabase/migrations/012_chat_sessions_and_memory.sql:/docker-entrypoint-initdb.d/zz_012_chat_sessions_and_memory.sql:ro
       - ./supabase/migrations/013_remote_companion.sql:/docker-entrypoint-initdb.d/zz_013_remote_companion.sql:ro
+      - ./supabase/migrations/014_specialized_templates.sql:/docker-entrypoint-initdb.d/zz_014_specialized_templates.sql:ro
+      - ./supabase/migrations/015_security_hardening.sql:/docker-entrypoint-initdb.d/zz_015_security_hardening.sql:ro
+      - ./supabase/migrations/016_ai_job_per_user.sql:/docker-entrypoint-initdb.d/zz_016_ai_job_per_user.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s

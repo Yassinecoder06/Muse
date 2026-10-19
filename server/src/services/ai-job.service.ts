@@ -18,6 +18,8 @@ export const jobs = {
     if (activeError) throw activeError
     if (active?.length) throw new AiQueueLimitError('Muse is already working on one of your requests. Please wait a moment.')
     const { data, error } = await supabase.from('ai_jobs').insert({ user_id: userId, note_id: noteId, type, payload }).select().single()
+    // The partial unique index (migration 016) catches the race the check above can't.
+    if (error?.code === '23505') throw new AiQueueLimitError('Muse is already working on one of your requests. Please wait a moment.')
     if (error) throw error
     const { count } = await supabase.from('ai_jobs').select('*', { count: 'exact', head: true }).eq('status', 'queued').lte('created_at', data.created_at)
     return { ...data, queuePosition: count || 1 } as AiJob & { queuePosition: number }
@@ -79,7 +81,8 @@ async function process(job: AiJob) {
   else if (job.type === 'ask_note') result = { answer: await ai.askCurrentNote(job.payload.question!, `${note!.title}\n${stripImages(note!.content)}`, job.payload?.history, model, keyContext), sources: [{ id: note!.id, title: note!.title }] }
   else if (job.type === 'ask_search') {
     const ids = await vectors.searchSimilarNotes(job.user_id, job.payload.question || '')
-    const found = (await Promise.all(ids.map(id => notes.get(job.user_id, id).catch(() => null)))).filter(Boolean)
+    // Trashed notes keep their vectors (so restore is instant) but must not feed answers.
+    const found = (await Promise.all(ids.map(id => notes.get(job.user_id, id).catch(() => null)))).filter(note => note && !note.deleted_at)
     const budget = contextBudgetChars()
     const perNote = Math.max(1500, Math.floor(budget / Math.max(found.length, 1)))
     const context = found.map((item: any) => `# ${item.title}\n${stripImages(item.content).slice(0, perNote)}`).join('\n\n')
@@ -107,20 +110,27 @@ async function process(job: AiJob) {
 }
 
 const debugRewrite = () => (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.DEBUG_REWRITE === '1'
+// Several loops so one long research report doesn't block everyone else's
+// summaries. claim_next_ai_job uses SKIP LOCKED, so loops never grab the same job.
+const WORKER_CONCURRENCY = Math.min(8, Math.max(1, Number(globalThis.process?.env?.AI_WORKER_CONCURRENCY) || 2))
 let running = false
 export function startAiWorker() {
   if (running) return
   running = true
   let lastMaintenance = 0
-  const loop = async () => {
-    try {
-      if (Date.now() - lastMaintenance > 60_000) { await supabase.rpc('requeue_stuck_ai_jobs'); await jobs.cleanup(); lastMaintenance = Date.now() }
-      const { data, error } = await supabase.rpc('claim_next_ai_job')
-      if (error) throw error
-      const job = (data || [])[0] as AiJob | undefined
-      if (job) { try { await jobs.complete(job.id, await process(job)) } catch (error) { await jobs.fail(job.id, error) } }
-      setTimeout(loop, job ? 0 : 1000)
-    } catch (error) { console.error('AI queue worker error', error); setTimeout(loop, 3000) }
+  for (let worker = 0; worker < WORKER_CONCURRENCY; worker++) void workerLoop(worker === 0)
+
+  async function workerLoop(doesMaintenance: boolean) {
+    const loop = async () => {
+      try {
+        if (doesMaintenance && Date.now() - lastMaintenance > 60_000) { await supabase.rpc('requeue_stuck_ai_jobs'); await jobs.cleanup(); lastMaintenance = Date.now() }
+        const { data, error } = await supabase.rpc('claim_next_ai_job')
+        if (error) throw error
+        const job = (data || [])[0] as AiJob | undefined
+        if (job) { try { await jobs.complete(job.id, await process(job)) } catch (error) { await jobs.fail(job.id, error) } }
+        setTimeout(loop, job ? 0 : 1000)
+      } catch (error) { console.error('AI queue worker error', error); setTimeout(loop, 3000) }
+    }
+    await loop()
   }
-  void loop()
 }

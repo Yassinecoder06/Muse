@@ -90,7 +90,12 @@ export async function secureStream(req: Request, res: Response, next: NextFuncti
     const keyContext = { geminiKey, ollamaKey, userId: user(req) }
     res.status(200).set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' })
     res.flushHeaders()
-    const emit = (event: 'progress' | 'result' | 'error', value: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`)
+    // Closing the tab ends the request; stop before starting the next model
+    // call instead of finishing work nobody will receive.
+    let clientGone = false
+    res.on('close', () => { if (!res.writableEnded) clientGone = true })
+    const stillWanted = () => { if (clientGone) throw Object.assign(new Error('Client disconnected.'), { clientGone: true }) }
+    const emit = (event: 'progress' | 'result' | 'error', value: unknown) => { stillWanted(); res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`) }
     const source = stripImages(body.note.content)
     const specialty = body.note.specialized?.aiInstruction ? ` Follow this specialized-note instruction: ${body.note.specialized.aiInstruction}` : ''
     const patch: Record<string, unknown> = {}
@@ -108,6 +113,7 @@ export async function secureStream(req: Request, res: Response, next: NextFuncti
     } else {
       emit('progress', { message: 'Creating a title' })
       patch.title = body.note.title.trim() || await ai.generateTitle(`${source}${specialty}`, body.model, keyContext)
+      stillWanted()
       emit('progress', { message: 'Finding key themes' })
       patch.tags = await ai.generateTags(`${source}${specialty}`, body.model, keyContext)
       emit('progress', { message: 'Writing a summary' })
@@ -116,6 +122,7 @@ export async function secureStream(req: Request, res: Response, next: NextFuncti
     emit('result', { patch })
     res.end()
   } catch (error) {
+    if ((error as { clientGone?: boolean })?.clientGone) return
     if (res.headersSent) { res.write(`event: error\ndata: ${JSON.stringify({ error: error instanceof Error ? error.message : 'Muse could not complete this request.' })}\n\n`); res.end(); return }
     next(error)
   }

@@ -2,6 +2,9 @@ import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { supabase } from '../supabase/client.js'
 import { runAgentConversation } from '../services/agent.service.js'
+import { executeAgentTool, CONFIRMATION_REQUIRED_TOOLS } from '../services/agent-tools.service.js'
+import { consumeConfirmationToken } from '../services/agent-confirmation.service.js'
+import { requestTimezone } from '../utils/timezone.js'
 
 const createSessionSchema = z.object({
   title: z.string().trim().max(100).optional().default('New Conversation'),
@@ -14,9 +17,9 @@ const updateSessionSchema = z.object({
 })
 
 const sendMessageSchema = z.object({
-  message: z.string().trim().min(1, 'Message cannot be empty'),
-  model: z.string().optional(),
-  userName: z.string().optional()
+  message: z.string().trim().min(1, 'Message cannot be empty').max(8000),
+  model: z.string().max(100).optional(),
+  userName: z.string().max(80).optional()
 })
 
 const createMemorySchema = z.object({
@@ -159,7 +162,8 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
       sessionId,
       messageText: body.message,
       model: body.model,
-      userName: body.userName
+      userName: body.userName,
+      timezone: requestTimezone(req)
     })
 
     res.json(output)
@@ -169,7 +173,7 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
 }
 
 const updateMessageSchema = z.object({
-  content: z.string().trim().min(1, 'Message cannot be empty')
+  content: z.string().trim().min(1, 'Message cannot be empty').max(8000)
 })
 
 export async function updateMessage(req: Request, res: Response, next: NextFunction) {
@@ -276,15 +280,26 @@ export async function deleteMemory(req: Request, res: Response, next: NextFuncti
 export async function directChat(req: Request, res: Response, next: NextFunction) {
   try {
     const body = z.object({
-      message: z.string().trim().min(1, 'Message cannot be empty'),
+      message: z.string().trim().min(1, 'Message cannot be empty').max(8000),
       sessionId: z.string().uuid().optional(),
-      model: z.string().optional(),
-      userName: z.string().optional()
+      model: z.string().max(100).optional(),
+      userName: z.string().max(80).optional()
     }).parse(req.body)
 
     let sessionId = body.sessionId
 
-    if (!sessionId) {
+    if (sessionId) {
+      const { data: owned } = await supabase
+        .from('chat_sessions')
+        .select('id')
+        .eq('id', sessionId)
+        .eq('user_id', req.userId!)
+        .maybeSingle()
+      if (!owned) {
+        res.status(404).json({ error: 'Chat session not found' })
+        return
+      }
+    } else {
       const { data: existing } = await supabase
         .from('chat_sessions')
         .select('id')
@@ -317,7 +332,8 @@ export async function directChat(req: Request, res: Response, next: NextFunction
       sessionId: sessionId!,
       messageText: body.message,
       model: body.model,
-      userName: body.userName
+      userName: body.userName,
+      timezone: requestTimezone(req)
     })
 
     const reply = output.assistantMessage.content
@@ -328,6 +344,26 @@ export async function directChat(req: Request, res: Response, next: NextFunction
       actionCards: output.assistantMessage.action_cards || [],
       toolCalls: output.assistantMessage.tool_calls || []
     })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// Runs a destructive tool the agent proposed, after the user pressed Confirm.
+export async function confirmAgentAction(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { token } = z.object({ token: z.string().min(1).max(4000) }).parse(req.body)
+    const pending = consumeConfirmationToken(req.userId!, token)
+    if (!pending || !CONFIRMATION_REQUIRED_TOOLS.has(pending.tool)) {
+      res.status(410).json({ error: 'This confirmation expired or was already used. Ask Bip again.' })
+      return
+    }
+    const execution = await executeAgentTool(req.userId!, pending.tool, pending.args, { confirmed: true, timezone: requestTimezone(req) })
+    if (execution.error) {
+      res.status(400).json({ error: execution.error })
+      return
+    }
+    res.json({ result: execution.result, actionCard: execution.actionCard })
   } catch (error) {
     next(error)
   }

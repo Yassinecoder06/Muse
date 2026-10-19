@@ -54,7 +54,7 @@ export const notes = {
   async setGenerated(userId: string, id: string, values: { title?: string; summary?: string | null; tags?: string[] }) {
     const { tags, ...data } = values
     const encrypted = { ...data, title: encryptIfPresent(userId, data.title), summary: encryptIfPresent(userId, data.summary) }
-    if (Object.keys(data).length) { const { error } = await supabase.from('notes').update(data).eq('id', id).eq('user_id', userId); if (error) throw error }
+    if (Object.keys(data).length) { const { error } = await supabase.from('notes').update(encrypted).eq('id', id).eq('user_id', userId); if (error) throw error }
     if (tags) await tagsFor(userId, id, tags)
     return this.get(userId, id)
   },

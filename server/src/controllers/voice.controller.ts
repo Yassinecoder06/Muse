@@ -1,6 +1,40 @@
 import type { Request, Response, NextFunction } from 'express'
 import { GoogleGenAI } from '@google/genai'
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts'
 import { settings } from '../services/settings.repository.js'
+
+const ALLOWED_NEURAL_VOICES = [
+  'en-US-JennyNeural',
+  'en-US-AriaNeural',
+  'en-US-AvaNeural',
+  'en-GB-SoniaNeural',
+  'en-AU-NatashaNeural'
+]
+
+export async function synthesizeSpeech(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { text, voice = 'en-US-JennyNeural' } = req.body || {}
+    if (!text || typeof text !== 'string' || text.trim().length === 0) {
+      return res.status(400).json({ error: 'Text is required for speech synthesis' })
+    }
+    if (text.length > 5000) {
+      return res.status(413).json({ error: 'Text is too long to read aloud (5000 characters max).' })
+    }
+
+    const selectedVoice = ALLOWED_NEURAL_VOICES.includes(voice) ? voice : 'en-US-JennyNeural'
+
+    const tts = new MsEdgeTTS()
+    await tts.setMetadata(selectedVoice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3)
+    const { audioStream } = await tts.toStream(text.trim())
+
+    res.setHeader('Content-Type', 'audio/mpeg')
+    // The audio is the user's private note text read aloud.
+    res.setHeader('Cache-Control', 'private, no-store')
+    audioStream.pipe(res)
+  } catch (err) {
+    next(err)
+  }
+}
 
 export async function transcribeAudio(req: Request, res: Response, next: NextFunction) {
   try {

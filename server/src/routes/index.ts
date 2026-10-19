@@ -10,17 +10,26 @@ import * as detection from '../controllers/detection.controller.js'
 import * as chat from '../controllers/chat.controller.js'
 import * as voice from '../controllers/voice.controller.js'
 import * as remote from '../controllers/remote.controller.js'
+import * as templates from '../controllers/templates.controller.js'
+import * as ownerAuth from '../controllers/owner.controller.js'
 import { requireAuth } from '../middleware/auth.js'
+import { apiLimiter, loginLimiter, pairingLimiter } from '../middleware/rate-limit.js'
 import { graph } from '../services/graph.service.js'
 
 export const router = Router()
 
-// Passkey endpoints retained for backward compatibility (no-op / open in local mode)
-router.post('/auth/passkeys/authentication/options', vault.authenticationOptions)
-router.post('/auth/passkeys/authentication/verify', vault.verifyAuthentication)
+// Public: owner unlock, passkey sign-in, logout, and claiming a pairing code
+// (the phone has no credentials until the claim succeeds).
+router.get('/auth/owner', ownerAuth.ownerStatus)
+router.post('/auth/owner/setup', loginLimiter, ownerAuth.setupOwner)
+router.post('/auth/owner/login', loginLimiter, ownerAuth.loginOwner)
+router.post('/auth/passkeys/authentication/options', loginLimiter, vault.authenticationOptions)
+router.post('/auth/passkeys/authentication/verify', loginLimiter, vault.verifyAuthentication)
 router.delete('/auth/session', vault.logout)
+router.post('/remote/pairing/claim', pairingLimiter, remote.claimPairingSession)
 
 router.use(requireAuth)
+router.use(apiLimiter)
 
 // Session & Vault
 router.post('/auth/session', vault.createFallbackSession)
@@ -38,6 +47,7 @@ router.delete('/auth/passkeys/:id', vault.revokePasskey)
 router.get('/graph', async (req, res, next) => { try { res.json(await graph(req.userId!)) } catch (error) { next(error) } })
 router.delete('/notes/bulk', notes.bulkDeleteNotes).post('/notes/bulk-restore', notes.bulkRestoreNotes).post('/notes/bulk-trash', notes.bulkTrashNotes)
 router.delete('/notes/trash', notes.emptyTrash)
+router.get('/notes/search', notes.searchNotes)
 router.get('/notes', notes.listNotes).post('/notes', notes.createNote)
 router.get('/notes/:id', notes.getNote).put('/notes/:id', notes.updateNote).delete('/notes/:id', notes.deleteNote)
 router.post('/notes/:id/restore', notes.restoreNote).delete('/notes/:id/permanent', notes.deleteNotePermanently)
@@ -81,9 +91,11 @@ router.post('/chat/sessions/:id/messages', chat.sendMessage)
 router.patch('/chat/messages/:id', chat.updateMessage)
 router.delete('/chat/messages/:id', chat.deleteMessage)
 router.post('/ai/chat', chat.directChat)
+router.post('/agent/confirm', chat.confirmAgentAction)
 
-// Voice Transcribe Fallback
+// Voice Transcribe Fallback & Neural Speech Synthesis
 router.post('/voice/transcribe', express.raw({ type: () => true, limit: '15mb' }), voice.transcribeAudio)
+router.post('/voice/speak', voice.synthesizeSpeech)
 
 // Memories
 router.get('/chat/memories', chat.listMemories)
@@ -93,8 +105,15 @@ router.delete('/chat/memories/:id', chat.deleteMemory)
 // Remote Mobile Companion
 router.get('/remote/network-info', remote.getNetworkInfo)
 router.post('/remote/pairing/create', remote.createPairingSession)
-router.post('/remote/pairing/claim', remote.claimPairingSession)
 router.get('/remote/pairing/status', remote.checkPairingStatus)
 router.get('/remote/devices', remote.listDevices)
 router.delete('/remote/devices/:id', remote.revokeDevice)
+
+// Specialized Templates
+router.get('/templates', templates.listTemplates)
+router.get('/templates/:id', templates.getTemplate)
+router.post('/templates', templates.createTemplate)
+router.put('/templates/:id', templates.updateTemplate)
+router.delete('/templates/:id', templates.deleteTemplate)
+
 
