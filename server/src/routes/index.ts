@@ -14,14 +14,14 @@ import * as templates from '../controllers/templates.controller.js'
 import * as providers from '../controllers/ai-providers.controller.js'
 import * as ownerAuth from '../controllers/owner.controller.js'
 import * as analytics from '../controllers/analytics.controller.js'
+import * as music from '../controllers/music.controller.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter, loginLimiter, pairingLimiter } from '../middleware/rate-limit.js'
 import { graph } from '../services/graph.service.js'
 
 export const router = Router()
 
-// Public: owner unlock, passkey sign-in, logout, and claiming a pairing code
-// (the phone has no credentials until the claim succeeds).
+// Public: owner unlock, passkey sign-in, logout, claiming a pairing code, and music streaming
 router.get('/auth/owner', ownerAuth.ownerStatus)
 router.post('/auth/owner/setup', loginLimiter, ownerAuth.setupOwner)
 router.post('/auth/owner/login', loginLimiter, ownerAuth.loginOwner)
@@ -29,6 +29,8 @@ router.post('/auth/passkeys/authentication/options', loginLimiter, vault.authent
 router.post('/auth/passkeys/authentication/verify', loginLimiter, vault.verifyAuthentication)
 router.delete('/auth/session', vault.logout)
 router.post('/remote/pairing/claim', pairingLimiter, remote.claimPairingSession)
+router.get('/music/stream/:filename', music.streamSong)
+router.get('/music/songs', music.listSongs)
 
 router.use(requireAuth)
 router.use(apiLimiter)

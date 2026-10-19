@@ -84,6 +84,15 @@ export interface ConfirmRequiredActionCard {
   token: string
 }
 
+export interface MusicActionCard {
+  type: 'music'
+  id?: string
+  title: string
+  filename?: string
+  url?: string
+  status?: string
+}
+
 export type ActionCard =
   | ConfirmRequiredActionCard
   | NoteActionCard
@@ -93,6 +102,7 @@ export type ActionCard =
   | TemplateActionCard
   | SpecializedNoteActionCard
   | DeletedItemActionCard
+  | MusicActionCard
 
 export interface ChatMessage {
   id: string

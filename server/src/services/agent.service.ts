@@ -147,6 +147,7 @@ ${userTemplatesList}
    - \`delete_memory\`: Delete a stored memory or preference so you forget it.
    - \`delete_specialized_template\`: Delete a user-created custom specialized template. Built-in templates cannot be deleted.
    - \`delete_chat_session\`: Delete a chat conversation session.
+   - \`play_music\`: Play a song from the music folder and have Bip hold a microphone and sing along to the music. Call this whenever the user asks you to play music, play a song, or sing a song for them.
 
 4. **Deletion Rules & Capabilities**:
    When the user asks you to delete, trash, remove, cancel, or forget ANYTHING in their workspace:

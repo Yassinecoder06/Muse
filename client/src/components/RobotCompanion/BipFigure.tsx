@@ -1,7 +1,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 
-export type BipMood = 'idle' | 'happy' | 'thinking' | 'curious' | 'sleeping' | 'excited' | 'dizzy'
+export type BipMood = 'idle' | 'happy' | 'thinking' | 'curious' | 'sleeping' | 'excited' | 'dizzy' | 'singing'
 
 interface BipFigureProps {
   mood?: BipMood
@@ -43,6 +43,7 @@ export function BipFigure({
   const isHappy = mood === 'happy' || mood === 'excited'
   const isCurious = mood === 'curious'
   const isDizzy = mood === 'dizzy'
+  const isSinging = mood === 'singing'
 
   return (
     <div
@@ -64,7 +65,13 @@ export function BipFigure({
         width="100%"
         height="100%"
         animate={
-          isDizzy
+          isSinging
+            ? {
+                y: [0, -6, 0, -4, 0],
+                rotate: [-3, 3, -2, 2, 0],
+                transition: { repeat: Infinity, duration: 1.1, ease: 'easeInOut' }
+              }
+            : isDizzy
             ? {
                 rotate: [-8, 8, -6, 6, -3, 3, 0],
                 x: [-3, 3, -2, 2, 0],
@@ -100,6 +107,17 @@ export function BipFigure({
           <linearGradient id="bipAntennaGlow" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#f472b6" />
             <stop offset="100%" stopColor="#c084fc" />
+          </linearGradient>
+
+          <linearGradient id="bipMicGrille" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#f8fafc" />
+            <stop offset="50%" stopColor="#94a3b8" />
+            <stop offset="100%" stopColor="#475569" />
+          </linearGradient>
+
+          <linearGradient id="bipMicHandle" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#475569" />
+            <stop offset="100%" stopColor="#0f172a" />
           </linearGradient>
 
           <radialGradient id="thrusterGlow" cx="50%" cy="50%" r="50%">
@@ -200,7 +218,9 @@ export function BipFigure({
             stroke="#afa7c7"
             strokeWidth="1"
             animate={
-              isDizzy
+              isSinging
+                ? { y: [-6, 2, -6], rotate: [-20, 10, -20], transition: { repeat: Infinity, duration: 0.55, ease: 'easeInOut' } }
+                : isDizzy
                 ? { y: [-4, 4, -4], rotate: [-25, 25, -25], transition: { repeat: Infinity, duration: 0.35 } }
                 : isHappy
                 ? { y: [-2, -6, -2], rotate: [-10, -25, -10], transition: { repeat: Infinity, duration: 0.7 } }
@@ -218,7 +238,9 @@ export function BipFigure({
             stroke="#afa7c7"
             strokeWidth="1"
             animate={
-              isDizzy
+              isSinging
+                ? { x: -14, y: -16, rotate: -36 }
+                : isDizzy
                 ? { y: [4, -4, 4], rotate: [25, -25, 25], transition: { repeat: Infinity, duration: 0.35 } }
                 : isHappy
                 ? { y: [-2, -6, -2], rotate: [10, 25, 10], transition: { repeat: Infinity, duration: 0.7 } }
@@ -283,6 +305,20 @@ export function BipFigure({
               <g stroke="url(#bipEyeGlow)" strokeWidth="3" strokeLinecap="round" opacity="0.7">
                 <line x1="36" y1="46" x2="44" y2="46" />
                 <line x1="56" y1="46" x2="64" y2="46" />
+              </g>
+            ) : isSinging ? (
+              // Joyful singing eyes: happy closed musical arcs ( ^  ^ )
+              <g stroke="url(#bipEyeGlow)" strokeWidth="2.8" strokeLinecap="round" fill="none" filter="url(#neonGlow)">
+                <motion.path
+                  d="M 35 44 Q 40 37 45 44"
+                  animate={{ d: ["M 35 44 Q 40 37 45 44", "M 35 45 Q 40 39 45 45", "M 35 44 Q 40 37 45 44"] }}
+                  transition={{ repeat: Infinity, duration: 0.5, ease: 'easeInOut' }}
+                />
+                <motion.path
+                  d="M 55 44 Q 60 37 65 44"
+                  animate={{ d: ["M 55 44 Q 60 37 65 44", "M 55 45 Q 60 39 65 45", "M 55 44 Q 60 37 65 44"] }}
+                  transition={{ repeat: Infinity, duration: 0.5, ease: 'easeInOut' }}
+                />
               </g>
             ) : isDizzy ? (
               // Dizzy spiral swirl eyes: comic spinning spirals
@@ -355,8 +391,8 @@ export function BipFigure({
               </g>
             )}
 
-            {/* Cute Cheek Blushes when happy or excited */}
-            {isHappy && (
+            {/* Cute Cheek Blushes when happy, excited, or singing */}
+            {(isHappy || isSinging) && (
               <g fill="#f472b6" opacity="0.65">
                 <circle cx="32" cy="51" r="2.5" />
                 <circle cx="68" cy="51" r="2.5" />
@@ -364,7 +400,7 @@ export function BipFigure({
             )}
 
             {/* Speaking audio wave mouth when reading or talking */}
-            {isSpeaking && (
+            {isSpeaking && !isSinging && (
               <g filter="url(#neonGlow)">
                 <motion.line
                   x1="43"
@@ -413,6 +449,26 @@ export function BipFigure({
               </g>
             )}
 
+            {/* Singing animated vocal mouth */}
+            {isSinging && (
+              <g filter="url(#neonGlow)">
+                <motion.path
+                  fill="url(#bipEyeGlow)"
+                  stroke="#a855f7"
+                  strokeWidth="1.2"
+                  animate={{
+                    d: [
+                      "M 45 52 Q 50 60 55 52 Q 50 56 45 52",
+                      "M 44 51 Q 50 64 56 51 Q 50 54 44 51",
+                      "M 46 53 Q 50 58 54 53 Q 50 55 46 53",
+                      "M 44 51 Q 50 62 56 51 Q 50 55 44 51"
+                    ]
+                  }}
+                  transition={{ repeat: Infinity, duration: 0.45, ease: 'easeInOut' }}
+                />
+              </g>
+            )}
+
             {/* Wobbly mouth when dizzy */}
             {isDizzy && (
               <g stroke="url(#bipEyeGlow)" strokeWidth="2.2" strokeLinecap="round" fill="none" opacity="0.95">
@@ -421,6 +477,96 @@ export function BipFigure({
             )}
           </g>
         </motion.g>
+
+        {/* Held Stage Microphone when singing */}
+        {isSinging && (
+          <g id="bipMicrophone" filter="url(#neonGlow)">
+            {/* Pulsing soundwave ring from mic capsule */}
+            <motion.circle
+              cx="57"
+              cy="50"
+              r="7"
+              fill="none"
+              stroke="#f472b6"
+              strokeWidth="1"
+              animate={{ r: [6, 13, 6], opacity: [0.85, 0, 0.85] }}
+              transition={{ repeat: Infinity, duration: 0.85, ease: 'easeOut' }}
+            />
+            {/* Curving flexible mic cord */}
+            <path
+              d="M 68 64 Q 76 74 72 82 Q 68 89 74 95"
+              fill="none"
+              stroke="#1e293b"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+            {/* Metallic handle */}
+            <line x1="58" y1="52" x2="68" y2="64" stroke="url(#bipMicHandle)" strokeWidth="4.2" strokeLinecap="round" />
+            <line x1="58" y1="52" x2="68" y2="64" stroke="#64748b" strokeWidth="1.2" strokeLinecap="round" />
+            {/* Gold collar band */}
+            <line x1="56" y1="53.5" x2="60" y2="49.5" stroke="#facc15" strokeWidth="2.4" strokeLinecap="round" />
+            {/* Microphone Capsule Mesh */}
+            <circle cx="56" cy="49" r="5" fill="url(#bipMicGrille)" stroke="#cbd5e1" strokeWidth="1.2" />
+            <path d="M 53 49 H 59 M 56 46 V 52" stroke="#334155" strokeWidth="0.8" strokeLinecap="round" />
+          </g>
+        )}
+
+        {/* Floating Musical Notes when singing */}
+        {isSinging && (
+          <g>
+            <motion.text
+              x="52"
+              y="38"
+              fill="#f472b6"
+              fontSize="11"
+              fontWeight="bold"
+              initial={{ opacity: 0, y: 0, x: 0 }}
+              animate={{
+                opacity: [0, 1, 1, 0],
+                y: [0, -18, -32],
+                x: [0, -6, -12],
+                scale: [0.8, 1.2, 1]
+              }}
+              transition={{ repeat: Infinity, duration: 1.6, ease: 'easeOut' }}
+            >
+              ♪
+            </motion.text>
+            <motion.text
+              x="63"
+              y="36"
+              fill="#67e8f9"
+              fontSize="13"
+              fontWeight="bold"
+              initial={{ opacity: 0, y: 0, x: 0 }}
+              animate={{
+                opacity: [0, 1, 1, 0],
+                y: [0, -22, -38],
+                x: [0, 8, 14],
+                scale: [0.8, 1.3, 1]
+              }}
+              transition={{ repeat: Infinity, duration: 1.8, delay: 0.5, ease: 'easeOut' }}
+            >
+              ♫
+            </motion.text>
+            <motion.text
+              x="47"
+              y="34"
+              fill="#a855f7"
+              fontSize="10"
+              fontWeight="bold"
+              initial={{ opacity: 0, y: 0, x: 0 }}
+              animate={{
+                opacity: [0, 1, 1, 0],
+                y: [0, -16, -30],
+                x: [0, -4, -8],
+                scale: [0.7, 1.1, 0.9]
+              }}
+              transition={{ repeat: Infinity, duration: 1.5, delay: 1.0, ease: 'easeOut' }}
+            >
+              ♬
+            </motion.text>
+          </g>
+        )}
 
         {/* Circling dizzy stars above head */}
         {isDizzy && (
