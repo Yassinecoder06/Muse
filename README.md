@@ -1,15 +1,18 @@
 # Muse
 
-Muse is a production-oriented AI note application built around one principle: **capture first, organize later**. The browser talks only to an Express API; that API owns Postgres access, AI calls, and semantic search.
+Muse is a self-hosted AI note application built around one principle: **capture first, organize later**. Write or dictate a thought, and Muse titles, tags, summarizes and links it for you, while **Bip**, its robot assistant, can create notes, tasks, events and reminders from a single sentence. It runs on your own machine, works with the AI providers *you* choose (Gemini, OpenAI, Claude, Ollama or any compatible API), and comes with a phone companion app.
+
+The browser and the phone talk only to an Express API; that API owns Postgres access, AI calls, and semantic search.
 
 ## Architecture
 
 ```text
-React + Vite  ──HTTP──>  Express API  ──> Supabase PostgreSQL (source of truth)
-                                  ├──> Google Gemini (gemini-3.8-flash, 3.7, 3.5, 3.1)
-                                  ├──> Ollama Cloud (Reflection AI Beam 501B MoE, Gemma, Nemotron)
-                                  ├──> Local Ollama (Embeddings nomic-embed-text)
-                                  └──> Qdrant (Note embeddings and metadata)
+React + Vite (web) ──┐
+                     ├─HTTPS─> Nginx ─> Express API ──> Supabase PostgreSQL (source of truth, Vault for keys)
+Flutter (phone) ─────┘                      ├──> Your AI providers: Gemini · OpenAI · Anthropic (Claude) ·
+                                            │    Ollama Cloud · Ollama (Local) · any OpenAI/Anthropic-compatible API
+                                            ├──> Qdrant (note embeddings, one collection per embedding model)
+                                            └──> Edge neural voices (built-in read-aloud)
 ```
 
 The API returns note saves immediately. A background processor generates missing titles, tags, summaries, and vectors after the response. Qdrant stores only embeddings and compact metadata; full note text always remains in Supabase.
@@ -18,23 +21,51 @@ For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](.
 
 ## Included capabilities
 
-- **Bip Autonomous AI Agent & Floating Companion**: Interactive draggable robot companion with dynamic mood states (`idle`, `happy`, `thinking`, `excited`, `curious`, `surprised`) and procedural Web Audio sound synthesis (`chirp`, `boop`, `blip`, `success`, `error`, `thinking` loop).
-- **Dedicated Assistant Workspace (`/assistant`)**: Session-based multi-turn conversation workspace with persistent history, session renaming, search, and inline message editing, deleting, and "Save & Resend".
-- **Single-Prompt Autonomous Multi-Tool Calling**: Bip executes actions directly in your workspace—creating notes, adding priority tasks, scheduling calendar events, and storing long-term memories in parallel/sequence.
-- **Persistent User Memories**: Bip learns and retains your lasting preferences, work habits, and goals across sessions via `user_memories`.
-- **Speech-to-Text (STT) & Text-to-Speech (TTS)**: Dual-engine voice input (server Gemini Multimodal Audio + browser Web Speech API), emoji-skipping conversational English voice synthesis (strips pictographs, flags, and emoji descriptions for clean read-aloud), and native on-device streaming voice dictation on mobile.
-- **Remote Mobile Companion (Flutter)**: Dedicated companion app with one-click QR code pairing, on-device microphone dictation, dual reading/editing note modes with HTML-to-Markdown formatting, task & schedule management, and mobile Bip AI chat.
-- **KaTeX LaTeX Math Rendering**: Renders mathematical formulas (`$$...$$` block and `$...$` inline) with automatic escaping for percent signs (`\%`) to ensure uncorrupted rendering.
-- **Waterfall Model Cascade & Quota Resilience**: Automatically cascades across Gemini models (`gemini-3.8-flash` → `gemini-3.7-flash` → `gemini-3.6-flash` → `gemini-3.5-flash` → `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite`) if a daily free-tier quota (429) is exhausted, and cascades to Ollama Cloud with support for Reflection AI's **Beam** (`beam:cloud`, 501B MoE).
-- **Zero-Knowledge Encrypted Vault & Passkeys**: Optional client-side AES-GCM encryption with Argon2id key derivation, WebAuthn passkey authentication, and additive legacy migration.
-- **Interactive Calendar & Natural Language Scheduling**: Monthly calendar agenda, natural-language event creation (e.g. "Gym tomorrow at 20h"), and note-event deep linking.
-- **Dedicated Tasks Management**: Global filterable tasks workspace (All, Pending, Completed, Note-specific) with due dates, priorities, and bi-directional note navigation.
-- **AI Schedule & Task Detector**: Scans note text for dates, appointments, and actionable tasks, allowing one-click review and workspace addition.
-- **Specialized Notes & Custom Templates**: Structured templates (Gym workout, Daily tasks & feedback, Expense & decisions) and custom templates with custom fields and 7 accent colors.
-- **Knowledge Graph**: Every note becomes a node connected to meaningfully similar notes based on semantic embeddings and shared tags.
-- **Security-scanned research uploads**: Documents (PDF, DOCX, TXT) are checked at upload time for macro injection and prompt-injection patterns before feeding AI pipelines.
-- **Batch Note Selection**: Multi-select notes on the dashboard to move multiple notes to trash, restore, or manage in bulk.
-- **Signature Violet Theme**: Premium responsive dashboard, dark mode, keyboard shortcuts, and command palette (`Ctrl/⌘ K`, `Ctrl/⌘ M`).
+### Notes & knowledge
+- **Capture first, organize later**: notes save instantly; a background worker adds titles, tags, summaries and search vectors afterwards.
+- **Rich editor**: headings, lists, quotes, code, pasted images (stored in Postgres), read/edit modes, keyboard shortcuts and a command palette (`Ctrl/⌘ K`, `Ctrl/⌘ M`).
+- **AI writing tools**: summarize, extract tasks, generate titles and tags, and rewrite (improve, professional, friendly, shorter, longer, grammar). Images survive rewrites untouched.
+- **Search by words and by meaning**: keyword search plus semantic search over your notes, and "Ask my notes" / "Ask this note" answers grounded in your own writing.
+- **Knowledge graph**: every note is a node linked to similar notes (by embeddings) and shared tags.
+- **Specialized notes & templates**: Gym workout, Daily plan & reflection, Expense & decision, plus your own templates with custom fields, accent colors and optional calendar sync.
+- **Research reports**: multi-stage web + document research with uploaded PDF/DOCX/TXT sources (security-scanned for macro and prompt-injection patterns), quality checks, and export to HTML, PDF or DOCX.
+- **KaTeX math**: `$$…$$` and `$…$` formulas render cleanly.
+- **Bulk actions, favorites, archive and trash** with restore.
+
+### Bip, your AI assistant
+- **One sentence, many actions**: "add a task to call mom tomorrow at 3pm, remind me 10 minutes before, and put the meeting on my calendar" runs every step through tools.
+- **Works on any chat model** you configure: tool calls are normalized across Gemini, OpenAI-style, Anthropic and Ollama APIs, with your fallback models tried in order.
+- **Safe by design**: deletions that can't be undone (empty trash, delete forever, delete tasks/events/memories) are only *proposed*; you confirm them on a card. Text from notes, documents and web pages is treated as data, never as instructions.
+- **Remembers you**: long-term memories of your preferences and goals, and persistent conversations you can rename, search, edit and resend.
+- **Understands your time**: "tomorrow at 8pm" resolves in your own timezone, on the web and on the phone.
+- **A real companion**: a draggable animated robot with moods and synthesized sound effects.
+
+### Tasks, calendar & reminders
+- **Tasks** with due dates, times, priorities and links to notes; **calendar** with month view and natural-language quick add ("Gym tomorrow at 20h").
+- **Schedule detector**: finds dates, appointments and to-dos in a note and adds them in one click.
+- **Reminders with Bip alarms**: ring at the due time, N minutes before, or at an exact time. On the web: an animated Bip alert with a live countdown, alarm sound and browser notification. On the phone: a real alarm (alarm sound until handled, over the lock screen, live countdown, Done / Snooze). Snoozing on one device updates the other.
+
+### Bring your own AI
+- **Any provider, any number of keys**: Google Gemini, OpenAI, Anthropic (Claude), Ollama Cloud, Ollama (Local), and any OpenAI- or Anthropic-compatible API (Groq, Mistral, DeepSeek, OpenRouter, LM Studio, …). Keys are encrypted in Supabase Vault.
+- **Fetch models**: one click lists every model your keys can use, sorted into chat, embeddings, text-to-speech and speech-to-text, next to built-in options (Edge neural voices, browser/phone speech, local-Ollama embeddings).
+- **Pick a model per job**: chat model with ordered fallbacks, embedding model (your notes are re-indexed automatically), read-aloud model and voice, dictation model, each with a **Test** button.
+- **Quota resilient**: models that hit their quota are skipped for a while, so answers stay fast.
+
+### Voice
+- **Dictation** that keeps listening until you stop (browser, server model of your choice, or on-device on the phone).
+- **Read aloud** with Edge neural voices, OpenAI or Gemini voices, or the browser voice; emojis and symbols are skipped for natural speech.
+
+### Phone companion (Flutter, Android)
+- **Pairing in seconds** with a QR code or 6-digit PIN; the device key is stored in the Android Keystore and can be revoked from the desktop at any time.
+- **Bip on the go** with voice, history, tappable action cards and delete confirmations.
+- **Notes that work offline**: read, edit and create without a connection; changes sync automatically when Muse is reachable, and conflicting desktop edits are kept as a separate copy, never overwritten.
+- **Share to Muse** from any app (text, links, screenshots), **home-screen shortcuts** (Voice note, Quick note, Ask Bip), **swipe actions with Undo**, semantic search, and responsive layouts tested on real phone sizes.
+
+### Security & privacy
+- **Self-hosted, single-owner**: the API requires the owner's passphrase session (or a paired device token); first-run setup needs a one-time code printed in the server log.
+- **Encryption at rest** (AES-256-GCM) for note titles, content, summaries and research text; API keys live in Supabase Vault; an optional zero-knowledge **Secure Vault** encrypts notes in the browser with passkey support.
+- **Hardened by default**: row-level security on every table, rate-limited login and pairing, sanitized HTML (DOMPurify), hashed device tokens, and private read-aloud audio.
+- **Automatic database migrations**: `docker compose up` applies new schema changes safely, one transaction per migration.
 
 ## Prerequisites
 
@@ -80,7 +111,18 @@ For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](.
    is available at `http://localhost:8080`; Qdrant is available at
    `http://localhost:6333`; Kong/Supabase stays on `http://localhost:8000`.
    (*Edge Runtime is intentionally not included:* Muse never uses edge
-   functions.)
+   functions.) The one-shot `migrate` service applies the database schema
+   before the API starts.
+
+   **First run:** open `http://localhost:8080`. Muse asks for a one-time setup
+   code and a passphrase. The code is printed in the server log:
+
+   ```bash
+   docker compose logs server | grep "setup code"
+   ```
+
+   Then open **Settings → AI providers**, add your keys (or just local Ollama),
+   click **Fetch models**, and pick a model for each job.
 
 4. Install and run Muse for hot-reload development:
 
@@ -278,6 +320,16 @@ references) — in both light and dark themes, and preserved in PDF/DOCX exports
 
 ## AI configuration
 
+### AI providers (bring your own keys)
+
+Open **Settings → AI providers**:
+
+1. **Add provider**: choose Google Gemini, OpenAI, Anthropic (Claude), Ollama Cloud, Ollama (Local), or an OpenAI-/Anthropic-compatible API. Compatible providers need a name and base URL, for example Groq `https://api.groq.com/openai/v1`, Mistral `https://api.mistral.ai/v1`, DeepSeek `https://api.deepseek.com/v1`, OpenRouter `https://openrouter.ai/api/v1`, or LM Studio `http://localhost:1234/v1`. Keys are stored in Supabase Vault and only their last 4 characters are ever shown.
+2. **Fetch models**: Muse asks every provider which models your key can use and sorts them into chat, embedding, text-to-speech and speech-to-text. A rejected key shows an error on that provider's card.
+3. **Which model does what**: choose a chat model and its fallbacks (tried in order), an embedding model, a read-aloud model and voice, and a dictation model, then **Save choices**. Each has a **Test** button.
+
+Leaving a choice empty keeps Muse's automatic behavior (Gemini cascade, then Ollama; local-Ollama embeddings; Edge voices). Changing the embedding model rebuilds your search index in the background; each embedding model has its own Qdrant collection, so switching back is safe. Local Ollama's address is resolved by the server (`host.docker.internal` in Docker, `localhost` in development). Base URLs may point to private network addresses (for local and LAN models), but never to Muse's own internal services.
+
 ### Secure Vault, passkeys, and recovery keys
 
 Muse now supports a **Secure Vault** with optional passkeys. Email/password
@@ -361,9 +413,15 @@ Optional AI tuning variables in `.env`:
 | Chat | `POST /api/chat/note`, `POST /api/chat/search` (both accept optional `model`) |
 | Images | `POST /api/uploads` (raw body, ≤5 MB, optional `?noteId`), `GET /api/images/:id` (owner-authenticated) |
 | Secure Vault | `GET /api/vault`, `PUT /api/vault`, `GET /api/vault/records`, `POST /api/vault/records`, WebAuthn passkey endpoints |
+| AI providers | `GET /api/ai/providers`, `POST /api/ai/providers`, `PATCH /api/ai/providers/:id`, `DELETE /api/ai/providers/:id`, `POST /api/ai/providers/fetch`, `PUT /api/ai/preferences`, `POST /api/ai/test`, `GET /api/ai/reindex` |
+| Bip | `POST /api/chat/sessions/:id/messages`, `POST /api/ai/chat` (phone), `POST /api/agent/confirm` (run a deletion Bip proposed), sessions and memories CRUD |
+| Search | `GET /api/notes/search?q=` (keyword + semantic) |
+| Owner & devices | `GET /api/auth/owner`, `POST /api/auth/owner/setup`, `POST /api/auth/owner/login`, `POST /api/remote/pairing/create`, `POST /api/remote/pairing/claim`, `GET /api/remote/devices`, `DELETE /api/remote/devices/:id` |
+| Templates | `GET/POST /api/templates`, `GET/PUT/DELETE /api/templates/:id` |
+| Voice | `POST /api/voice/transcribe`, `POST /api/voice/speak` (use your chosen speech models) |
 
 Muse has no synchronous AI endpoints — every AI call is a job in `ai_jobs` that a background worker processes, and the client polls `GET /api/ai/jobs/:id`.
-The per-user Ollama API key lives in `user_settings` via `GET|PUT|DELETE /api/settings` (never returned), encrypted in Postgres Vault.
+Provider API keys are stored in Supabase Vault and are never returned by the API.
 
 See `documentation/ENDPOINTS.md` for the full API reference, and
 `documentation/TROUBLESHOOTING.md` for a symptom-by-symptom operations guide.
@@ -508,17 +566,19 @@ docker compose logs auth --tail 20
 Muse includes a cross-platform mobile companion located in the `mobile/` directory, allowing you to access your notes, tasks, and talk directly with **Bip AI Assistant** from your phone.
 
 ### Features
-* **Zero-Cloud Local Pairing:** Pair your mobile device with your computer via a one-time QR code or 6-digit PIN.
-* **On-Device Real-Time Microphone Dictation:** Continuous live speech-to-text powered by Google Speech Services (`speech_to_text: ^7.5.0`) with Bluetooth earbuds support (`BLUETOOTH_CONNECT`) and zero cloud latency.
-* **Bip AI Assistant on Mobile:** Talk or type with Bip remotely. Features live voice recognition, action cards, and real-time execution of workspace tools (creating notes, tasks, and scheduling events).
-* **Dual Reading & Editing Note Modes:** Browse notes with formatted markdown styling, or switch into edit mode with tag editors, word counts, and direct voice dictation.
-* **HTML to Markdown Engine:** Automatic conversion of rich HTML generated on the desktop web app into structured Markdown for clean mobile viewing.
-* **Dedicated Tasks & Schedule:** Segmented task management (All, Today, Upcoming, Overdue, Completed) alongside scheduled calendar events.
-* **Self-Healing Device Tokens:** Uses high-entropy device bearer tokens (`muse_dev_...`) stored securely in encrypted phone storage. Revocable anytime from the desktop client.
+* **Pairing in seconds:** a one-time QR code or 6-digit PIN links the phone. The device key is stored in the Android Keystore, kept only as a hash on the server, and revocable from the desktop at any time; a revoked phone returns to the pairing screen.
+* **Bip on mobile:** talk or type; conversations are kept across launches ("New chat" starts a fresh one), with tappable action cards and Confirm cards for deletions.
+* **Continuous dictation:** on-device speech recognition keeps listening until you tap stop, even through pauses.
+* **Notes that work offline:** read, edit and create notes without a connection; changes sync on their own when Muse is reachable, and if the desktop changed the same note meanwhile, your phone version is saved as a copy instead of overwriting it. Images display inside notes.
+* **Search by words and meaning**, **swipe actions with Undo** (complete, favorite, trash, restore), and pull to refresh.
+* **Tasks & schedule** with reminders: real alarms with alarm sound, lock-screen display, a live countdown, and Done / Snooze. **Settings → Alarm setup** checks every permission (including Xiaomi/HyperOS Autostart) and has a **Test alarm** button.
+* **Share to Muse** from any app (text, links, images) and **home-screen shortcuts**: Voice note, Quick note, Ask Bip.
+* **Responsive layouts** verified at real phone sizes and larger text by an automated layout test.
 
 ### Voice & Speech Synthesis (TTS & STT)
 * **Web STT:** Dual-engine architecture with Google Gemini Multimodal Audio (`gemini-3.5-flash` / `gemini-3.7-flash` via `/api/voice/transcribe`) for complex prompts, and Web Speech API (`webkitSpeechRecognition`) for local browser transcription.
-* **Mobile STT:** Real-time on-device streaming recognition using Android's native `RecognitionService`.
+* **Mobile STT:** On-device recognition with Android's `RecognitionService`, restarted automatically after the system's pauses so dictation continues until you stop it.
+* **Your choice of models:** the web read-aloud and dictation use the models chosen in Settings → AI providers (Edge, OpenAI, Gemini or browser speech).
 * **Conversational TTS:** Browser Speech Synthesis with automatic Unicode emoji and symbol filtering (`EMOJI_REGEX`), stripping emoji descriptions (e.g. "robot face sparkles") and normalizing whitespace/punctuation for clean, natural speech playback.
 
 ### How to Pair Your Phone
@@ -547,17 +607,16 @@ If Tailscale is running on your host machine and your mobile phone:
 
 ### Building & Running Mobile App
 ```bash
-# In the repository root
 cd mobile
-
-# Verify dependencies and analyze code
 flutter pub get
 flutter analyze
-flutter test
+flutter test          # includes the layout test at phone sizes
 
-# Build debug APK and install to connected physical device
-flutter build bundle
-cd android && JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64 ./gradlew assembleDebug
-adb install -r ../build/app/outputs/flutter-apk/app-debug.apk
+# Build and install on a connected Android phone (USB debugging on)
+flutter build apk --debug
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
 ```
 
+Gradle needs JDK 17–21. If Flutter picks a newer JDK (for example the one
+bundled with Android Studio), point it at JDK 21 once:
+`flutter config --jdk-dir /usr/lib/jvm/java-21-openjdk-amd64`.
