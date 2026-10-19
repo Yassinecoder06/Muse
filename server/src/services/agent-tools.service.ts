@@ -996,9 +996,7 @@ export async function executeAgentTool(
           title = `${templateId || category.charAt(0).toUpperCase() + category.slice(1)} Note`
         }
 
-        const syncWithCalendar = args.sync_with_calendar !== undefined
-          ? (args.sync_with_calendar === true || String(args.sync_with_calendar).toLowerCase() === 'true')
-          : (category === 'workout' || category === 'daily' || Boolean(matchedTemplate?.sync_with_calendar))
+        const syncWithCalendar = args.sync_with_calendar === true || String(args.sync_with_calendar).toLowerCase() === 'true'
 
         const noteInput = {
           title,

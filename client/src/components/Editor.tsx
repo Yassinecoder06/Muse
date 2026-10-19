@@ -244,6 +244,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
   }
 
   const hasCalendarSync = Boolean(
+    linkedEvent ||
     specializedNote?.syncWithCalendar ||
     note.specialized?.syncWithCalendar ||
     specializedNote?.category === 'workout' ||
@@ -275,20 +276,30 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
     }
   }
 
+  async function handleUnlinkFromCalendar() {
+    if (!linkedEvent) return
+    setIsSyncingCalendar(true)
+    try {
+      await api.deleteEvent(linkedEvent.id)
+      setLinkedEvent(null)
+      onToast('Event unlinked from Calendar.')
+    } catch {
+      onToast('Could not unlink event from calendar.')
+    } finally {
+      setIsSyncingCalendar(false)
+    }
+  }
+
   useEffect(() => {
     if (!isSpecialized) return
     let activeSub = true
     api.listEvents().then(events => {
       if (!activeSub) return
       const found = events.find(e => e.note_id === note.id)
-      if (found) {
-        setLinkedEvent(found)
-      } else if (hasCalendarSync && note.id) {
-        void handleSyncToCalendar(true)
-      }
+      setLinkedEvent(found || null)
     }).catch(() => {})
     return () => { activeSub = false }
-  }, [note.id, isSpecialized, hasCalendarSync])
+  }, [note.id, isSpecialized])
 
   useEffect(() => {
     document.execCommand('styleWithCSS', false, 'false')
@@ -300,21 +311,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
       : note.title
     setTitle(effectiveTitle)
 
-    const templateMatch = note.specialized?.templateId ? getCustomTemplates().find(t => t.title.toLowerCase() === note.specialized?.templateId?.toLowerCase()) : undefined
-    const shouldSync = Boolean(
-      note.specialized?.syncWithCalendar ||
-      note.specialized?.category === 'workout' ||
-      note.specialized?.category === 'daily' ||
-      templateMatch?.syncWithCalendar
-    )
-    const initialSpecialized = note.specialized ? {
-      ...note.specialized,
-      syncWithCalendar: shouldSync
-    } : undefined
-    setSpecializedNote(initialSpecialized)
-    if (initialSpecialized && shouldSync && !note.specialized?.syncWithCalendar) {
-      queue({ specialized: initialSpecialized })
-    }
+    setSpecializedNote(note.specialized)
 
     if (ref.current) ref.current.innerHTML = withImageUrls(cleaned)
   }, [note.id])
@@ -588,13 +585,23 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
                   {isSyncingCalendar ? 'Syncing…' : linkedEvent ? 'Update Calendar' : 'Sync to Calendar'}
                 </button>
                 {linkedEvent && (
-                  <button
-                    className="view-calendar-btn"
-                    onClick={() => navigate('/calendar')}
-                    title="Open in Calendar"
-                  >
-                    <ExternalLink size={13} /> View
-                  </button>
+                  <>
+                    <button
+                      className="view-calendar-btn"
+                      onClick={() => navigate('/calendar')}
+                      title="Open in Calendar"
+                    >
+                      <ExternalLink size={13} /> View
+                    </button>
+                    <button
+                      className="unlink-calendar-btn"
+                      onClick={() => void handleUnlinkFromCalendar()}
+                      disabled={isSyncingCalendar}
+                      title="Unlink and remove this event from Calendar"
+                    >
+                      <Trash2 size={13} /> Unlink
+                    </button>
+                  </>
                 )}
               </div>
             </div>

@@ -211,7 +211,7 @@ export const api = {
     const fields = customTemplate?.fields ? { ...customTemplate.fields } : { ...defaults.fields }
     const aiInstruction = customTemplate?.aiInstruction || defaults.aiInstruction
     const color = customTemplate?.color || 'blue'
-    const syncWithCalendar = Boolean(customTemplate?.syncWithCalendar || category === 'workout' || category === 'daily')
+    const syncWithCalendar = Boolean(customTemplate?.syncWithCalendar)
     const initialContent = category === 'workout'
       ? '<h3>Workout Log</h3><p><strong>Exercises & Sets:</strong></p><p>• </p>'
       : ''
@@ -231,20 +231,6 @@ export const api = {
         }
       })
     })
-
-    if (syncWithCalendar) {
-      try {
-        if (category === 'workout') {
-          await api.syncWorkoutToCalendar(created.id, fields)
-        } else if (category === 'daily') {
-          await api.syncDailyToCalendar(created.id, fields)
-        } else {
-          await api.syncSpecializedToCalendar(created.id, title, fields)
-        }
-      } catch (syncErr) {
-        console.warn('[api] Auto calendar sync error:', syncErr)
-      }
-    }
 
     return created
   },
