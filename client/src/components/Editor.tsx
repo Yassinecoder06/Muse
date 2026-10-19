@@ -1,21 +1,66 @@
-import { ArrowLeft, Bold, Bookmark, Calendar, CalendarCheck, Check, Code2, ExternalLink, FileText, Heading1, Heading2, Image, Italic, List, ListChecks, MoreHorizontal, Plus, Quote, Sparkles, Star, Trash2, WandSparkles, X } from 'lucide-react'
+import { ArrowLeft, Bold, Calendar, CalendarCheck, Check, Code2, ExternalLink, FileText, Heading1, Heading2, Image, Italic, List, ListChecks, Mic, MicOff, MoreHorizontal, Plus, Quote, Sparkles, Square, Star, Trash2, Volume2, WandSparkles, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { api, resolveApiImageSrc, relativizeApiImageSrc } from '../services/api'
 import type { AiJob, CalendarEvent, Note, NoteInput, SpecializedNote } from '../types'
-import { saveCustomTemplate } from '../services/templates'
 import { ChatPanel } from './ChatPanel'
 import { ScheduleDetectorModal } from './ScheduleDetectorModal'
 import { activeVaultUser } from '../services/vault'
+import { getCustomTemplates } from '../services/templates'
+import { robotAudio } from '../services/robot-audio.service'
+import { tts } from '../services/tts.service'
+import { stt } from '../services/stt.service'
+import { ConfirmModal } from './ConfirmModal'
 
 const rewriteModes = ['improve', 'professional', 'friendly', 'shorter', 'longer', 'grammar']
-const allowedTags = new Set(['A', 'B', 'BR', 'BLOCKQUOTE', 'CODE', 'DIV', 'EM', 'H1', 'H2', 'H3', 'HR', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'SECTION', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL'])
+const allowedTags = new Set(['A', 'B', 'BR', 'BLOCKQUOTE', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'SECTION', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL'])
 const reportClasses = new Set(['muse-report', 'report-meta', 'research-key-findings', 'report-dashboard', 'report-kpi-grid', 'report-kpi', 'report-chart', 'report-chart-row', 'report-data-gap', ...Array.from({ length: 10 }, (_, index) => `report-fill-${index + 1}`)])
 
+function prepareContent(raw: string): { html: string; extractedTitle?: string } {
+  if (!raw) return { html: '' }
+
+  let extractedTitle: string | undefined
+  let source = raw
+
+  // If starts with markdown H1: # Title
+  const h1Match = source.match(/^\s*#\s+([^\n]+)\n?/)
+  if (h1Match) {
+    extractedTitle = h1Match[1].replace(/[*_`]/g, '').trim()
+    source = source.replace(/^\s*#\s+[^\n]+\n?/, '').trim()
+  }
+
+  // Check if content has Markdown syntax or is plain text lacking block HTML
+  const hasMarkdown = /(?:^#{1,6}\s+|^\s*[-*+]\s+|^\s*\d+\.\s+|^\s*>\s+|```|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|^\s*---+\s*$)/m.test(source)
+  const isPlainOrMarkdown = !/<(?:p|div|h[1-6]|ul|ol|table|blockquote|section)\b/i.test(source)
+
+  let html = source
+  if (hasMarkdown || isPlainOrMarkdown) {
+    try {
+      html = (marked.parse(source, { async: false, breaks: true, gfm: true }) as string)
+        .replace(/>\s*\n\s*</g, '><')
+        .trim()
+    } catch {
+      html = source
+    }
+  }
+
+  return { html, extractedTitle }
+}
+
+// Parse HTML into a <template>: its content is inert, so untrusted markup never
+// runs handlers or loads images while we inspect it. (innerHTML on a detached
+// <div> does fire <img onerror>.) `template.innerHTML` serializes the content.
+function inert(html: string) {
+  const template = document.createElement('template')
+  template.innerHTML = html
+  return template
+}
+
 function sanitizeHtml(value: string) {
-  const container = document.createElement('div')
-  container.innerHTML = value
-  for (const element of [...container.querySelectorAll('*')]) {
+  const container = inert(DOMPurify.sanitize(value))
+  for (const element of [...container.content.querySelectorAll('*')]) {
       if (!allowedTags.has(element.tagName)) {
         element.replaceWith(...Array.from(element.childNodes))
         continue
@@ -38,9 +83,8 @@ function sanitizeHtml(value: string) {
 }
 
 function decorateKeyFindings(value: string) {
-  const container = document.createElement('div')
-  container.innerHTML = value
-  for (const heading of [...container.querySelectorAll('h2')]) {
+  const container = inert(value)
+  for (const heading of [...container.content.querySelectorAll('h2')]) {
     if (!/^\s*key findings\s*$/i.test(heading.textContent || '') || heading.closest('section.research-key-findings')) continue
     const card = document.createElement('section')
     card.className = 'research-key-findings'
@@ -52,10 +96,9 @@ function decorateKeyFindings(value: string) {
 }
 
 function researchOutline(value: string) {
-  const container = document.createElement('div')
-  container.innerHTML = value
-  const headings = [...container.querySelectorAll('h2')].map(heading => (heading.textContent || '').trim()).filter(Boolean)
-  const sourceHeading = [...container.querySelectorAll('h2')].find(heading => /^\s*sources?\s*$/i.test(heading.textContent || ''))
+  const container = inert(value)
+  const headings = [...container.content.querySelectorAll('h2')].map(heading => (heading.textContent || '').trim()).filter(Boolean)
+  const sourceHeading = [...container.content.querySelectorAll('h2')].find(heading => /^\s*sources?\s*$/i.test(heading.textContent || ''))
   const sourceCount = sourceHeading?.nextElementSibling?.tagName === 'OL' ? sourceHeading.nextElementSibling.querySelectorAll('li').length : 0
   return { headings, sourceCount }
 }
@@ -75,9 +118,8 @@ function plainText(html: string) {
 }
 
 function withImageUrls(html: string) {
-  const container = document.createElement('div')
-  container.innerHTML = html
-  for (const image of [...container.querySelectorAll('img')]) {
+  const container = inert(html)
+  for (const image of [...container.content.querySelectorAll('img')]) {
     const src = image.getAttribute('src')
     if (src) image.setAttribute('src', resolveApiImageSrc(src))
   }
@@ -85,9 +127,8 @@ function withImageUrls(html: string) {
 }
 
 function toStoredHtml(html: string) {
-  const container = document.createElement('div')
-  container.innerHTML = html
-  for (const image of [...container.querySelectorAll('img')]) {
+  const container = inert(html)
+  for (const image of [...container.content.querySelectorAll('img')]) {
     const src = image.getAttribute('src')
     if (src) image.setAttribute('src', relativizeApiImageSrc(src))
   }
@@ -148,6 +189,91 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
   const navigate = useNavigate()
   const [linkedEvent, setLinkedEvent] = useState<CalendarEvent | null>(null)
   const [isSyncingCalendar, setIsSyncingCalendar] = useState(false)
+  const [isDictating, setIsDictating] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [deletePermanentlyConfirm, setDeletePermanentlyConfirm] = useState(false)
+
+  // Clean up any active speech when switching notes or leaving editor
+  useEffect(() => {
+    return () => {
+      tts.stop()
+      stt.stopListening()
+    }
+  }, [note.id])
+
+  function toggleDictation() {
+    if (isDictating) {
+      stt.stopListening()
+      setIsDictating(false)
+      return
+    }
+
+    robotAudio.play('blip')
+    setIsDictating(true)
+    stt.startListening({
+      continuous: true,
+      interimResults: true,
+      onFinal: text => {
+        ref.current?.focus()
+        document.execCommand('insertText', false, text + ' ')
+        edit(ref.current?.innerHTML || '')
+      },
+      onStateChange: state => setIsDictating(state === 'listening' || state === 'processing'),
+      onError: err => {
+        setIsDictating(false)
+        onToast(err)
+      }
+    })
+  }
+
+  function toggleReadAloud() {
+    if (isSpeaking && tts.isSpeaking()) {
+      tts.stop()
+      setIsSpeaking(false)
+      return
+    }
+
+    tts.stop()
+    setIsSpeaking(true)
+    const textToRead = [title, plainText(content)].filter(Boolean).join('. ')
+    tts.speak(textToRead, {
+      onStart: () => setIsSpeaking(true),
+      onEnd: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false)
+    })
+  }
+
+  const hasCalendarSync = Boolean(
+    specializedNote?.syncWithCalendar ||
+    note.specialized?.syncWithCalendar ||
+    specializedNote?.category === 'workout' ||
+    specializedNote?.category === 'daily' ||
+    ((specializedNote?.templateId || note.specialized?.templateId) && getCustomTemplates().some(t =>
+      t.title.toLowerCase() === (specializedNote?.templateId || note.specialized?.templateId)?.toLowerCase() && t.syncWithCalendar
+    ))
+  )
+
+  async function handleSyncToCalendar(silent = false) {
+    const spec = specializedNote || note.specialized
+    if (!spec) return
+    if (!silent) setIsSyncingCalendar(true)
+    try {
+      let event: CalendarEvent
+      if (spec.category === 'workout') {
+        event = await api.syncWorkoutToCalendar(note.id, spec.fields, linkedEvent?.id)
+      } else if (spec.category === 'daily') {
+        event = await api.syncDailyToCalendar(note.id, spec.fields, linkedEvent?.id)
+      } else {
+        event = await api.syncSpecializedToCalendar(note.id, title || note.title || 'Specialized Note', spec.fields, linkedEvent?.id)
+      }
+      setLinkedEvent(event)
+      if (!silent) onToast('Linked to Calendar!')
+    } catch {
+      if (!silent) onToast('Could not sync event to calendar.')
+    } finally {
+      if (!silent) setIsSyncingCalendar(false)
+    }
+  }
 
   useEffect(() => {
     if (!isSpecialized) return
@@ -155,17 +281,41 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
     api.listEvents().then(events => {
       if (!activeSub) return
       const found = events.find(e => e.note_id === note.id)
-      if (found) setLinkedEvent(found)
+      if (found) {
+        setLinkedEvent(found)
+      } else if (hasCalendarSync && note.id) {
+        void handleSyncToCalendar(true)
+      }
     }).catch(() => {})
     return () => { activeSub = false }
-  }, [note.id, isSpecialized])
+  }, [note.id, isSpecialized, hasCalendarSync])
 
   useEffect(() => {
     document.execCommand('styleWithCSS', false, 'false')
-    const cleaned = isResearch ? decorateKeyFindings(sanitizeHtml(note.content)) : sanitizeHtml(note.content)
+    const { html: formatted, extractedTitle } = prepareContent(note.content)
+    const cleaned = isResearch ? decorateKeyFindings(sanitizeHtml(formatted)) : sanitizeHtml(formatted)
     setContent(cleaned)
-    setTitle(note.title)
-    setSpecializedNote(note.specialized)
+    const effectiveTitle = (!note.title || note.title.trim().toLowerCase() === 'untitled note' || note.title.trim() === 'untitled') && extractedTitle
+      ? extractedTitle
+      : note.title
+    setTitle(effectiveTitle)
+
+    const templateMatch = note.specialized?.templateId ? getCustomTemplates().find(t => t.title.toLowerCase() === note.specialized?.templateId?.toLowerCase()) : undefined
+    const shouldSync = Boolean(
+      note.specialized?.syncWithCalendar ||
+      note.specialized?.category === 'workout' ||
+      note.specialized?.category === 'daily' ||
+      templateMatch?.syncWithCalendar
+    )
+    const initialSpecialized = note.specialized ? {
+      ...note.specialized,
+      syncWithCalendar: shouldSync
+    } : undefined
+    setSpecializedNote(initialSpecialized)
+    if (initialSpecialized && shouldSync && !note.specialized?.syncWithCalendar) {
+      queue({ specialized: initialSpecialized })
+    }
+
     if (ref.current) ref.current.innerHTML = withImageUrls(cleaned)
   }, [note.id])
   useEffect(() => {
@@ -178,10 +328,14 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
         setJobId(null); setWorking(false)
         if (job.status === 'complete') {
           const updated = await refresh()
-          const updatedContent = isResearch ? decorateKeyFindings(sanitizeHtml(updated.content)) : sanitizeHtml(updated.content)
+          const { html: formatted, extractedTitle } = prepareContent(updated.content)
+          const updatedContent = isResearch ? decorateKeyFindings(sanitizeHtml(formatted)) : sanitizeHtml(formatted)
           // Title and content are controlled locally to support autosave. They
           // must be explicitly synchronized after an AI job changes the note.
-          setTitle(updated.title)
+          const effectiveTitle = (!updated.title || updated.title.trim().toLowerCase() === 'untitled note') && extractedTitle
+            ? extractedTitle
+            : updated.title
+          setTitle(effectiveTitle)
           setContent(updatedContent)
           if (ref.current) ref.current.innerHTML = withImageUrls(updatedContent)
           onToast(completionMessage(job))
@@ -209,74 +363,6 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
   function updateSpecializedField(name: string, value: string) {
     if (!specializedNote) return
     updateSpecialized({ fields: { ...specializedNote.fields, [name]: value } })
-  }
-
-  function renameCustomField(oldKey: string, newKey: string) {
-    if (!specializedNote || !newKey.trim() || oldKey === newKey.trim()) return
-    const entries = Object.entries(specializedNote.fields)
-    const newFields: Record<string, unknown> = {}
-    for (const [k, v] of entries) {
-      if (k === oldKey) {
-        newFields[newKey.trim()] = v
-      } else {
-        newFields[k] = v
-      }
-    }
-    updateSpecialized({ fields: newFields })
-  }
-
-  function removeCustomField(keyToRemove: string) {
-    if (!specializedNote) return
-    const newFields = { ...specializedNote.fields }
-    delete newFields[keyToRemove]
-    updateSpecialized({ fields: newFields })
-  }
-
-  function addCustomField() {
-    if (!specializedNote) return
-    const count = Object.keys(specializedNote.fields).length
-    if (count >= 12) return onToast('Custom templates support up to 12 fields.')
-    let nextName = `Field ${count + 1}`
-    let i = count + 1
-    while (specializedNote.fields[nextName] !== undefined) {
-      i += 1
-      nextName = `Field ${i}`
-    }
-    updateSpecialized({ fields: { ...specializedNote.fields, [nextName]: '' } })
-  }
-
-  function handleSaveAsReusableTemplate() {
-    if (!specializedNote) return
-    const templateTitle = (specializedNote.templateId || title || 'My Custom Template').trim()
-    const fields = Object.entries(specializedNote.fields).map(([name, value]) => ({
-      name,
-      defaultValue: String(value ?? '')
-    }))
-    saveCustomTemplate({
-      title: templateTitle,
-      fields,
-      aiInstruction: specializedNote.aiInstruction
-    })
-    onToast(`Saved "${templateTitle}" as a reusable template!`)
-  }
-
-  async function handleSyncToCalendar() {
-    if (!specializedNote) return
-    setIsSyncingCalendar(true)
-    try {
-      let event: CalendarEvent
-      if (specializedNote.category === 'workout') {
-        event = await api.syncWorkoutToCalendar(note.id, specializedNote.fields, linkedEvent?.id)
-      } else {
-        event = await api.syncDailyToCalendar(note.id, specializedNote.fields, linkedEvent?.id)
-      }
-      setLinkedEvent(event)
-      onToast('Linked to Calendar!')
-    } catch {
-      onToast('Could not sync event to calendar.')
-    } finally {
-      setIsSyncingCalendar(false)
-    }
   }
 
   function edit(html: string) {
@@ -431,8 +517,18 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
     <header className="editor-header">
       <button className="back-button" onClick={() => void finishNote()}><ArrowLeft size={18}/> All notes</button>
       <div className="editor-status">{working ? <><i className="pulse"/> Muse is thinking</> : <><Check size={14}/> Saved</>}</div>
-      <button className="header-icon" title={note.favorite ? 'Remove from favorites' : 'Add to favorites'} onClick={() => void save({ favorite: !note.favorite })}><Star size={18} fill={note.favorite ? 'currentColor' : 'none'}/></button>
-      <div className="note-menu-wrap"><button className="header-icon" title="Note actions" onClick={() => setMenu(!menu)}><MoreHorizontal size={19}/></button>{menu && <div className="note-menu">{note.deleted_at ? <><button onClick={() => void manage(restore, 'Note restored.')}>Restore note</button><button className="danger" onClick={() => void manage(permanentlyDelete, 'Note permanently deleted.')}>Delete permanently</button></> : <><button onClick={() => void manage(async () => { await save({ archived: !note.archived }) }, note.archived ? 'Note unarchived.' : 'Note archived.')}>{note.archived ? 'Unarchive note' : 'Archive note'}</button><button className="danger" onClick={() => void manage(trash, 'Note moved to trash.')}>Move to trash</button></>}</div>}</div>
+      <button
+        className={`header-icon favorite-toggle-btn ${note.favorite ? 'is-favorite' : ''}`}
+        title={note.favorite ? 'Remove from favorites' : 'Add to favorites'}
+        onClick={() => void save({ favorite: !note.favorite })}
+      >
+        <Star
+          size={18}
+          className={`star-icon ${note.favorite ? 'fav-star-icon is-favorite' : ''}`}
+          fill={note.favorite ? 'currentColor' : 'none'}
+        />
+      </button>
+      <div className="note-menu-wrap"><button className="header-icon" title="Note actions" onClick={() => setMenu(!menu)}><MoreHorizontal size={19}/></button>{menu && <div className="note-menu">{note.deleted_at ? <><button onClick={() => void manage(restore, 'Note restored.')}>Restore note</button><button className="danger" onClick={() => { setMenu(false); setDeletePermanentlyConfirm(true) }}>Delete permanently</button></> : <><button onClick={() => void manage(async () => { await save({ archived: !note.archived }) }, note.archived ? 'Note unarchived.' : 'Note archived.')}>{note.archived ? 'Unarchive note' : 'Archive note'}</button><button className="danger" onClick={() => void manage(trash, 'Note moved to trash.')}>Move to trash</button></>}</div>}</div>
     </header>
     <div className={`editor-canvas${isResearch ? ' research-canvas' : ''}${isSpecialized ? ` specialized-canvas specialized-color-${specializedNote?.color || 'blue'}` : ''}`}>
       {isResearch && <aside className="research-toc" aria-label="Research report table of contents"><strong>In this report</strong><nav>{researchHeadings.map((heading, index) => <button key={`${heading}-${index}`} onClick={() => scrollToResearchSection(index)}>{heading}</button>)}</nav></aside>}
@@ -442,7 +538,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
         <section className="specialized-fields">
           <header className="specialized-fields-header">
             <div className="specialized-fields-title-group">
-              <span className="specialized-title-label">Specialized · {specializedNote.category === 'workout' ? 'Workout' : specializedNote.category === 'daily' ? 'Daily tasks & feedback' : specializedNote.category}</span>
+              <span className="specialized-title-label">Specialized · {specializedNote.category === 'workout' ? 'Workout' : specializedNote.category === 'daily' ? 'Daily tasks & feedback' : specializedNote.category === 'finance' ? 'Expense & decision' : (specializedNote.templateId || 'Custom')}</span>
               <div className="specialized-color-picker-wrap">
                 <span className="color-picker-label">Color:</span>
                 <div className="specialized-color-swatches" title="Choose color accent for this note">
@@ -470,8 +566,8 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
             <small>Structured fields are encrypted with this note.</small>
           </header>
 
-          {/* Calendar / Task Sync Bar for Workout or Daily Notes */}
-          {(specializedNote.category === 'workout' || specializedNote.category === 'daily') && (
+          {/* Calendar / Task Sync Bar for Workout, Daily, or Templates with Calendar Sync */}
+          {hasCalendarSync && (
             <div className="specialized-sync-bar">
               <div className="specialized-sync-info">
                 <Calendar size={15} />
@@ -484,7 +580,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
               <div className="specialized-sync-actions">
                 <button
                   className="sync-calendar-btn"
-                  onClick={handleSyncToCalendar}
+                  onClick={() => handleSyncToCalendar(false)}
                   disabled={isSyncingCalendar}
                   title="Create or update calendar event from these fields"
                 >
@@ -504,67 +600,8 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
             </div>
           )}
 
-          {/* Custom Template Header: Name and AI Instruction */}
-          {specializedNote.category === 'custom' && (
-            <div className="specialized-template" style={{ marginBottom: 12 }}>
-              <label>
-                Template name
-                <input
-                  value={specializedNote.templateId || ''}
-                  onChange={event => updateSpecialized({ templateId: event.target.value })}
-                  placeholder="e.g. Reading Log, Meal Tracker"
-                />
-              </label>
-              <label>
-                AI instruction
-                <input
-                  value={specializedNote.aiInstruction || ''}
-                  onChange={event => updateSpecialized({ aiInstruction: event.target.value })}
-                  placeholder="Tell Muse how to assist with this template"
-                />
-              </label>
-            </div>
-          )}
-
           {/* Fields Grid */}
-          {specializedNote.category === 'custom' ? (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '8px' }}>
-              {Object.entries(specializedNote.fields).map(([name, value]) => (
-                <div key={name} className="custom-field-row">
-                  <input
-                    className="custom-field-name-input"
-                    defaultValue={name}
-                    onBlur={e => {
-                      const newName = e.target.value.trim()
-                      if (newName && newName !== name) renameCustomField(name, newName)
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        const newName = (e.target as HTMLInputElement).value.trim()
-                        if (newName && newName !== name) renameCustomField(name, newName)
-                        ;(e.target as HTMLInputElement).blur()
-                      }
-                    }}
-                    title="Click to rename field"
-                    placeholder="Field name"
-                  />
-                  <input
-                    className="custom-field-val-input"
-                    value={Array.isArray(value) ? value.join(', ') : String(value ?? '')}
-                    onChange={event => updateSpecializedField(name, event.target.value)}
-                    placeholder="Value"
-                  />
-                  <button
-                    className="custom-field-remove-btn"
-                    title="Delete this field"
-                    onClick={() => removeCustomField(name)}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : specializedNote.category === 'workout' ? (
+          {specializedNote.category === 'workout' ? (
             <div className="specialized-field-grid">
               <label>
                 <span>Date</span>
@@ -613,22 +650,10 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
                   <input
                     value={Array.isArray(value) ? value.join(', ') : String(value ?? '')}
                     onChange={event => updateSpecializedField(name, event.target.value)}
-                    placeholder="Add value"
+                    placeholder={`Enter ${name.toLowerCase()}...`}
                   />
                 </label>
               ))}
-            </div>
-          )}
-
-          {/* Actions: Add field & Save as Reusable Template for custom notes */}
-          {specializedNote.category === 'custom' && (
-            <div className="specialized-actions-row">
-              <button className="specialized-add-field" onClick={addCustomField}>
-                <Plus size={13} /> Add field ({Object.keys(specializedNote.fields).length}/12)
-              </button>
-              <button className="save-template-btn" onClick={handleSaveAsReusableTemplate} title="Save this structure to reuse anytime">
-                <Bookmark size={13} /> Save as Reusable Template
-              </button>
             </div>
           )}
         </section>
@@ -646,6 +671,9 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
         <button className={active.blockquote ? 'active' : ''} onMouseDown={keepSelection} onClick={() => toggleBlock('blockquote')}><Quote size={17}/></button>
         <button className={active.pre ? 'active' : ''} onMouseDown={keepSelection} onClick={() => toggleBlock('pre')}><Code2 size={17}/></button>
         <button title="Add an image" onMouseDown={keepSelection} onClick={() => imageInput.current?.click()}><Image size={17}/></button>
+        <b/>
+        <button className={isDictating ? 'active mic-active' : ''} onMouseDown={keepSelection} onClick={toggleDictation} title={isDictating ? 'Listening… click to finish dictation' : 'Dictate note with your microphone (English)'}>{isDictating ? <MicOff size={16}/> : <Mic size={16}/>}</button>
+        <button className={isSpeaking ? 'active speaker-active' : ''} onMouseDown={keepSelection} onClick={toggleReadAloud} title={isSpeaking ? 'Stop reading' : 'Read note aloud with English voice'}>{isSpeaking ? <Square size={14} fill="currentColor"/> : <Volume2 size={16}/>}</button>
       </div>
       <input ref={imageInput} type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/avif" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void insertImage(file) }}/>
       <div ref={ref} className={`rich-editor${isResearch ? ' research-document' : ''}`} contentEditable suppressContentEditableWarning onInput={e => edit(e.currentTarget.innerHTML)} onPaste={pasteImage} onKeyUp={updateActive} onMouseUp={updateActive} onClick={updateActive}/>
@@ -688,6 +716,20 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
           onToast(msg)
           void refresh()
         }}
+      />
+    )}
+    {deletePermanentlyConfirm && (
+      <ConfirmModal
+        isOpen={true}
+        title="Permanently Delete Note"
+        message="Are you sure you want to permanently delete this note? This action cannot be undone."
+        confirmText="Delete permanently"
+        danger={true}
+        onConfirm={() => {
+          setDeletePermanentlyConfirm(false)
+          void manage(permanentlyDelete, 'Note permanently deleted.')
+        }}
+        onCancel={() => setDeletePermanentlyConfirm(false)}
       />
     )}
   </div>

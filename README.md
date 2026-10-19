@@ -6,29 +6,35 @@ Muse is a production-oriented AI note application built around one principle: **
 
 ```text
 React + Vite  ──HTTP──>  Express API  ──> Supabase PostgreSQL (source of truth)
-                                  ├──> Ollama Cloud (research and chat) + local Ollama (embeddings)
-                                  └──> Qdrant (note embeddings and metadata)
+                                  ├──> Google Gemini (gemini-3.8-flash, 3.7, 3.5, 3.1)
+                                  ├──> Ollama Cloud (Reflection AI Beam 501B MoE, Gemma, Nemotron)
+                                  ├──> Local Ollama (Embeddings nomic-embed-text)
+                                  └──> Qdrant (Note embeddings and metadata)
 ```
 
 The API returns note saves immediately. A background processor generates missing titles, tags, summaries, and vectors after the response. Qdrant stores only embeddings and compact metadata; full note text always remains in Supabase.
 
+For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](./ENDPOINTS.md).
+
 ## Included capabilities
 
-- Premium responsive dashboard, dark mode, keyboard shortcuts, and command palette (`Ctrl/⌘ K`, `Ctrl/⌘ M`)
-- Rich editable notes with headings, formatting, lists, checklists, code blocks, quotes, autosave, word count, and save state
-- Topbar quick-access **"Ask Muse"** and chat panel (`Enter` to send, `Shift + Enter` for newline)
-- A **note graph**: every note becomes a node connected to meaningfully similar notes and notes that share tags (see the Graph entry in the sidebar)
-- **Specialized Notes & Custom Templates**: Structured templates (Gym workout, Daily tasks & feedback, Expense & decisions) and custom templates where you name your own fields, write freely alongside structured data, assign color accents (7 swatches), and search templates
-- **Interactive Calendar & Natural Language Scheduling**: Monthly calendar agenda, natural-language event creation (e.g. "Gym tomorrow at 20h"), and note-event deep linking
-- **Dedicated Tasks Management**: Global filterable tasks workspace (All, Pending, Completed, Note-specific) with due dates, priority, and bi-directional note navigation
-- **AI Schedule & Task Detector**: Scans note text for dates, appointments, and actionable tasks, allowing one-click review and workspace addition
-- **Batch Note Selection**: Multi-select notes on the dashboard to move multiple notes to trash, restore, or manage in bulk
-- AI title generation, tag extraction, summaries, task extraction, and six rewrite modes
-- "Ask this note" constrained to the active note
-- RAG-powered "Ask my notes" that embeds the question, retrieves up to eight Qdrant matches, fetches those complete notes, and cites their titles
-- **Security-scanned research uploads**: documents are checked at upload time; dangerous structures are rejected outright and prompt-injection patterns are flagged so you see a warning before the text feeds an AI run
-- Soft deletion with Qdrant vector cleanup, background embedding upserts, REST validation, and toast feedback
-- Signature violet theme hover interactions in both light and dark modes
+- **Bip Autonomous AI Agent & Floating Companion**: Interactive draggable robot companion with dynamic mood states (`idle`, `happy`, `thinking`, `excited`, `curious`, `surprised`) and procedural Web Audio sound synthesis (`chirp`, `boop`, `blip`, `success`, `error`, `thinking` loop).
+- **Dedicated Assistant Workspace (`/assistant`)**: Session-based multi-turn conversation workspace with persistent history, session renaming, search, and inline message editing, deleting, and "Save & Resend".
+- **Single-Prompt Autonomous Multi-Tool Calling**: Bip executes actions directly in your workspace—creating notes, adding priority tasks, scheduling calendar events, and storing long-term memories in parallel/sequence.
+- **Persistent User Memories**: Bip learns and retains your lasting preferences, work habits, and goals across sessions via `user_memories`.
+- **Speech-to-Text (STT) & Text-to-Speech (TTS)**: Dual-engine voice input (server Gemini Multimodal Audio + browser Web Speech API), emoji-skipping conversational English voice synthesis (strips pictographs, flags, and emoji descriptions for clean read-aloud), and native on-device streaming voice dictation on mobile.
+- **Remote Mobile Companion (Flutter)**: Dedicated companion app with one-click QR code pairing, on-device microphone dictation, dual reading/editing note modes with HTML-to-Markdown formatting, task & schedule management, and mobile Bip AI chat.
+- **KaTeX LaTeX Math Rendering**: Renders mathematical formulas (`$$...$$` block and `$...$` inline) with automatic escaping for percent signs (`\%`) to ensure uncorrupted rendering.
+- **Waterfall Model Cascade & Quota Resilience**: Automatically cascades across Gemini models (`gemini-3.8-flash` → `gemini-3.7-flash` → `gemini-3.6-flash` → `gemini-3.5-flash` → `gemini-3.5-flash-lite` → `gemini-3.1-flash-lite`) if a daily free-tier quota (429) is exhausted, and cascades to Ollama Cloud with support for Reflection AI's **Beam** (`beam:cloud`, 501B MoE).
+- **Zero-Knowledge Encrypted Vault & Passkeys**: Optional client-side AES-GCM encryption with Argon2id key derivation, WebAuthn passkey authentication, and additive legacy migration.
+- **Interactive Calendar & Natural Language Scheduling**: Monthly calendar agenda, natural-language event creation (e.g. "Gym tomorrow at 20h"), and note-event deep linking.
+- **Dedicated Tasks Management**: Global filterable tasks workspace (All, Pending, Completed, Note-specific) with due dates, priorities, and bi-directional note navigation.
+- **AI Schedule & Task Detector**: Scans note text for dates, appointments, and actionable tasks, allowing one-click review and workspace addition.
+- **Specialized Notes & Custom Templates**: Structured templates (Gym workout, Daily tasks & feedback, Expense & decisions) and custom templates with custom fields and 7 accent colors.
+- **Knowledge Graph**: Every note becomes a node connected to meaningfully similar notes based on semantic embeddings and shared tags.
+- **Security-scanned research uploads**: Documents (PDF, DOCX, TXT) are checked at upload time for macro injection and prompt-injection patterns before feeding AI pipelines.
+- **Batch Note Selection**: Multi-select notes on the dashboard to move multiple notes to trash, restore, or manage in bulk.
+- **Signature Violet Theme**: Premium responsive dashboard, dark mode, keyboard shortcuts, and command palette (`Ctrl/⌘ K`, `Ctrl/⌘ M`).
 
 ## Prerequisites
 
@@ -83,8 +89,8 @@ The API returns note saves immediately. A background processor generates missing
    npm run dev
    ```
 
-   Open `http://localhost:5173` for the Vite client; Express runs on
-   `http://localhost:3001`. The Docker Nginx gateway at
+   Open `http://localhost:5174` for the Vite client; Express runs on
+   `http://localhost:3002`. The Docker Nginx gateway at
    `http://localhost:8080` will also work while Express is running, but it
    serves the client bundle built when Compose last ran.
 
@@ -200,24 +206,27 @@ recovery link opens a dedicated new-password form before returning to Muse.
 
 ## Database and migration
 
-`supabase/migrations/001_initial.sql` creates `notes`, `tags`, `note_tags`, `tasks`, and `ai_jobs`, their foreign keys, indexes, UUID defaults, RLS policies, and the automatic `updated_at` trigger. It is mounted into the local Postgres initialization path by Docker. For an existing local volume, execute it once manually:
+The schema lives in `supabase/migrations/NNN_*.sql`. **You never apply these by
+hand.** The one-shot `migrate` Compose service runs on every
+`docker compose up`. It applies any migration this database has not run yet, in
+filename order and one transaction per file, and records it in
+`public.schema_migrations`. The API container waits for it to finish, so Muse
+never starts against an outdated schema. If a migration fails, it is rolled
+back, the API does not start, and the error shows in
+`docker compose logs migrate`.
+
+- **Fresh install:** every migration is applied on first start.
+- **Existing database from before the runner:** on its first run, the runner
+  recognises which migrations are already present (by their tables and
+  columns), records them, and applies only the missing ones.
+- **Adding a migration:** create the next numbered file, e.g.
+  `018_something.sql`, then run `docker compose up -d`. Prefer `if not exists`
+  where you can.
+
+To apply migrations without restarting anything else:
 
 ```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/001_initial.sql
-```
-
-`002_images.sql` adds the `images` table (base64-encoded binaries) behind `POST /api/uploads` / `GET /api/images/:id`. Apply it to an existing database the same way:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/002_images.sql
-```
-
-`003_api_keys.sql` enables the per-user Ollama key store in Supabase Vault and
-creates service-role-only RPC helpers. It runs automatically for a newly
-initialized database. For an existing healthy database, apply it once:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/003_api_keys.sql
+docker compose run --rm migrate
 ```
 
 The Vault encryption root key is pinned to the host file
@@ -227,57 +236,6 @@ missing, so the pinned file survives container recreations and keeps saved
 Vault secrets decryptable. A fresh deployment must create it before the first
 start (see "Quick start"). Keep it with `muse_postgres-data`; deleting either
 independently can make saved Vault secrets unrecoverable.
-
-`004_research_documents.sql` marks notes as standard or research documents.
-Run it once on an existing database before starting the new server container:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/004_research_documents.sql
-```
-
-`005_research_pipeline.sql` adds private extracted research documents and the
-saved artifacts for each staged research run. It does **not** read from your
-other Muse notes. Apply it once to an existing database:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/005_research_pipeline.sql
-```
-
-`006_modular_reports.sql` adds report plans, quality results, and per-skill
-execution telemetry for the modular report engine. Apply it once to an existing
-database:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/006_modular_reports.sql
-```
-
-`007_document_scan.sql` adds the security-scan columns to research documents
-(`scan_status`, `scan_notes`). Apply it once to an existing database:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/007_document_scan.sql
-```
-
-`008_secure_vault.sql` adds encrypted user vaults, passkey credential metadata,
-and encrypted envelopes. Apply it once to an existing database:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/008_secure_vault.sql
-```
-
-`009_calendar_and_tasks.sql` adds interactive calendar events and workspace
-tasks with note-linking support:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/009_calendar_and_tasks.sql
-```
-
-`010_specialized_notes.sql` adds specialized note metadata, custom template
-support, and color styling:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/010_specialized_notes.sql
-```
 
 ### Images
 
@@ -495,10 +453,10 @@ Browser -> https://notes.example.com -> Cloudflare Tunnel -> Docker Nginx (127.0
    tunnel token.
 
 Only Cloudflare is public in this design. Do not open inbound ports `80`,
-`443`, `3001`, `8000`, `5432`, or `6333` for Muse.
+`443`, `3002`, `8000`, `5432`, or `6333` for Muse.
 
 For a local setup, the tunnel ingress must point to `http://localhost:8080`.
-The Nginx container forwards `/api` to Express on port `3001`; do not point a
+The Nginx container forwards `/api` to Express on port `3002`; do not point a
 tunnel directly to Express.
 
 ## Verify a production deployment
@@ -507,7 +465,7 @@ After the full stack is up, confirm every layer end to end:
 
 ```bash
 docker compose ps --format "table {{.Name}}\t{{.Status}}"   # db, server, kong & nginx healthy
-docker compose exec server node -e "fetch('http://127.0.0.1:3001/health').then(r => r.json()).then(console.log)"
+docker compose exec server node -e "fetch('http://127.0.0.1:3002/health').then(r => r.json()).then(console.log)"
 curl -s http://localhost:8080/health                         # same health check through Nginx
 curl -sI https://notes.example.com/ | head -n 1             # 200 or 30x
 ```
@@ -542,3 +500,64 @@ GoTrue container:
 ```bash
 docker compose logs auth --tail 20
 ```
+
+---
+
+## Remote Mobile Companion (Flutter App)
+
+Muse includes a cross-platform mobile companion located in the `mobile/` directory, allowing you to access your notes, tasks, and talk directly with **Bip AI Assistant** from your phone.
+
+### Features
+* **Zero-Cloud Local Pairing:** Pair your mobile device with your computer via a one-time QR code or 6-digit PIN.
+* **On-Device Real-Time Microphone Dictation:** Continuous live speech-to-text powered by Google Speech Services (`speech_to_text: ^7.5.0`) with Bluetooth earbuds support (`BLUETOOTH_CONNECT`) and zero cloud latency.
+* **Bip AI Assistant on Mobile:** Talk or type with Bip remotely. Features live voice recognition, action cards, and real-time execution of workspace tools (creating notes, tasks, and scheduling events).
+* **Dual Reading & Editing Note Modes:** Browse notes with formatted markdown styling, or switch into edit mode with tag editors, word counts, and direct voice dictation.
+* **HTML to Markdown Engine:** Automatic conversion of rich HTML generated on the desktop web app into structured Markdown for clean mobile viewing.
+* **Dedicated Tasks & Schedule:** Segmented task management (All, Today, Upcoming, Overdue, Completed) alongside scheduled calendar events.
+* **Self-Healing Device Tokens:** Uses high-entropy device bearer tokens (`muse_dev_...`) stored securely in encrypted phone storage. Revocable anytime from the desktop client.
+
+### Voice & Speech Synthesis (TTS & STT)
+* **Web STT:** Dual-engine architecture with Google Gemini Multimodal Audio (`gemini-3.5-flash` / `gemini-3.7-flash` via `/api/voice/transcribe`) for complex prompts, and Web Speech API (`webkitSpeechRecognition`) for local browser transcription.
+* **Mobile STT:** Real-time on-device streaming recognition using Android's native `RecognitionService`.
+* **Conversational TTS:** Browser Speech Synthesis with automatic Unicode emoji and symbol filtering (`EMOJI_REGEX`), stripping emoji descriptions (e.g. "robot face sparkles") and normalizing whitespace/punctuation for clean, natural speech playback.
+
+### How to Pair Your Phone
+1. On your computer, open Muse in your browser (`http://localhost:8080`) and click **Link Phone** in the sidebar or top navigation bar.
+2. An interactive pairing modal will display an animated QR code and a 6-digit PIN (valid for 5 minutes).
+3. On your mobile phone, open the Muse companion app.
+4. Point the camera at the QR code. The app automatically claims the session, links your device, and redirects to your workspace dashboard.
+5. Alternatively, tap **Enter PIN Manually**, enter your computer's IP address (e.g., `http://192.168.100.136:8080`), and type the 6-digit PIN.
+
+### Connecting Over the Internet
+When away from your home Wi-Fi network, you can connect your phone to Muse over the internet using one of two secure methods:
+
+#### Method A: Tailscale Mesh VPN (Recommended)
+If Tailscale is running on your host machine and your mobile phone:
+1. Note your host's Tailscale IP (e.g. `100.84.254.110`).
+2. In the desktop **Link Phone** modal, select the **Tailscale (100.84.254.110:8080)** endpoint option before scanning the QR code, or enter `http://100.84.254.110:8080` in the mobile app.
+3. Your phone securely connects over your private encrypted Tailscale mesh without opening any router ports.
+
+#### Method B: Cloudflare Quick Tunnel
+1. On your host computer, start a quick ephemeral tunnel:
+   ```bash
+   cloudflared tunnel --url http://localhost:8080
+   ```
+2. Cloudflare outputs a public HTTPS address (e.g. `https://random-subdomain.trycloudflare.com`).
+3. Click the pencil icon next to the server address in the desktop **Link Phone** modal, paste your tunnel URL, and scan the regenerated QR code on your phone.
+
+### Building & Running Mobile App
+```bash
+# In the repository root
+cd mobile
+
+# Verify dependencies and analyze code
+flutter pub get
+flutter analyze
+flutter test
+
+# Build debug APK and install to connected physical device
+flutter build bundle
+cd android && JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64 ./gradlew assembleDebug
+adb install -r ../build/app/outputs/flutter-apk/app-debug.apk
+```
+

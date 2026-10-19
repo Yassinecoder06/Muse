@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
+import { chronoReference, offsetMinutes, requestTimezone } from '../utils/timezone.js'
 import { z } from 'zod'
 import * as chrono from 'chrono-node'
 import { supabase } from '../supabase/client.js'
@@ -69,9 +70,11 @@ export async function quickAddEvent(req: Request, res: Response, next: NextFunct
     const prompt = typeof req.body.prompt === 'string' ? req.body.prompt.trim() : ''
     if (!prompt) return res.status(400).json({ error: 'Please enter a prompt' })
 
-    const refDate = req.body.clientDate ? new Date(req.body.clientDate) : new Date()
+    const zone = requestTimezone(req)
+    const clientDate = req.body.clientDate ? new Date(req.body.clientDate) : null
+    const refDate = clientDate && !isNaN(clientDate.getTime()) ? clientDate : new Date()
     const normalizedPrompt = normalizeTimePhrases(prompt)
-    const parsedResults = chrono.parse(normalizedPrompt, refDate)
+    const parsedResults = chrono.parse(normalizedPrompt, chronoReference(zone, refDate))
 
     let title = prompt
     let startTime = new Date(refDate.getTime() + 60 * 60 * 1000) // Default 1 hour from now
@@ -105,8 +108,14 @@ export async function quickAddEvent(req: Request, res: Response, next: NextFunct
 
     // Attempt AI refinement with local or cloud Ollama
     try {
-      const apiKey = await settings.getKey(req.userId!).catch(() => null)
-      const aiPrompt = `Given reference date ${refDate.toISOString()} and the event prompt: "${prompt}",
+      const { geminiKey, ollamaKey } = await settings.getEffectiveAiKeys(req.userId!)
+      const keyContext = { geminiKey, ollamaKey, userId: req.userId! }
+      const offset = offsetMinutes(zone, refDate)
+      const sign = offset < 0 ? '-' : '+'
+      const utcOffset = `${sign}${String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0')}:${String(Math.abs(offset) % 60).padStart(2, '0')}`
+      const aiPrompt = `The user's local time is ${refDate.toLocaleString('sv-SE', { timeZone: zone })} (${zone}, UTC${utcOffset}). Event prompt: "${prompt}".
+Write start_time and end_time as ISO 8601 with the user's offset, e.g. 2026-10-19T15:00:00${utcOffset}.
+
 extract the event details and reply strictly with valid JSON (no markdown):
 {
   "title": "Clean Event Title",
@@ -119,7 +128,8 @@ extract the event details and reply strictly with valid JSON (no markdown):
         'You are an expert calendar assistant that returns strictly JSON.',
         aiPrompt,
         undefined,
-        apiKey || undefined
+        keyContext,
+        'lightweight'
       )
       const match = aiResponse.match(/\{[\s\S]*\}/)
       if (match) {

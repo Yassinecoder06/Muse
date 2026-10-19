@@ -1,0 +1,946 @@
+/* Bip the Robot Companion Styles */
+
+.bip-container {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  touch-action: none;
+  filter: drop-shadow(0 12px 28px rgba(26, 21, 48, 0.22));
+}
+
+.bip-figure-wrapper {
+  cursor: grab;
+  position: relative;
+  transition: transform 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.bip-figure-wrapper:hover {
+  transform: scale(1.04);
+}
+
+.bip-figure-wrapper.is-dragging {
+  cursor: grabbing;
+  transform: scale(1.08);
+}
+
+/* Floating shadow beneath Bip */
+.bip-shadow {
+  width: 48px;
+  height: 10px;
+  background: radial-gradient(ellipse at center, rgba(38, 28, 64, 0.28) 0%, rgba(38, 28, 64, 0) 70%);
+  border-radius: 50%;
+  margin-top: -6px;
+  pointer-events: none;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.bip-figure-wrapper.is-dragging + .bip-shadow {
+  transform: scale(0.7);
+  opacity: 0.15;
+}
+
+/* Floating speech bubble / greeting hint */
+.bip-hint-bubble {
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 8px;
+  background: #ffffff;
+  color: #2a2638;
+  border: 1px solid #e2def0;
+  padding: 6px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 6px 20px rgba(45, 35, 75, 0.12);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  animation: bipPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.bip-hint-bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px 6px 0 6px;
+  border-style: solid;
+  border-color: #ffffff transparent transparent transparent;
+}
+
+/* Responsive alignment for speech hint bubble */
+.bip-container.align-right .bip-hint-bubble {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+.bip-container.align-right .bip-hint-bubble::after {
+  left: auto;
+  right: 28px;
+  transform: none;
+}
+
+.bip-container.align-left .bip-hint-bubble {
+  left: 0;
+  right: auto;
+  transform: none;
+}
+
+.bip-container.align-left .bip-hint-bubble::after {
+  left: 28px;
+  right: auto;
+  transform: none;
+}
+
+/* Quick Action / Chat Dialog */
+.bip-dialog {
+  position: absolute;
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(600px, calc(100vh - 120px));
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(16px);
+  border: 1px solid #dfdaee;
+  border-radius: 18px;
+  box-shadow: 0 16px 40px rgba(35, 28, 60, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: bipDialogIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  color: #272433;
+  z-index: 10;
+}
+
+/* Horizontal alignment relative to Bip */
+.bip-dialog.align-right {
+  right: 0px;
+  left: auto;
+}
+
+.bip-dialog.align-left {
+  left: 0px;
+  right: auto;
+}
+
+/* Vertical opening direction */
+.bip-dialog.open-up {
+  bottom: calc(100% + 12px);
+  top: auto;
+}
+
+.bip-dialog.open-down {
+  top: calc(100% + 12px);
+  bottom: auto;
+}
+
+/* Dialog Header */
+.bip-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #eeeaf6;
+  background: linear-gradient(180deg, #fbfaff 0%, #f6f3fc 100%);
+}
+
+.bip-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #6347c2;
+}
+
+.bip-status-dot {
+  width: 7px;
+  height: 7px;
+  background: #10b981;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 6px #10b981;
+}
+
+.bip-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bip-dialog-actions button {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #8c8799;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.bip-dialog-actions button:hover {
+  background: #ede9f6;
+  color: #3f3659;
+}
+
+/* Quick action suggestions */
+.bip-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f2edf9;
+  background: #faf8fd;
+}
+
+.bip-chip {
+  background: #ede8f8;
+  color: #5c41b8;
+  border: 1px solid #dfd8f2;
+  border-radius: 20px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.bip-chip:hover {
+  background: #e2dbf6;
+  transform: translateY(-1px);
+  color: #4a329c;
+}
+
+/* Messages area */
+.bip-messages {
+  max-height: min(420px, 62vh);
+  min-height: 140px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.bip-message {
+  padding: 10px 14px;
+  border-radius: 14px;
+  max-width: 90%;
+  word-break: break-word;
+  line-height: 1.5;
+  font-size: 12.5px;
+  box-sizing: border-box;
+}
+
+.bip-message.bip-msg-assistant,
+.bip-message.assistant {
+  align-self: flex-start;
+  max-width: 96%;
+  background: #f4f0fa;
+  color: #272138;
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 1px 4px rgba(35, 28, 60, 0.06);
+}
+
+.bip-message.bip-msg-user,
+.bip-message.user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, #7c5ce9 0%, #6343d8 100%);
+  color: #ffffff !important;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 2px 6px rgba(99, 67, 216, 0.25);
+}
+
+.bip-message-text {
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  min-width: 0 !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  font-weight: normal !important;
+  font-size: 12.5px !important;
+  line-height: 1.5 !important;
+  color: inherit !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
+  text-align: left !important;
+}
+
+.bip-msg-user .bip-message-text {
+  white-space: pre-wrap !important;
+}
+
+.bip-message > div:not(.bip-sources) {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  display: block;
+}
+
+/* Formatted AI Response Styles */
+.formatted-ai-response-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.formatted-ai-response {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: inherit;
+}
+
+.formatted-ai-response p {
+  margin: 0 0 8px;
+  line-height: 1.55;
+}
+
+.formatted-ai-response p:last-child {
+  margin-bottom: 0;
+}
+
+.formatted-ai-response h1,
+.formatted-ai-response h2,
+.formatted-ai-response h3,
+.formatted-ai-response h4 {
+  color: #4b369c;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 12px 0 6px;
+  letter-spacing: -0.2px;
+}
+
+[data-theme='dark'] .formatted-ai-response h1,
+[data-theme='dark'] .formatted-ai-response h2,
+[data-theme='dark'] .formatted-ai-response h3,
+[data-theme='dark'] .formatted-ai-response h4 {
+  color: #cbbbf9;
+}
+
+.formatted-ai-response h1 { font-size: 15px; margin-top: 6px; }
+.formatted-ai-response h2 { font-size: 14px; border-bottom: 1px solid rgba(124, 92, 233, 0.15); padding-bottom: 3px; }
+.formatted-ai-response h3 { font-size: 13px; }
+.formatted-ai-response h4 { font-size: 12px; }
+
+.formatted-ai-response hr {
+  border: none;
+  border-top: 1px solid rgba(135, 110, 219, 0.2);
+  margin: 10px 0;
+}
+
+[data-theme='dark'] .formatted-ai-response hr {
+  border-top-color: rgba(160, 140, 230, 0.2);
+}
+
+.formatted-ai-response ul,
+.formatted-ai-response ol {
+  margin: 4px 0 8px;
+  padding-left: 17px;
+}
+
+.formatted-ai-response li {
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.formatted-ai-response li > p {
+  margin: 0 0 2px;
+}
+
+.formatted-ai-response li > strong:first-child {
+  color: #3b2c6e;
+  font-weight: 600;
+}
+
+[data-theme='dark'] .formatted-ai-response li > strong:first-child {
+  color: #ded5fb;
+}
+
+.formatted-ai-response ul ul,
+.formatted-ai-response ol ul,
+.formatted-ai-response ul ol {
+  margin: 3px 0 4px;
+  padding-left: 15px;
+}
+
+/* Callout notice banner for general knowledge */
+.ai-callout-notice {
+  background: linear-gradient(135deg, rgba(124, 92, 233, 0.08) 0%, rgba(99, 67, 216, 0.04) 100%);
+  border: 1px solid rgba(124, 92, 233, 0.22);
+  border-left: 3px solid #7c5ce9;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 0 0 10px 0;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #55447e;
+}
+
+[data-theme='dark'] .ai-callout-notice {
+  background: linear-gradient(135deg, rgba(124, 92, 233, 0.16) 0%, rgba(99, 67, 216, 0.08) 100%);
+  border-color: rgba(165, 138, 255, 0.25);
+  border-left-color: #a78bfa;
+  color: #d1c8ea;
+}
+
+.ai-callout-icon {
+  color: #7c5ce9;
+  font-size: 12px;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+
+[data-theme='dark'] .ai-callout-icon {
+  color: #bfa8ff;
+}
+
+.ai-callout-text {
+  flex: 1;
+}
+
+.ai-callout-text p {
+  margin: 0 0 3px;
+}
+
+.ai-callout-text p:last-child {
+  margin-bottom: 0;
+}
+
+.formatted-ai-response code {
+  background: rgba(124, 92, 233, 0.1);
+  padding: 1.5px 5px;
+  border-radius: 4px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: #5d3ebc;
+}
+
+[data-theme='dark'] .formatted-ai-response code {
+  background: rgba(165, 138, 255, 0.15);
+  color: #d0c1ff;
+}
+
+.formatted-ai-response pre {
+  background: #23202b;
+  color: #f1edfa;
+  padding: 8px 11px;
+  border-radius: 7px;
+  overflow-x: auto;
+  margin: 7px 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.formatted-ai-response pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
+
+.formatted-ai-response blockquote {
+  margin: 6px 0;
+  padding: 5px 10px;
+  border-left: 3px solid #9f83f7;
+  background: rgba(124, 92, 233, 0.05);
+  border-radius: 0 6px 6px 0;
+  color: #4f4663;
+  font-style: italic;
+}
+
+[data-theme='dark'] .formatted-ai-response blockquote {
+  color: #c4bcd8;
+  background: rgba(124, 92, 233, 0.12);
+}
+
+/* Actions footer */
+.formatted-msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(124, 92, 233, 0.18);
+}
+
+.formatted-msg-actions button {
+  background: transparent;
+  border: 1px solid rgba(124, 92, 233, 0.22);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #6a57a6;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.formatted-msg-actions button:hover {
+  background: rgba(124, 92, 233, 0.1);
+  color: #4b369c;
+  border-color: rgba(124, 92, 233, 0.4);
+}
+
+[data-theme='dark'] .formatted-msg-actions button {
+  color: #bfa8ff;
+  border-color: rgba(165, 138, 255, 0.25);
+}
+
+[data-theme='dark'] .formatted-msg-actions button:hover {
+  background: rgba(165, 138, 255, 0.15);
+  color: #e4dcff;
+}
+
+.bip-sources {
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed rgba(111, 82, 211, 0.2);
+  font-size: 10.5px;
+  color: #6a5da6;
+}
+
+.bip-source-tag {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin: 2px 2px 0 0;
+  font-weight: 500;
+}
+
+.bip-typing-bubble {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  align-self: flex-start;
+  background: #f1edfb;
+  border-radius: 12px;
+  border-bottom-left-radius: 3px;
+}
+
+.bip-typing-bubble span {
+  width: 5px;
+  height: 5px;
+  background: #9b82e4;
+  border-radius: 50%;
+  animation: bipBounce 0.8s infinite alternate;
+}
+
+.bip-typing-bubble span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.bip-typing-bubble span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Dialog Input Area */
+.bip-input-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid #ece7f5;
+  background: #ffffff;
+}
+
+.bip-input {
+  flex: 1;
+  border: 1px solid #ded8eb;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  outline: none;
+  background: #faf9fd;
+  color: #272433;
+  transition: border-color 0.15s ease;
+}
+
+.bip-input:focus {
+  border-color: #7b5ee3;
+  background: #ffffff;
+}
+
+.bip-send-btn {
+  background: #6f52d3;
+  color: #ffffff;
+  border: none;
+  border-radius: 9px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.bip-send-btn:hover:not(:disabled) {
+  background: #5d3ec6;
+  transform: scale(1.05);
+}
+
+.bip-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Dark Theme Overrides */
+[data-theme='dark'] .bip-dialog {
+  background: rgba(30, 27, 40, 0.95);
+  border-color: #3b3550;
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.45);
+  color: #e5e2ed;
+}
+
+[data-theme='dark'] .bip-dialog-header {
+  border-bottom-color: #342e47;
+  background: linear-gradient(180deg, #242031 0%, #1e1b29 100%);
+}
+
+[data-theme='dark'] .bip-dialog-title {
+  color: #c4b5fd;
+}
+
+[data-theme='dark'] .bip-chips {
+  border-bottom-color: #342e47;
+  background: #1a1725;
+}
+
+[data-theme='dark'] .bip-chip {
+  background: #2b253e;
+  color: #d1c4fe;
+  border-color: #433962;
+}
+
+[data-theme='dark'] .bip-chip:hover {
+  background: #372f50;
+  color: #ede9fe;
+}
+
+[data-theme='dark'] .bip-message.bip-msg-assistant,
+[data-theme='dark'] .bip-message.assistant {
+  background: #2a253a;
+  color: #ede9f5;
+}
+
+[data-theme='dark'] .bip-message.bip-msg-user,
+[data-theme='dark'] .bip-message.user {
+  background: linear-gradient(135deg, #704fd9 0%, #5939ca 100%);
+  color: #ffffff !important;
+}
+
+[data-theme='dark'] .bip-typing-bubble {
+  background: #2a253a;
+}
+
+[data-theme='dark'] .bip-input-area {
+  border-top-color: #342e47;
+  background: #1c1926;
+}
+
+[data-theme='dark'] .bip-input {
+  border-color: #3a344d;
+  background: #232030;
+  color: #e5e2ed;
+}
+
+[data-theme='dark'] .bip-input:focus {
+  border-color: #9f86ef;
+  background: #282437;
+}
+
+[data-theme='dark'] .bip-hint-bubble {
+  background: #242032;
+  color: #ede9f5;
+  border-color: #3c3552;
+}
+
+[data-theme='dark'] .bip-hint-bubble::after {
+  border-color: #242032 transparent transparent transparent;
+}
+
+/* Animations */
+@keyframes bipPop {
+  0% { transform: scale(0.7) translateY(4px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+@keyframes bipDialogIn {
+  0% { transform: scale(0.92) translateY(10px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+@keyframes bipBounce {
+  0% { transform: translateY(0); opacity: 0.3; }
+  100% { transform: translateY(-4px); opacity: 1; }
+}
+
+@keyframes bipPulseMic {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45); transform: scale(1); }
+  50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.15); transform: scale(1.08); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); transform: scale(1); }
+}
+
+@keyframes bipPulseSpeaker {
+  0% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.85; }
+}
+
+/* Audio & Voice UI in Bip */
+.bip-dialog-actions button.sound-active {
+  color: #7c5ce9;
+}
+
+[data-theme='dark'] .bip-dialog-actions button.sound-active {
+  color: #a78bfa;
+}
+
+.bip-message-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 5px;
+}
+
+.bip-read-aloud-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 12px;
+  border: 1px solid rgba(124, 92, 233, 0.22);
+  background: rgba(124, 92, 233, 0.06);
+  color: #7c5ce9;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bip-read-aloud-btn:hover {
+  background: rgba(124, 92, 233, 0.16);
+  border-color: rgba(124, 92, 233, 0.4);
+}
+
+.bip-read-aloud-btn.speaking {
+  background: #7c5ce9;
+  color: #ffffff;
+  border-color: #6d28d9;
+  animation: bipPulseSpeaker 1.2s infinite ease-in-out;
+}
+
+[data-theme='dark'] .bip-read-aloud-btn {
+  border-color: rgba(167, 139, 250, 0.25);
+  background: rgba(167, 139, 250, 0.1);
+  color: #c4b5fd;
+}
+
+[data-theme='dark'] .bip-read-aloud-btn:hover {
+  background: rgba(167, 139, 250, 0.2);
+}
+
+[data-theme='dark'] .bip-read-aloud-btn.speaking {
+  background: #8b5cf6;
+  color: #ffffff;
+}
+
+.bip-mic-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid #e2deea;
+  background: #f7f6fb;
+  color: #6c667d;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.bip-mic-btn:hover:not(:disabled) {
+  background: #edeaf5;
+  color: #7c5ce9;
+  border-color: #c9bcf0;
+}
+
+.bip-mic-btn.listening {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #dc2626;
+  animation: bipPulseMic 1.2s infinite ease-in-out;
+}
+
+.bip-mic-btn.processing {
+  background: #ede9fe;
+  color: #7c3aed;
+  border-color: #a78bfa;
+}
+
+[data-theme='dark'] .bip-mic-btn {
+  background: #2a253a;
+  border-color: #3e3654;
+  color: #b3a9c7;
+}
+
+[data-theme='dark'] .bip-mic-btn:hover:not(:disabled) {
+  background: #352f49;
+  color: #c4b5fd;
+  border-color: #554877;
+}
+
+[data-theme='dark'] .bip-mic-btn.listening {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #dc2626;
+}
+
+/* Bip Companion Message Editing */
+.bip-msg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #8b839f;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bip-msg-action-btn:hover {
+  background: rgba(124, 92, 233, 0.1);
+  color: #7c5ce9;
+}
+
+.bip-msg-action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+}
+
+[data-theme='dark'] .bip-msg-action-btn {
+  color: #a49cb8;
+}
+
+[data-theme='dark'] .bip-msg-action-btn:hover {
+  background: rgba(167, 139, 250, 0.15);
+  color: #c4b5fd;
+}
+
+[data-theme='dark'] .bip-msg-action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+.bip-message-edit-box {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #7c5ce9;
+  border-radius: 10px;
+}
+
+[data-theme='dark'] .bip-message-edit-box {
+  background: #241f33;
+  border-color: #a78bfa;
+}
+
+.bip-message-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #e2def0;
+  border-radius: 6px;
+  resize: vertical;
+  outline: none;
+}
+
+.bip-message-edit-input:focus {
+  border-color: #7c5ce9;
+}
+
+[data-theme='dark'] .bip-message-edit-input {
+  border-color: #3f3657;
+}
+
+.bip-message-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.bip-edit-cancel-btn {
+  padding: 3px 9px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid #dcd7ea;
+  background: transparent;
+  color: #6b6380;
+  cursor: pointer;
+}
+
+[data-theme='dark'] .bip-edit-cancel-btn {
+  border-color: #4b4266;
+  color: #aba2c2;
+}
+
+.bip-edit-save-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: none;
+  background: #7c5ce9;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.bip-edit-resend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid #7c5ce9;
+  background: rgba(124, 92, 233, 0.08);
+  color: #7c5ce9;
+  cursor: pointer;
+}
+

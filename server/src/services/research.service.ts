@@ -4,4 +4,4 @@ import type { ResearchDocument } from './research-document.repository.js'
 import type { ReportRequest } from './reporting/types.js'
 export type ResearchDepth = 'concise' | 'standard' | 'in-depth'
 export const researchDepths: ResearchDepth[] = ['concise', 'standard', 'in-depth']
-export async function research(request: ReportRequest, model: string | undefined, apiKey: string | undefined, documents: ResearchDocument[], progress: EngineProgress) { return generateReport(request, documents, model, apiKey, progress) }
+export async function research(request: ReportRequest, model: string | undefined, apiKey: any, documents: ResearchDocument[], progress: EngineProgress) { return generateReport(request, documents, model, apiKey, progress) }

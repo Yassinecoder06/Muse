@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
+import { chronoReference, localDateString, requestTimezone } from '../utils/timezone.js'
 import * as chrono from 'chrono-node'
 import { supabase } from '../supabase/client.js'
 import { settings } from '../services/settings.repository.js'
@@ -51,18 +52,20 @@ export async function detectFromNote(req: Request, res: Response, next: NextFunc
     }
 
     const refDate = new Date()
+    const zone = requestTimezone(req)
     let events: any[] = []
     let tasks: any[] = []
 
     // 1. Always attempt AI extraction (works with local Ollama or cloud key)
     const model = typeof req.body.model === 'string' ? req.body.model : undefined
-    const apiKey = await settings.getKey(req.userId!).catch(() => null)
+    const { geminiKey, ollamaKey } = await settings.getEffectiveAiKeys(req.userId!)
+    const keyContext = { geminiKey, ollamaKey, userId: req.userId! }
     let aiSucceeded = false
 
     try {
-      const todayIso = refDate.toISOString().slice(0, 10)
-      const prompt = `Current date is ${todayIso} (${refDate.toLocaleDateString('en-US', { weekday: 'long' })}).
-Current time is ${refDate.toLocaleTimeString('en-US', { hour12: false })}.
+      const todayIso = localDateString(zone, refDate)
+      const prompt = `Current date is ${todayIso} (${refDate.toLocaleDateString('en-US', { weekday: 'long', timeZone: zone })}).
+Current time is ${refDate.toLocaleTimeString('en-US', { hour12: false, timeZone: zone })} in ${zone}. Give event times as ISO 8601 with that zone's UTC offset.
 
 Analyze this personal note text and extract:
 1. Calendar events, meetings, workouts, appointments, or scheduled sessions.
@@ -97,7 +100,8 @@ Reply strictly with valid JSON:
         'You are an executive assistant extracting calendar events and tasks from personal notes. Reply only with valid JSON.',
         prompt,
         model,
-        apiKey || undefined
+        keyContext,
+        'lightweight'
       )
 
       // Clean markdown code blocks and reasoning tags
@@ -136,7 +140,7 @@ Reply strictly with valid JSON:
           continue
         }
 
-        const chronoParsed = chrono.parse(line, refDate)
+        const chronoParsed = chrono.parse(line, chronoReference(zone, refDate))
         if (chronoParsed.length > 0) {
           const item = chronoParsed[0]
           // If chrono only parsed "today" or "tomorrow" on a header-like line without time or verb, skip
@@ -183,7 +187,7 @@ Reply strictly with valid JSON:
             if (cleanTask.length > 2) {
               tasks.push({
                 text: cleanTask.charAt(0).toUpperCase() + cleanTask.slice(1),
-                due_date: refDate.toISOString().slice(0, 10),
+                due_date: localDateString(zone, refDate),
                 priority: 'medium'
               })
             }
@@ -201,7 +205,14 @@ Reply strictly with valid JSON:
 export async function applyDetections(req: Request, res: Response, next: NextFunction) {
   try {
     const paramId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
-    const noteId = paramId || req.body.note_id || null
+    const requestedNoteId = paramId || req.body.note_id || null
+    // Only link to the caller's own server-side note. Secure-vault notes live
+    // in vault_records, so linking them broke the events/tasks foreign key.
+    let noteId: string | null = null
+    if (typeof requestedNoteId === 'string' && /^[0-9a-f-]{36}$/i.test(requestedNoteId)) {
+      const { data: owned } = await supabase.from('notes').select('id').eq('id', requestedNoteId).eq('user_id', req.userId!).maybeSingle()
+      noteId = owned?.id ?? null
+    }
     const events = Array.isArray(req.body.events) ? req.body.events : []
     const tasks = Array.isArray(req.body.tasks) ? req.body.tasks : []
 

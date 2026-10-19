@@ -7,9 +7,11 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/services/vault-security.test.ts src/services/reporting/analytics.test.ts src/services/calendar-tasks.test.ts"
+    "test": "tsx --test src/services/providers/providers.test.ts src/controllers/tasks.reminder.test.ts src/middleware/auth.test.ts src/utils/timezone.test.ts src/services/vault-security.test.ts src/services/reporting/analytics.test.ts src/services/calendar-tasks.test.ts src/services/agent-tools.test.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
+    "@google/genai": "^2.30.0",
     "@qdrant/js-client-rest": "^1.13.0",
     "@simplewebauthn/server": "^13.3.2",
     "@supabase/supabase-js": "^2.49.1",
@@ -21,6 +23,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^8.6.2",
     "mammoth": "^1.8.0",
+    "msedge-tts": "^2.1.0",
     "pdf-parse": "^1.1.1",
     "pdfkit": "^0.17.2",
     "sanitize-html": "^2.17.7",

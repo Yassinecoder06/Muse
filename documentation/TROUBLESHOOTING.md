@@ -12,12 +12,12 @@ Run these from the repository root before changing configuration:
 ```bash
 docker compose ps
 docker compose logs --tail 100 server db auth kong storage realtime
-docker compose exec -T server node -e "fetch('http://127.0.0.1:3001/health').then(r => r.json()).then(console.log)"
+docker compose exec -T server node -e "fetch('http://127.0.0.1:3002/health').then(r => r.json()).then(console.log)"
 curl -s http://localhost:8080/health
 curl -sI http://localhost:8080/ | head -n 1
 ```
 
-`http://localhost:5173` is the Vite development UI. `http://localhost:8080`
+`http://localhost:5174` is the Vite development UI. `http://localhost:8080`
 is the Docker Nginx gateway used by deployment. Do not expect an edit made in
 Vite to appear at `:8080` until the gateway is rebuilt.
 
@@ -173,7 +173,7 @@ recovery above. The current configuration requires:
 DB_AFTER_CONNECT_QUERY: SET search_path TO realtime
 ```
 
-## Host-run development Express exits before port 3001 opens
+## Host-run development Express exits before port 3002 opens
 
 **Observed:** 2026-08-04; verified current 2026-08-14
 
@@ -183,7 +183,7 @@ The host-run development API exits with a native WebSocket error, or this
 fails:
 
 ```bash
-curl -s http://localhost:3001/health
+curl -s http://localhost:3002/health
 ```
 
 ### Cause and resolution
@@ -202,8 +202,8 @@ npm install
 If the port is occupied (`EADDRINUSE`), keep only one `npm run dev` process:
 
 ```bash
-ss -ltnp | grep ':3001'
-curl -s http://localhost:3001/health
+ss -ltnp | grep ':3002'
+curl -s http://localhost:3002/health
 ```
 
 ## The API crashes with missing environment variables

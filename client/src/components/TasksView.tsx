@@ -3,15 +3,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Check, CheckSquare, ChevronRight, FileText, Plus, Trash2, Calendar, AlertCircle } from 'lucide-react'
 import { api } from '../services/api'
+import { localDateKey } from '../services/reminders'
+import { ReminderPicker } from './ReminderPicker'
 import type { Task } from '../types'
 
 export function TasksView({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = localDateKey() // local day; toISOString() is the UTC day
   const [selectedDay, setSelectedDay] = useState(todayStr)
   const [newTaskText, setNewTaskText] = useState('')
   const [newTaskPriority, setNewTaskPriority] = useState<'low' | 'medium' | 'high'>('medium')
+  const [newTaskTime, setNewTaskTime] = useState('')
 
   const { data: allTasks = [], isLoading } = useQuery({
     queryKey: ['all-tasks'],
@@ -19,10 +22,11 @@ export function TasksView({ onBack }: { onBack: () => void }) {
   })
 
   const createTask = useMutation({
-    mutationFn: (data: { text: string; due_date: string; priority: 'low' | 'medium' | 'high' }) =>
-      api.createTask({ text: data.text, due_date: data.due_date, priority: data.priority }),
+    mutationFn: (data: { text: string; due_date: string | null; due_time: string | null; priority: 'low' | 'medium' | 'high' }) =>
+      api.createTask({ text: data.text, due_date: data.due_date, due_time: data.due_time, priority: data.priority }),
     onSuccess: () => {
       setNewTaskText('')
+      setNewTaskTime('')
       queryClient.invalidateQueries({ queryKey: ['all-tasks'] })
     }
   })
@@ -34,6 +38,9 @@ export function TasksView({ onBack }: { onBack: () => void }) {
       queryClient.invalidateQueries({ queryKey: ['all-tasks'] })
     }
   })
+
+  const saveReminder = (id: string, patch: Partial<Task>) =>
+    api.updateTask(id, patch).then(() => queryClient.invalidateQueries({ queryKey: ['all-tasks'] }))
 
   const deleteTask = useMutation({
     mutationFn: (id: string) => api.deleteTask(id),
@@ -47,7 +54,8 @@ export function TasksView({ onBack }: { onBack: () => void }) {
     if (!newTaskText.trim()) return
     createTask.mutate({
       text: newTaskText.trim(),
-      due_date: selectedDay,
+      due_date: selectedDay === 'unscheduled' ? null : selectedDay,
+      due_time: newTaskTime || null,
       priority: newTaskPriority
     })
   }
@@ -60,7 +68,7 @@ export function TasksView({ onBack }: { onBack: () => void }) {
   for (let i = 0; i < 14; i++) {
     const d = new Date(startDate)
     d.setDate(d.getDate() + i)
-    const iso = d.toISOString().slice(0, 10)
+    const iso = localDateKey(d)
     const isToday = iso === todayStr
     const isYesterday = i === 0
     const isTomorrow = i === 2
@@ -179,6 +187,14 @@ export function TasksView({ onBack }: { onBack: () => void }) {
               onChange={e => setNewTaskText(e.target.value)}
               disabled={createTask.isPending}
             />
+            <input
+              type="time"
+              className="task-time-input"
+              value={newTaskTime}
+              onChange={e => setNewTaskTime(e.target.value)}
+              title="Due time (optional)"
+              disabled={selectedDay === 'unscheduled'}
+            />
             <select
               value={newTaskPriority}
               onChange={e => setNewTaskPriority(e.target.value as any)}
@@ -210,6 +226,7 @@ export function TasksView({ onBack }: { onBack: () => void }) {
                     <th style={{ width: 44 }}>Done</th>
                     <th>Task</th>
                     <th style={{ width: 100 }}>Priority</th>
+                    <th style={{ width: 150 }}>Reminder</th>
                     <th style={{ width: 140 }}>Linked Note</th>
                     <th style={{ width: 60 }}>Action</th>
                   </tr>
@@ -228,11 +245,15 @@ export function TasksView({ onBack }: { onBack: () => void }) {
                       </td>
                       <td className="cell-text">
                         <span>{task.text}</span>
+                        {task.due_time && <small className="task-due-time">{task.due_time.slice(0, 5)}</small>}
                       </td>
                       <td className="cell-priority">
                         <span className={`priority-tag priority-${task.priority || 'medium'}`}>
                           {task.priority || 'medium'}
                         </span>
+                      </td>
+                      <td className="cell-reminder">
+                        {!task.completed && <ReminderPicker task={task} onSave={patch => saveReminder(task.id, patch)} />}
                       </td>
                       <td className="cell-note">
                         {task.note_id ? (
