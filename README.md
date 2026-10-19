@@ -206,24 +206,27 @@ recovery link opens a dedicated new-password form before returning to Muse.
 
 ## Database and migration
 
-`supabase/migrations/001_initial.sql` creates `notes`, `tags`, `note_tags`, `tasks`, and `ai_jobs`, their foreign keys, indexes, UUID defaults, RLS policies, and the automatic `updated_at` trigger. It is mounted into the local Postgres initialization path by Docker. For an existing local volume, execute it once manually:
+The schema lives in `supabase/migrations/NNN_*.sql`. **You never apply these by
+hand.** The one-shot `migrate` Compose service runs on every
+`docker compose up`. It applies any migration this database has not run yet, in
+filename order and one transaction per file, and records it in
+`public.schema_migrations`. The API container waits for it to finish, so Muse
+never starts against an outdated schema. If a migration fails, it is rolled
+back, the API does not start, and the error shows in
+`docker compose logs migrate`.
+
+- **Fresh install:** every migration is applied on first start.
+- **Existing database from before the runner:** on its first run, the runner
+  recognises which migrations are already present (by their tables and
+  columns), records them, and applies only the missing ones.
+- **Adding a migration:** create the next numbered file, e.g.
+  `018_something.sql`, then run `docker compose up -d`. Prefer `if not exists`
+  where you can.
+
+To apply migrations without restarting anything else:
 
 ```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/001_initial.sql
-```
-
-`002_images.sql` adds the `images` table (base64-encoded binaries) behind `POST /api/uploads` / `GET /api/images/:id`. Apply it to an existing database the same way:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/002_images.sql
-```
-
-`003_api_keys.sql` enables the per-user Ollama key store in Supabase Vault and
-creates service-role-only RPC helpers. It runs automatically for a newly
-initialized database. For an existing healthy database, apply it once:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/003_api_keys.sql
+docker compose run --rm migrate
 ```
 
 The Vault encryption root key is pinned to the host file
@@ -233,57 +236,6 @@ missing, so the pinned file survives container recreations and keeps saved
 Vault secrets decryptable. A fresh deployment must create it before the first
 start (see "Quick start"). Keep it with `muse_postgres-data`; deleting either
 independently can make saved Vault secrets unrecoverable.
-
-`004_research_documents.sql` marks notes as standard or research documents.
-Run it once on an existing database before starting the new server container:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/004_research_documents.sql
-```
-
-`005_research_pipeline.sql` adds private extracted research documents and the
-saved artifacts for each staged research run. It does **not** read from your
-other Muse notes. Apply it once to an existing database:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/005_research_pipeline.sql
-```
-
-`006_modular_reports.sql` adds report plans, quality results, and per-skill
-execution telemetry for the modular report engine. Apply it once to an existing
-database:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/006_modular_reports.sql
-```
-
-`007_document_scan.sql` adds the security-scan columns to research documents
-(`scan_status`, `scan_notes`). Apply it once to an existing database:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/007_document_scan.sql
-```
-
-`008_secure_vault.sql` adds encrypted user vaults, passkey credential metadata,
-and encrypted envelopes. Apply it once to an existing database:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/008_secure_vault.sql
-```
-
-`009_calendar_and_tasks.sql` adds interactive calendar events and workspace
-tasks with note-linking support:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/009_calendar_and_tasks.sql
-```
-
-`010_specialized_notes.sql` adds specialized note metadata, custom template
-support, and color styling:
-
-```bash
-docker compose exec -T db sh -ec 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U supabase_admin -d postgres' < supabase/migrations/010_specialized_notes.sql
-```
 
 ### Images
 

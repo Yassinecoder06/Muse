@@ -11,6 +11,7 @@ import {
   extractKeys,
   getCascadeCandidates,
   isRetryableGeminiError,
+  markModelExhausted,
   formatFriendlyAgentQuotaError,
   isGeminiModel,
   cloudModelName,
@@ -125,8 +126,8 @@ ${userTemplatesList}
    - \`list_specialized_templates\`: View all available templates.
    - \`update_note\`: Update or append to an existing note.
    - \`search_notes\`: Search the user's notes for knowledge or context.
-   - \`create_task\`: Create tasks with due dates, due times, and priority levels.
-   - \`update_task\`: Mark tasks complete or update description.
+   - \`create_task\`: Create tasks with due dates, due times, and priority levels. When the user wants to be reminded, set \`remind_minutes_before\` (e.g. 5) or \`remind_at\` (e.g. "today at 7:45pm"); Bip rings an alarm on their phone and in the browser.
+   - \`update_task\`: Mark tasks complete, change text/due date/time, or add, change, or remove (-1) a reminder.
    - \`list_tasks\`: List existing tasks.
    - \`create_calendar_event\`: Schedule calendar events using natural dates (e.g. "tomorrow at 3pm").
    - \`list_calendar_events\`: View upcoming schedule.
@@ -281,7 +282,7 @@ export async function runAgentConversation({
 
   if (geminiKey) {
     // Priority: Run with Gemini Agent Engine using Waterfall Cascade
-    const geminiCandidates = getCascadeCandidates(model)
+    const geminiCandidates = getCascadeCandidates(model, geminiKey)
     const client = new GoogleGenAI({ apiKey: geminiKey })
 
     // Build Gemini contents history
@@ -326,6 +327,7 @@ export async function runAgentConversation({
             })
             break // Succeeded with activeModel!
           } catch (err: any) {
+            markModelExhausted(geminiKey, activeModel, err)
             if (isRetryableGeminiError(err)) {
               const nextModel = geminiCandidates[modelIdx + 1]
               if (nextModel) {

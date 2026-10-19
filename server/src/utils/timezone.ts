@@ -40,3 +40,39 @@ export function describeNow(zone: string, now = new Date()) {
     time: now.toLocaleTimeString('en-US', { timeZone: zone, hour: '2-digit', minute: '2-digit', hour12: true })
   }
 }
+
+/** "15:30", "15:30:00" (Postgres time), "3:30 PM", "3pm", "15h30" → [hour, minute]. */
+export function parseClock(value: string | null | undefined): [number, number] | null {
+  const match = value?.trim().match(/^(\d{1,2})(?:[:h](\d{2}))?(?::\d{2})?\s*h?\s*([ap]\.?m\.?)?$/i)
+  if (!match) return null
+  let hour = Number(match[1])
+  const minute = Number(match[2] ?? 0)
+  const meridiem = match[3]?.toLowerCase().replace(/\./g, '')
+  if (meridiem === 'pm' && hour < 12) hour += 12
+  if (meridiem === 'am' && hour === 12) hour = 0
+  return hour < 24 && minute < 60 ? [hour, minute] : null
+}
+
+/** Normalizes a free-form time ("3pm") to "HH:MM" for the tasks.due_time column. */
+export function normalizeClock(value: string | null | undefined) {
+  const parsed = parseClock(value)
+  return parsed ? `${String(parsed[0]).padStart(2, '0')}:${String(parsed[1]).padStart(2, '0')}` : null
+}
+
+/** Instant of a wall-clock date + time in `zone` (DST-aware). */
+export function zonedInstant(date: string, hour: number, minute: number, zone: string) {
+  const wallAsUtc = Date.parse(`${date}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00Z`)
+  // Two passes settle the offset on DST-change days.
+  let instant = wallAsUtc - offsetMinutes(zone, new Date(wallAsUtc)) * 60_000
+  instant = wallAsUtc - offsetMinutes(zone, new Date(instant)) * 60_000
+  return new Date(instant)
+}
+
+/**
+ * When to alert for a task due at `dueDate` (+ optional `dueTime`) in `zone`,
+ * `minutesBefore` earlier. Date-only tasks count as due at 09:00.
+ */
+export function reminderInstant(dueDate: string, dueTime: string | null | undefined, minutesBefore: number, zone: string) {
+  const [hour, minute] = parseClock(dueTime) ?? [9, 0]
+  return new Date(zonedInstant(dueDate, hour, minute, zone).getTime() - minutesBefore * 60_000)
+}
