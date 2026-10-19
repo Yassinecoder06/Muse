@@ -258,6 +258,10 @@
 .view-calendar-btn:hover{background:#dbeafe}
 [data-theme=dark] .view-calendar-btn{color:#93c5fd;border-color:#3b82f6}
 [data-theme=dark] .view-calendar-btn:hover{background:#1e3a5f}
+.unlink-calendar-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;background:transparent;color:#dc2626;border:1px solid #fecaca;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+.unlink-calendar-btn:hover{background:#fee2e2;border-color:#fca5a5}
+[data-theme=dark] .unlink-calendar-btn{color:#f87171;border-color:#7f1d1d}
+[data-theme=dark] .unlink-calendar-btn:hover{background:#451a1a;border-color:#991b1b}
 .specialized-section-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#64748b;margin:14px 0 6px}
 .saved-template-item{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #d3e4f7;border-radius:9px;background:#f8fbff;transition:background .15s,border-color .15s}
 .saved-template-item:hover{background:#f4f0ff;border-color:#c4b5fd}
