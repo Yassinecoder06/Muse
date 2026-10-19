@@ -13,6 +13,7 @@ import * as remote from '../controllers/remote.controller.js'
 import * as templates from '../controllers/templates.controller.js'
 import * as providers from '../controllers/ai-providers.controller.js'
 import * as ownerAuth from '../controllers/owner.controller.js'
+import * as analytics from '../controllers/analytics.controller.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter, loginLimiter, pairingLimiter } from '../middleware/rate-limit.js'
 import { graph } from '../services/graph.service.js'
@@ -45,6 +46,7 @@ router.post('/auth/passkeys/registration/verify', vault.verifyRegistration)
 router.delete('/auth/passkeys/:id', vault.revokePasskey)
 
 // Graph & Notes
+router.get('/analytics/activity', analytics.activity)
 router.get('/graph', async (req, res, next) => { try { res.json(await graph(req.userId!)) } catch (error) { next(error) } })
 router.delete('/notes/bulk', notes.bulkDeleteNotes).post('/notes/bulk-restore', notes.bulkRestoreNotes).post('/notes/bulk-trash', notes.bulkTrashNotes)
 router.delete('/notes/trash', notes.emptyTrash)

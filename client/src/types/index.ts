@@ -1,4 +1,4 @@
-export type Task = { id: string; note_id: string | null; text: string; completed: boolean; created_at: string; due_date?: string | null; due_time?: string | null; priority?: string; reminder_at?: string | null; reminder_minutes_before?: number | null }
+export type Task = { id: string; note_id: string | null; text: string; completed: boolean; created_at: string; completed_at?: string | null; due_date?: string | null; due_time?: string | null; priority?: string; reminder_at?: string | null; reminder_minutes_before?: number | null }
 export type CalendarEvent = { id: string; user_id?: string; note_id?: string | null; title: string; description?: string; start_time: string; end_time?: string | null; all_day: boolean; location?: string; created_at?: string; updated_at?: string }
 export type NoteKind = 'note' | 'research' | 'specialized'
 export type SpecializedCategory = 'daily' | 'workout' | 'finance' | 'custom'
