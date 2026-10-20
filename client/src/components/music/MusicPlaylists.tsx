@@ -309,19 +309,21 @@ export function MusicPlaylists() {
             <form onSubmit={handleSave} className="playlist-modal-form">
               <div className="modal-meta-row">
                 <div className="modal-field flex-1">
-                  <label>Playlist Name</label>
+                  <label className="modal-field-label">Playlist Name</label>
                   <input
                     type="text"
                     required
+                    className="modal-field-input"
                     placeholder="e.g. Focus Beats, Late Night Coding"
                     value={name}
                     onChange={e => setName(e.target.value)}
                   />
                 </div>
                 <div className="modal-field flex-2">
-                  <label>Description (optional)</label>
+                  <label className="modal-field-label">Description (optional)</label>
                   <input
                     type="text"
+                    className="modal-field-input"
                     placeholder="e.g. Upbeat electronic and pop tracks"
                     value={description}
                     onChange={e => setDescription(e.target.value)}

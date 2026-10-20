@@ -7571,12 +7571,78 @@
 
 .modal-meta-row {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
+  width: 100%;
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .modal-field.flex-1 { flex: 1; min-width: 200px; }
 .modal-field.flex-2 { flex: 2; min-width: 240px; }
+
+.modal-field label,
+.modal-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.modal-field input,
+.modal-field-input {
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #cbd5e1);
+  background: var(--bg-card, #ffffff);
+  font-size: 13.5px;
+  color: var(--text-primary, #0f172a);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s, background-color .15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.modal-field input:focus,
+.modal-field-input:focus {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+}
+
+.modal-field input::placeholder,
+.modal-field-input::placeholder {
+  color: var(--text-secondary, #94a3b8);
+  opacity: 0.8;
+}
+
+[data-theme=dark] .modal-field label,
+[data-theme=dark] .modal-field-label {
+  color: #a7a2b5;
+}
+
+[data-theme=dark] .modal-field input,
+[data-theme=dark] .modal-field-input {
+  background: #141219;
+  border-color: #383347;
+  color: #ece7f5;
+}
+
+[data-theme=dark] .modal-field input:focus,
+[data-theme=dark] .modal-field-input:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.25);
+  background: #171520;
+}
+
+[data-theme=dark] .modal-field input::placeholder,
+[data-theme=dark] .modal-field-input::placeholder {
+  color: #635f73;
+}
 
 .playlist-builder-grid {
   display: grid;
