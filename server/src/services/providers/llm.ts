@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenAI } from '@google/genai'
 import { baseUrl } from './discovery.js'
 import type { ResolvedProvider } from './types.js'
+import { env } from '../../utils/env.js'
 
 // One chat interface over every provider format: Gemini, OpenAI-style
 // (OpenAI and compatibles), Anthropic (and compatibles), and Ollama.
@@ -211,7 +212,8 @@ async function ollamaGenerate(p: ResolvedProvider, model: string, req: GenerateR
       model,
       stream: false,
       messages,
-      ...(req.tools?.length ? { tools: req.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: toJsonSchema(t.parameters) } })) } : {})
+      ...(req.tools?.length ? { tools: req.tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: toJsonSchema(t.parameters) } })) } : {}),
+      options: { num_ctx: env.OLLAMA_NUM_CTX || 32768 }
     }),
     timeoutMs: req.timeoutMs
   })
