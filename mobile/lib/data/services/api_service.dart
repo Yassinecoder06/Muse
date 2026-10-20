@@ -456,26 +456,58 @@ class ApiService {
     }
   }
 
-  // --- Bip AI Chat ---
-  Future<Map<String, dynamic>> sendChatMessage(String message, {String? sessionId}) async {
+  // --- Bip AI Chat & Sessions ---
+  Future<Map<String, dynamic>> sendChatMessage(
+    String message, {
+    String? sessionId,
+    String? model,
+  }) async {
     final base = await _getBaseUrl();
     final headers = await _getHeaders();
-    final uri = Uri.parse('$base/api/ai/chat');
+    final userName = await _storage.getUserName();
+
+    final hasSession = sessionId != null && sessionId.trim().isNotEmpty;
+    final uri = hasSession
+        ? Uri.parse('$base/api/chat/sessions/${sessionId.trim()}/messages')
+        : Uri.parse('$base/api/ai/chat');
+
+    final payload = <String, dynamic>{
+      'message': message,
+      if (!hasSession && sessionId != null && sessionId.trim().isNotEmpty) 'sessionId': sessionId.trim(),
+      if (model != null && model.isNotEmpty) 'model': model,
+      if (userName.isNotEmpty) 'userName': userName,
+    };
 
     final response = await _http
         .post(
           uri,
           headers: headers,
-          body: jsonEncode({
-            'message': message,
-            'sessionId': ?sessionId,
-          }),
+          body: jsonEncode(payload),
         )
         // Bip may run several tool rounds against slow models.
         .timeout(const Duration(seconds: 90));
 
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final assistantMsg = data['assistantMessage'] as Map<String, dynamic>?;
+      final reply = (data['reply'] ?? data['response'] ?? assistantMsg?['content'] ?? '').toString();
+      final cards = (data['actionCards'] ?? data['action_cards'] ?? assistantMsg?['action_cards']) as List<dynamic>? ?? [];
+      final tools = (data['toolCalls'] ?? data['tool_calls'] ?? assistantMsg?['tool_calls']) as List<dynamic>? ?? [];
+      final resolvedSessionId = (data['sessionId'] ?? sessionId ?? '').toString();
+      final sessionTitle = (data['sessionTitle'] ?? assistantMsg?['sessionTitle']) as String?;
+
+      return {
+        'reply': reply,
+        'response': reply,
+        'sessionId': resolvedSessionId,
+        'sessionTitle': sessionTitle,
+        'actionCards': cards,
+        'action_cards': cards,
+        'toolCalls': tools,
+        'tool_calls': tools,
+        'assistantMessage': ?assistantMsg,
+        'userMessage': ?(data['userMessage']),
+      };
     }
     try {
       final err = jsonDecode(response.body);
@@ -483,6 +515,78 @@ class ApiService {
     } catch (e) {
       if (e is Exception && !e.toString().contains('FormatException')) rethrow;
       throw Exception('Server error (${response.statusCode})');
+    }
+  }
+
+  /// Lists all chat sessions for the current user, newest first.
+  Future<List<Map<String, dynamic>>> fetchChatSessions() async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final res = await _http.get(Uri.parse('$base/api/chat/sessions'), headers: headers).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) throw Exception('Failed to load conversations (${res.statusCode})');
+    final list = jsonDecode(res.body) as List<dynamic>;
+    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  /// Fetches a specific session and its messages list.
+  Future<Map<String, dynamic>> fetchChatSession(String id) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final res = await _http.get(Uri.parse('$base/api/chat/sessions/$id'), headers: headers).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) throw Exception('Failed to load conversation (${res.statusCode})');
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  /// Creates a new conversation session.
+  Future<Map<String, dynamic>> createChatSession({
+    String title = 'New Conversation',
+    String contextType = 'general',
+    String? contextId,
+  }) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final res = await _http
+        .post(
+          Uri.parse('$base/api/chat/sessions'),
+          headers: headers,
+          body: jsonEncode({
+            'title': title,
+            'context_type': contextType,
+            'context_id': ?contextId,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode != 201 && res.statusCode != 200) {
+      throw Exception('Failed to create conversation (${res.statusCode})');
+    }
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  /// Renames a chat session.
+  Future<Map<String, dynamic>> updateChatSession(String id, String title) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final res = await _http
+        .patch(
+          Uri.parse('$base/api/chat/sessions/$id'),
+          headers: headers,
+          body: jsonEncode({'title': title.trim()}),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) throw Exception('Failed to rename conversation (${res.statusCode})');
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  /// Deletes a chat session and all its messages.
+  Future<void> deleteChatSession(String id) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final res = await _http.delete(
+      Uri.parse('$base/api/chat/sessions/$id'),
+      headers: headers,
+    ).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200 && res.statusCode != 204) {
+      throw Exception('Failed to delete conversation (${res.statusCode})');
     }
   }
 
@@ -494,7 +598,14 @@ class ApiService {
     if (listRes.statusCode != 200) throw Exception('Failed to load conversations (${listRes.statusCode})');
     final sessions = (jsonDecode(listRes.body) as List<dynamic>).whereType<Map<String, dynamic>>();
     final mobile = sessions.where((s) => s['context_type'] == 'mobile').toList();
-    if (mobile.isEmpty) return null;
+    if (mobile.isEmpty) {
+      final first = sessions.firstOrNull;
+      if (first == null) return null;
+      final id = first['id'];
+      final res = await _http.get(Uri.parse('$base/api/chat/sessions/$id'), headers: headers).timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return null;
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
 
     final id = mobile.first['id'];
     final res = await _http.get(Uri.parse('$base/api/chat/sessions/$id'), headers: headers).timeout(const Duration(seconds: 10));
@@ -504,13 +615,39 @@ class ApiService {
 
   /// Starts a fresh phone conversation and returns its id.
   Future<String> createMobileSession() async {
+    final res = await createChatSession(title: 'Mobile Companion', contextType: 'mobile');
+    return res['id'] as String;
+  }
+
+  // --- Memories ---
+  Future<List<Map<String, dynamic>>> fetchMemories() async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final res = await _http.get(Uri.parse('$base/api/chat/memories'), headers: headers).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200) throw Exception('Failed to load memories (${res.statusCode})');
+    final list = jsonDecode(res.body) as List<dynamic>;
+    return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>> createMemory(String fact, {String category = 'general'}) async {
     final base = await _getBaseUrl();
     final headers = await _getHeaders();
     final res = await _http
-        .post(Uri.parse('$base/api/chat/sessions'), headers: headers, body: jsonEncode({'title': 'Mobile Companion', 'context_type': 'mobile'}))
-        .timeout(const Duration(seconds: 10));
-    if (res.statusCode != 201 && res.statusCode != 200) throw Exception('Failed to start a new chat (${res.statusCode})');
-    return (jsonDecode(res.body) as Map<String, dynamic>)['id'] as String;
+        .post(
+          Uri.parse('$base/api/chat/memories'),
+          headers: headers,
+          body: jsonEncode({'fact': fact.trim(), 'category': category}),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode != 201 && res.statusCode != 200) throw Exception('Failed to save memory (${res.statusCode})');
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  Future<void> deleteMemory(String id) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final res = await _http.delete(Uri.parse('$base/api/chat/memories/$id'), headers: headers).timeout(const Duration(seconds: 15));
+    if (res.statusCode != 200 && res.statusCode != 204) throw Exception('Failed to delete memory (${res.statusCode})');
   }
 
   // Runs a deletion Bip proposed, after the user taps Confirm on its card.
