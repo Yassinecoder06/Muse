@@ -270,9 +270,11 @@ class _SettingsTabState extends State<SettingsTab> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text(
-                              'Speech Speed',
-                              style: TextStyle(fontSize: 14, color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
+                            const Expanded(
+                              child: Text(
+                                'Speech Speed',
+                                style: TextStyle(fontSize: 14, color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
+                              ),
                             ),
                             Text(
                               _speechRate == 0.4 ? 'Slower (0.8×)' : (_speechRate == 0.6 ? 'Faster (1.2×)' : 'Normal (1.0×)'),

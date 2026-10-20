@@ -251,10 +251,10 @@ class _BipChatTabState extends State<BipChatTab> {
         final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
         final availableHeight = constraints.maxHeight;
 
-        // When space is constrained (keyboard is up, landscape orientation, or short window):
+        // When space is constrained (keyboard is up, short landscape phone, or short window):
         // 1. Hide quick suggestions strip to leave space for messages and input field.
-        // 2. Hide top banner when height is low or when typing or in landscape.
-        final isCompact = isKeyboardOpen || isLandscape || availableHeight < 320;
+        // 2. Hide top banner when height is low or when typing or in short landscape.
+        final isCompact = isKeyboardOpen || (isLandscape && availableHeight < 500) || availableHeight < 320;
         final showSuggestions = !_loading && !isCompact && availableHeight > 300;
         final showTopBanner = !isCompact && availableHeight > 260;
 
