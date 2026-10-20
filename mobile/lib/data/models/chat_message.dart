@@ -26,10 +26,10 @@ class BipMessage {
     return BipMessage(
       id: json['id']?.toString() ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
       role: json['role'] as String? ?? 'assistant',
-      text: json['content'] as String? ?? '',
+      text: json['content'] as String? ?? json['text'] as String? ?? json['reply'] as String? ?? '',
       timestamp: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
-      actionCards: json['action_cards'] as List<dynamic>?,
-      toolCalls: json['tool_calls'] as List<dynamic>?,
+      actionCards: (json['action_cards'] ?? json['actionCards']) as List<dynamic>?,
+      toolCalls: (json['tool_calls'] ?? json['toolCalls']) as List<dynamic>?,
       fromHistory: true,
     );
   }
@@ -38,12 +38,12 @@ class BipMessage {
     return BipMessage(
       id: json['id'] as String? ?? 'msg_${DateTime.now().millisecondsSinceEpoch}',
       role: json['role'] as String? ?? 'assistant',
-      text: json['content'] as String? ?? json['text'] as String? ?? '',
+      text: json['content'] as String? ?? json['text'] as String? ?? json['reply'] as String? ?? '',
       timestamp: json['timestamp'] != null
           ? DateTime.tryParse(json['timestamp'].toString()) ?? DateTime.now()
-          : DateTime.now(),
-      actionCards: json['actionCards'] as List<dynamic>?,
-      toolCalls: json['toolCalls'] as List<dynamic>?,
+          : (json['created_at'] != null ? DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now() : DateTime.now()),
+      actionCards: (json['actionCards'] ?? json['action_cards']) as List<dynamic>?,
+      toolCalls: (json['toolCalls'] ?? json['tool_calls']) as List<dynamic>?,
     );
   }
 }

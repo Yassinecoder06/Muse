@@ -86,6 +86,30 @@ class FakeApi extends ApiService {
       };
 
   @override
+  Future<List<Map<String, dynamic>>> fetchChatSessions() async => [
+        {
+          'id': 's1',
+          'title': 'Mobile Companion',
+          'context_type': 'mobile',
+          'created_at': today.toIso8601String(),
+          'updated_at': today.toIso8601String(),
+        }
+      ];
+
+  @override
+  Future<Map<String, dynamic>> fetchChatSession(String id) async => {
+        'id': 's1',
+        'title': 'Mobile Companion',
+        'messages': [
+          {'id': 'm1', 'role': 'user', 'content': 'Add a task to call mom tomorrow', 'created_at': today.toIso8601String()},
+          {'id': 'm2', 'role': 'assistant', 'content': 'Done! I added **Call mom**.', 'created_at': today.toIso8601String()},
+        ],
+      };
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMemories() async => [];
+
+  @override
   Future<bool> checkConnection() async => true;
 
   @override

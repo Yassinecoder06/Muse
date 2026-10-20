@@ -157,16 +157,28 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
       return
     }
 
+    const resolvedUserName = body.userName || (req.headers['x-muse-user-name'] ? decodeURIComponent(req.headers['x-muse-user-name'] as string) : undefined)
+
     const output = await runAgentConversation({
       userId: req.userId!,
       sessionId,
       messageText: body.message,
       model: body.model,
-      userName: body.userName,
+      userName: resolvedUserName,
       timezone: requestTimezone(req)
     })
 
-    res.json(output)
+    const reply = output.assistantMessage.content
+    res.json({
+      ...output,
+      reply,
+      response: reply,
+      sessionId,
+      actionCards: output.assistantMessage.action_cards || [],
+      action_cards: output.assistantMessage.action_cards || [],
+      toolCalls: output.assistantMessage.tool_calls || [],
+      tool_calls: output.assistantMessage.tool_calls || []
+    })
   } catch (error) {
     next(error)
   }
@@ -281,7 +293,7 @@ export async function directChat(req: Request, res: Response, next: NextFunction
   try {
     const body = z.object({
       message: z.string().trim().min(1, 'Message cannot be empty').max(8000),
-      sessionId: z.string().uuid().optional(),
+      sessionId: z.string().trim().uuid().optional().nullable().or(z.literal('')).transform(val => (val ? val : undefined)),
       model: z.string().max(100).optional(),
       userName: z.string().max(80).optional()
     }).parse(req.body)
@@ -327,12 +339,14 @@ export async function directChat(req: Request, res: Response, next: NextFunction
       }
     }
 
+    const resolvedUserName = body.userName || (req.headers['x-muse-user-name'] ? decodeURIComponent(req.headers['x-muse-user-name'] as string) : undefined)
+
     const output = await runAgentConversation({
       userId: req.userId!,
       sessionId: sessionId!,
       messageText: body.message,
       model: body.model,
-      userName: body.userName,
+      userName: resolvedUserName,
       timezone: requestTimezone(req)
     })
 
@@ -341,8 +355,13 @@ export async function directChat(req: Request, res: Response, next: NextFunction
       reply,
       response: reply,
       sessionId,
+      sessionTitle: output.sessionTitle,
       actionCards: output.assistantMessage.action_cards || [],
-      toolCalls: output.assistantMessage.tool_calls || []
+      action_cards: output.assistantMessage.action_cards || [],
+      toolCalls: output.assistantMessage.tool_calls || [],
+      tool_calls: output.assistantMessage.tool_calls || [],
+      userMessage: output.userMessage,
+      assistantMessage: output.assistantMessage
     })
   } catch (error) {
     next(error)

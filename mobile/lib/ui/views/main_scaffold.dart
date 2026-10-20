@@ -8,9 +8,9 @@ import '../../data/services/offline_queue.dart';
 import '../../data/services/reminder_service.dart';
 import '../../data/services/storage_service.dart';
 import 'bip_alarm_screen.dart';
+import 'bip_chat_tab.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bip_companion_button.dart';
-import '../widgets/bip_voice_sheet.dart';
 import '../widgets/quick_capture_sheet.dart';
 import 'notes_tab.dart';
 import 'tasks_tab.dart';
@@ -172,7 +172,10 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
     if (action == null || !mounted) return;
     AppEvents.launchAction.value = null;
     if (action == 'ask_bip') {
-      BipVoiceSheet.show(context);
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const BipChatScreen(startWithVoice: true)),
+      );
       return;
     }
     showQuickCapture(context, startDictation: action == 'voice_note');
@@ -395,7 +398,10 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
                     isActive: false,
                     onTap: () {
                       Navigator.pop(context);
-                      BipVoiceSheet.show(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const BipChatScreen()),
+                      );
                     },
                   ),
                   _buildDrawerNavItem(
@@ -601,7 +607,10 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
           Padding(
             padding: const EdgeInsets.only(right: 8, left: 4),
             child: BipCompanionButton(
-              onCustomTap: () => BipVoiceSheet.show(context),
+              onCustomTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const BipChatScreen(startWithVoice: true)),
+              ),
             ),
           ),
         ],
