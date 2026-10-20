@@ -696,7 +696,7 @@ function MusicDownloadPlanCard({
             <span className="plan-item-num">{i + 1}.</span>
             <div className="plan-item-meta">
               <span className="plan-item-title music-song-name-red">{it.title || it.query}</span>
-              {it.artist && <span className="plan-item-artist">by <strong style={{ color: '#2563eb' }}>{it.artist}</strong></span>}
+              {it.artist && <span className="plan-item-artist">by <strong style={{ color: '#60a5fa' }}>{it.artist}</strong></span>}
               <code className="plan-item-filename">{it.filename}</code>
               {it.already_downloaded && (
                 <span
