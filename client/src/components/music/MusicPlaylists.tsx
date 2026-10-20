@@ -335,7 +335,7 @@ export function MusicPlaylists() {
                 <div className="builder-source-col">
                   <div className="builder-col-header">
                     <div className="header-label-badge">
-                      <label>Library Songs</label>
+                      <label className="playlist-col-header-red">Library Songs</label>
                       <span className="count-pill">{availableSongs.length}</span>
                     </div>
                     <div className="builder-search-wrap">
@@ -401,7 +401,7 @@ export function MusicPlaylists() {
                 <div className="builder-priority-col">
                   <div className="builder-col-header">
                     <div className="header-label-badge">
-                      <label>Playback Priority Order</label>
+                      <label className="playlist-col-header-red">Playback Priority Order</label>
                       <span className="count-pill priority-pill">{modalTracks.length}</span>
                     </div>
                     <span className="builder-priority-hint">

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import '../../data/services/api_service.dart';
 import '../../data/services/app_events.dart';
@@ -34,6 +35,21 @@ class _MusicTabState extends State<MusicTab> {
   bool _submittingDownload = false;
   Timer? _tasksPollTimer;
 
+  // Audio Playback State
+  AudioPlayer? _player;
+  String? _currentFilename;
+  String? _currentTitle;
+  String? _currentArtist;
+  PlayerState _playerState = PlayerState.stopped;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  bool _loadingAudio = false;
+
+  StreamSubscription? _stateSub;
+  StreamSubscription? _positionSub;
+  StreamSubscription? _durationSub;
+  StreamSubscription? _completeSub;
+
   @override
   void initState() {
     super.initState();
@@ -48,12 +64,42 @@ class _MusicTabState extends State<MusicTab> {
     });
   }
 
+  void _initAudioPlayer() {
+    if (_player != null) return;
+    try {
+      final p = AudioPlayer();
+      _stateSub = p.onPlayerStateChanged.listen((state) {
+        if (mounted) setState(() => _playerState = state);
+      });
+      _positionSub = p.onPositionChanged.listen((pos) {
+        if (mounted) setState(() => _position = pos);
+      });
+      _durationSub = p.onDurationChanged.listen((dur) {
+        if (mounted) setState(() => _duration = dur);
+      });
+      _completeSub = p.onPlayerComplete.listen((_) {
+        if (mounted) {
+          setState(() {
+            _playerState = PlayerState.stopped;
+            _position = Duration.zero;
+          });
+        }
+      });
+      _player = p;
+    } catch (_) {}
+  }
+
   @override
   void dispose() {
     AppEvents.dataChanged.removeListener(_onDataChanged);
     _tasksPollTimer?.cancel();
     _searchController.dispose();
     _downloadUrlController.dispose();
+    _stateSub?.cancel();
+    _positionSub?.cancel();
+    _durationSub?.cancel();
+    _completeSub?.cancel();
+    _player?.dispose();
     super.dispose();
   }
 
@@ -114,6 +160,68 @@ class _MusicTabState extends State<MusicTab> {
     }
   }
 
+  Future<void> _playSong(Map<String, dynamic> song) async {
+    final filename = song['filename'] as String? ?? '';
+    final title = song['title'] as String? ?? filename;
+    final artist = song['artist'] as String? ?? '';
+    if (filename.isEmpty) return;
+
+    _initAudioPlayer();
+
+    if (_currentFilename == filename) {
+      if (_playerState == PlayerState.playing) {
+        await _player?.pause();
+      } else {
+        await _player?.resume();
+      }
+      return;
+    }
+
+    setState(() {
+      _loadingAudio = true;
+      _currentFilename = filename;
+      _currentTitle = title;
+      _currentArtist = artist;
+      _position = Duration.zero;
+      _duration = Duration.zero;
+    });
+
+    try {
+      final streamPath = '/api/music/stream/${Uri.encodeComponent(filename)}';
+      final fullUrl = await _api.resolveUrl(streamPath);
+      await _player?.stop();
+      await _player?.play(UrlSource(fullUrl));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to play "$title": $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loadingAudio = false);
+    }
+  }
+
+  Future<void> _stopPlayback() async {
+    await _player?.stop();
+    if (mounted) {
+      setState(() {
+        _currentFilename = null;
+        _currentTitle = null;
+        _currentArtist = null;
+        _position = Duration.zero;
+        _duration = Duration.zero;
+        _playerState = PlayerState.stopped;
+      });
+    }
+  }
+
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
   Future<void> _deleteSong(String filename, String title) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -138,6 +246,9 @@ class _MusicTabState extends State<MusicTab> {
 
     if (confirmed == true) {
       try {
+        if (_currentFilename == filename) {
+          await _stopPlayback();
+        }
         await _api.deleteMusicSong(filename);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -324,11 +435,29 @@ class _MusicTabState extends State<MusicTab> {
                     final track = tracks[index] as Map<String, dynamic>;
                     final tTitle = track['title'] as String? ?? 'Track ${index + 1}';
                     final tArtist = track['artist'] as String? ?? '';
+                    final tFilename = track['filename'] as String? ?? '';
+                    final isPlaying = _currentFilename == tFilename && _playerState == PlayerState.playing;
+
                     return ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.music_note_rounded, color: AppTheme.primaryLight, size: 20),
-                      title: Text(tTitle, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14)),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _playSong(track);
+                      },
+                      leading: Icon(
+                        isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_filled_rounded,
+                        color: isPlaying ? const Color(0xFF00E5FF) : AppTheme.primaryLight,
+                        size: 24,
+                      ),
+                      title: Text(
+                        tTitle,
+                        style: TextStyle(
+                          color: isPlaying ? const Color(0xFF00E5FF) : AppTheme.textPrimary,
+                          fontSize: 14,
+                          fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
                       subtitle: tArtist.isNotEmpty
                           ? Text(tArtist, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12))
                           : null,
@@ -455,6 +584,124 @@ class _MusicTabState extends State<MusicTab> {
               ],
             ),
           ),
+
+          // Now Playing Mini Player Bar
+          _buildMiniPlayer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniPlayer() {
+    if (_currentFilename == null) return const SizedBox.shrink();
+
+    final isPlaying = _playerState == PlayerState.playing;
+    final posStr = _formatDuration(_position);
+    final durStr = _formatDuration(_duration);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161524),
+        border: const Border(
+          top: BorderSide(color: Color(0xFF2C2840), width: 1.5),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Progress Slider
+          Row(
+            children: [
+              Text(posStr, style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary)),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 8),
+                    trackHeight: 3,
+                    activeTrackColor: const Color(0xFF00E5FF),
+                    inactiveTrackColor: Colors.white12,
+                    thumbColor: const Color(0xFF00E5FF),
+                  ),
+                  child: Slider(
+                    value: _duration.inMilliseconds > 0
+                        ? (_position.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0)
+                        : 0.0,
+                    onChanged: (val) {
+                      final targetMs = (val * _duration.inMilliseconds).toInt();
+                      _player?.seek(Duration(milliseconds: targetMs));
+                    },
+                  ),
+                ),
+              ),
+              Text(durStr, style: const TextStyle(fontSize: 10, color: AppTheme.textSecondary)),
+            ],
+          ),
+
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.4)),
+                ),
+                child: const Icon(Icons.music_note_rounded, color: Color(0xFF00E5FF), size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _currentTitle ?? 'Now Playing',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                    ),
+                    if (_currentArtist != null && _currentArtist!.isNotEmpty)
+                      Text(
+                        _currentArtist!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary),
+                      ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: _loadingAudio
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00E5FF)))
+                    : Icon(
+                        isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_filled_rounded,
+                        color: const Color(0xFF00E5FF),
+                        size: 32,
+                      ),
+                onPressed: () {
+                  if (isPlaying) {
+                    _player?.pause();
+                  } else {
+                    _player?.resume();
+                  }
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 20, color: AppTheme.textSecondary),
+                onPressed: _stopPlayback,
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -538,23 +785,44 @@ class _MusicTabState extends State<MusicTab> {
                   final title = song['title'] as String? ?? filename;
                   final artist = song['artist'] as String? ?? '';
                   final sizeFormatted = _formatSize(song['size']);
+                  final isCurrentSong = _currentFilename == filename;
 
                   return ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    leading: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: AppTheme.primaryLight.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
+                    onTap: () => _playSong(song),
+                    leading: InkWell(
+                      onTap: () => _playSong(song),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: isCurrentSong
+                              ? const Color(0xFF00E5FF).withValues(alpha: 0.2)
+                              : AppTheme.primaryLight.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: isCurrentSong ? Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.6)) : null,
+                        ),
+                        child: isCurrentSong && _loadingAudio
+                            ? const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00E5FF))))
+                            : Icon(
+                                isCurrentSong && _playerState == PlayerState.playing
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                color: isCurrentSong ? const Color(0xFF00E5FF) : AppTheme.primaryLight,
+                                size: 22,
+                              ),
                       ),
-                      child: const Icon(Icons.music_note_rounded, color: AppTheme.primaryLight, size: 20),
                     ),
                     title: Text(
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppTheme.textPrimary),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: isCurrentSong ? const Color(0xFF00E5FF) : AppTheme.textPrimary,
+                      ),
                     ),
                     subtitle: Row(
                       children: [
@@ -579,11 +847,27 @@ class _MusicTabState extends State<MusicTab> {
                     trailing: PopupMenuButton<String>(
                       icon: const Icon(Icons.more_vert, size: 20, color: AppTheme.textSecondary),
                       onSelected: (val) {
-                        if (val == 'delete') {
+                        if (val == 'play') {
+                          _playSong(song);
+                        } else if (val == 'delete') {
                           _deleteSong(filename, title);
                         }
                       },
                       itemBuilder: (ctx) => [
+                        PopupMenuItem(
+                          value: 'play',
+                          child: Row(
+                            children: [
+                              Icon(
+                                isCurrentSong && _playerState == PlayerState.playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                color: AppTheme.primaryLight,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(isCurrentSong && _playerState == PlayerState.playing ? 'Pause' : 'Play Song'),
+                            ],
+                          ),
+                        ),
                         const PopupMenuItem(
                           value: 'delete',
                           child: Row(
