@@ -720,7 +720,7 @@ class _TasksTabState extends State<TasksTab> {
           }).toList();
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: AppTheme.getBackground(context),
       floatingActionButton: FloatingActionButton(
         onPressed: _activeSegment == 0 ? _showAddTaskSheet : _showAddEventSheet,
         tooltip: _activeSegment == 0 ? 'New Task' : 'New Event',

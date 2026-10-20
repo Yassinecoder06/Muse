@@ -388,9 +388,9 @@ class _NoteDetailViewState extends State<NoteDetailView> {
     final wordCount = _countWords(_contentController.text);
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: AppTheme.getBackground(context),
       appBar: AppBar(
-        backgroundColor: AppTheme.surface,
+        backgroundColor: AppTheme.getSurface(context),
         titleSpacing: 0,
         // The Read/Edit switch shrinks to fit next to the action icons.
         title: FittedBox(
@@ -401,9 +401,9 @@ class _NoteDetailViewState extends State<NoteDetailView> {
             // Mode toggle button (Read vs Edit)
             Container(
               decoration: BoxDecoration(
-                color: AppTheme.background,
+                color: AppTheme.getBackground(context),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppTheme.surfaceBorder),
+                border: Border.all(color: AppTheme.getSurfaceBorder(context)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,

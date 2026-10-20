@@ -6,6 +6,7 @@ import '../../data/services/api_service.dart';
 import '../../data/services/app_events.dart';
 import '../../data/services/note_store.dart';
 import '../../data/services/offline_queue.dart';
+import '../../data/services/storage_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/specialized_note_sheet.dart';
 import 'note_detail_view.dart';
@@ -19,13 +20,18 @@ class NotesTab extends StatefulWidget {
 
 class _NotesTabState extends State<NotesTab> {
   final ApiService _api = ApiService();
+  final StorageService _storage = StorageService();
 
   List<Note> _allNotes = [];
   bool _loading = true;
   String _search = '';
   String? _error;
-  // Showing the on-device copy because Muse is unreachable.
   bool _offline = false;
+  String _userName = 'Explorer';
+
+  // Multi-select state matching web client
+  final Set<String> _selectedIds = {};
+  bool get _isSelectionMode => _selectedIds.isNotEmpty;
 
   // Server search (keywords + meaning) for the "all" scope; null = not run.
   final _searchController = TextEditingController();
@@ -34,14 +40,20 @@ class _NotesTabState extends State<NotesTab> {
   String _searchResultsFor = '';
   bool _searching = false;
 
-  // Scopes: 'all', 'favorites', 'archive', 'trash'
+  // Scopes matching web: 'all', 'favorites', 'archive', 'trash'
   String _currentScope = 'all';
 
   @override
   void initState() {
     super.initState();
+    _loadUserName();
     _loadNotes();
     AppEvents.dataChanged.addListener(_onDataChanged);
+  }
+
+  Future<void> _loadUserName() async {
+    final name = await _storage.getUserName();
+    if (mounted) setState(() => _userName = name);
   }
 
   @override
@@ -88,36 +100,6 @@ class _NotesTabState extends State<NotesTab> {
     });
   }
 
-  // Trash right away, offer Undo (restore) for a few seconds.
-  Future<void> _trashWithUndo(Note note) async {
-    final index = _allNotes.indexWhere((n) => n.id == note.id);
-    setState(() => _allNotes.removeWhere((n) => n.id == note.id));
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await _api.deleteNote(note.id);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _allNotes.insert(index.clamp(0, _allNotes.length), note));
-      messenger.showSnackBar(SnackBar(content: Text('Could not move to trash: ${e.toString().replaceFirst('Exception: ', '')}'), backgroundColor: Colors.redAccent));
-      return;
-    }
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(
-      content: const Text('Moved to trash'),
-      duration: const Duration(seconds: 4),
-      action: SnackBarAction(
-        label: 'Undo',
-        onPressed: () async {
-          try {
-            await _api.restoreNote(note.id);
-            if (mounted) setState(() => _allNotes.insert(index.clamp(0, _allNotes.length), note));
-          } catch (_) {}
-        },
-      ),
-    ));
-  }
-
-  // Bip created or deleted something: refresh quietly, keeping the list on screen.
   void _onDataChanged() => _loadNotes(silent: true);
 
   Future<void> _loadNotes({bool silent = false}) async {
@@ -128,13 +110,15 @@ class _NotesTabState extends State<NotesTab> {
       });
     }
     try {
-      // Falls back to the on-device copy (with unsynced edits) when offline.
       final result = await NoteStore.list(_api, _currentScope);
       if (!mounted) return;
       setState(() {
         _allNotes = result.notes;
         _offline = result.offline;
         _loading = false;
+        // Clean up selected IDs that no longer exist
+        final existingIds = result.notes.map((n) => n.id).toSet();
+        _selectedIds.removeWhere((id) => !existingIds.contains(id));
       });
     } catch (e) {
       if (!mounted || silent) return;
@@ -149,10 +133,151 @@ class _NotesTabState extends State<NotesTab> {
     if (_currentScope == scope) return;
     setState(() {
       _currentScope = scope;
+      _selectedIds.clear();
     });
     await _loadNotes();
   }
 
+  // --- Multi-select actions ---
+  void _toggleSelect(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+    });
+  }
+
+  void _selectAll(List<Note> list) {
+    setState(() {
+      _selectedIds.addAll(list.map((n) => n.id));
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedIds.clear();
+    });
+  }
+
+  Future<void> _trashSelected() async {
+    final ids = _selectedIds.toList();
+    if (ids.isEmpty) return;
+
+    final count = ids.length;
+    final toRemove = _allNotes.where((n) => ids.contains(n.id)).toList();
+
+    setState(() {
+      _allNotes.removeWhere((n) => ids.contains(n.id));
+      _selectedIds.clear();
+    });
+
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      for (final id in ids) {
+        await _api.deleteNote(id);
+      }
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('$count note${count == 1 ? '' : 's'} moved to trash'),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () async {
+              for (final note in toRemove) {
+                try {
+                  await _api.restoreNote(note.id);
+                } catch (_) {}
+              }
+              _loadNotes(silent: true);
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      _loadNotes(silent: true);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Failed to move to trash: $e'), backgroundColor: Colors.redAccent),
+      );
+    }
+  }
+
+  Future<void> _restoreSelected() async {
+    final ids = _selectedIds.toList();
+    if (ids.isEmpty) return;
+
+    final count = ids.length;
+    setState(() {
+      _allNotes.removeWhere((n) => ids.contains(n.id));
+      _selectedIds.clear();
+    });
+
+    try {
+      for (final id in ids) {
+        await _api.restoreNote(id);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$count note${count == 1 ? '' : 's'} restored to workspace')),
+        );
+      }
+    } catch (e) {
+      _loadNotes(silent: true);
+    }
+  }
+
+  Future<void> _deletePermanentlySelected() async {
+    final ids = _selectedIds.toList();
+    if (ids.isEmpty) return;
+
+    final count = ids.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.getSurface(ctx),
+        title: Text('Permanently delete $count note${count == 1 ? '' : 's'}?',
+            style: TextStyle(color: AppTheme.getTextPrimary(ctx))),
+        content: Text(
+          'This action cannot be undone. The selected notes will be destroyed permanently.',
+          style: TextStyle(color: AppTheme.getTextSecondary(ctx)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: AppTheme.getTextSecondary(ctx))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete permanently', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _allNotes.removeWhere((n) => ids.contains(n.id));
+      _selectedIds.clear();
+    });
+
+    try {
+      for (final id in ids) {
+        await _api.deleteNotePermanently(id);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$count note${count == 1 ? '' : 's'} permanently deleted')),
+        );
+      }
+    } catch (e) {
+      _loadNotes(silent: true);
+    }
+  }
+
+  // --- Single note actions ---
   Future<void> _toggleFavorite(Note note) async {
     final nextFav = !note.favorite;
     setState(() {
@@ -163,9 +288,8 @@ class _NotesTabState extends State<NotesTab> {
     });
 
     try {
-      await NoteStore.save(_api, note, favorite: nextFav); // queued when offline
+      await NoteStore.save(_api, note, favorite: nextFav);
     } catch (_) {
-      // Revert if the server rejected it
       setState(() {
         final index = _allNotes.indexWhere((n) => n.id == note.id);
         if (index != -1) {
@@ -175,12 +299,42 @@ class _NotesTabState extends State<NotesTab> {
     }
   }
 
+  Future<void> _trashWithUndo(Note note) async {
+    final index = _allNotes.indexWhere((n) => n.id == note.id);
+    setState(() => _allNotes.removeWhere((n) => n.id == note.id));
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _api.deleteNote(note.id);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _allNotes.insert(index.clamp(0, _allNotes.length), note));
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not move to trash: $e'), backgroundColor: Colors.redAccent),
+      );
+      return;
+    }
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('Moved to trash'),
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            try {
+              await _api.restoreNote(note.id);
+              if (mounted) setState(() => _allNotes.insert(index.clamp(0, _allNotes.length), note));
+            } catch (_) {}
+          },
+        ),
+      ),
+    );
+  }
+
   Future<void> _restoreNote(Note note) async {
     try {
       await _api.restoreNote(note.id);
-      setState(() {
-        _allNotes.removeWhere((n) => n.id == note.id);
-      });
+      setState(() => _allNotes.removeWhere((n) => n.id == note.id));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Note restored to your workspace')),
@@ -199,16 +353,16 @@ class _NotesTabState extends State<NotesTab> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        title: const Text('Delete permanently?', style: TextStyle(color: AppTheme.textPrimary)),
-        content: const Text(
+        backgroundColor: AppTheme.getSurface(ctx),
+        title: Text('Delete permanently?', style: TextStyle(color: AppTheme.getTextPrimary(ctx))),
+        content: Text(
           'This note will be permanently erased and cannot be recovered.',
-          style: TextStyle(color: AppTheme.textSecondary),
+          style: TextStyle(color: AppTheme.getTextSecondary(ctx)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+            child: Text('Cancel', style: TextStyle(color: AppTheme.getTextSecondary(ctx))),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
@@ -222,9 +376,7 @@ class _NotesTabState extends State<NotesTab> {
     if (confirm == true) {
       try {
         await _api.deleteNotePermanently(note.id);
-        setState(() {
-          _allNotes.removeWhere((n) => n.id == note.id);
-        });
+        setState(() => _allNotes.removeWhere((n) => n.id == note.id));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Note permanently deleted')),
@@ -240,20 +392,33 @@ class _NotesTabState extends State<NotesTab> {
     }
   }
 
+  Future<void> _createWeeklyReflection() async {
+    try {
+      final n = await _api.createNote(
+        title: 'Weekly Reflection - ${DateFormat('MMM d').format(DateTime.now())}',
+        content: '## Weekly Reflection\n\n### What gave me energy this week?\n\n### What do I want more of?\n',
+        tags: ['rituals', 'personal'],
+      );
+      await _loadNotes();
+      if (!mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => NoteDetailView(note: n)));
+    } catch (_) {}
+  }
+
   Future<void> _emptyTrash() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        title: const Text('Empty Trash?', style: TextStyle(color: AppTheme.textPrimary)),
-        content: const Text(
+        backgroundColor: AppTheme.getSurface(ctx),
+        title: Text('Empty Trash?', style: TextStyle(color: AppTheme.getTextPrimary(ctx))),
+        content: Text(
           'Every note in the trash will be permanently destroyed.',
-          style: TextStyle(color: AppTheme.textSecondary),
+          style: TextStyle(color: AppTheme.getTextSecondary(ctx)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: AppTheme.textSecondary)),
+            child: Text('Cancel', style: TextStyle(color: AppTheme.getTextSecondary(ctx))),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
@@ -290,7 +455,7 @@ class _NotesTabState extends State<NotesTab> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppTheme.surface,
+      backgroundColor: AppTheme.getSurface(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -309,12 +474,16 @@ class _NotesTabState extends State<NotesTab> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'New Note',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.getTextPrimary(ctx),
+                    ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: AppTheme.textSecondary),
+                    icon: Icon(Icons.close, color: AppTheme.getTextSecondary(ctx)),
                     onPressed: () => Navigator.pop(ctx),
                   ),
                 ],
@@ -323,12 +492,12 @@ class _NotesTabState extends State<NotesTab> {
               TextField(
                 controller: titleController,
                 autofocus: true,
-                style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600),
+                style: TextStyle(color: AppTheme.getTextPrimary(ctx), fontWeight: FontWeight.w600),
                 decoration: InputDecoration(
                   hintText: 'Note Title',
-                  hintStyle: const TextStyle(color: AppTheme.textSecondary),
+                  hintStyle: TextStyle(color: AppTheme.getTextSecondary(ctx)),
                   filled: true,
-                  fillColor: AppTheme.background,
+                  fillColor: AppTheme.getBackground(ctx),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 ),
               ),
@@ -336,12 +505,12 @@ class _NotesTabState extends State<NotesTab> {
               TextField(
                 controller: contentController,
                 maxLines: 6,
-                style: const TextStyle(color: AppTheme.textPrimary),
+                style: TextStyle(color: AppTheme.getTextPrimary(ctx)),
                 decoration: InputDecoration(
                   hintText: 'Type your thoughts or paste ideas…',
-                  hintStyle: const TextStyle(color: AppTheme.textSecondary),
+                  hintStyle: TextStyle(color: AppTheme.getTextSecondary(ctx)),
                   filled: true,
-                  fillColor: AppTheme.background,
+                  fillColor: AppTheme.getBackground(ctx),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 ),
               ),
@@ -368,24 +537,26 @@ class _NotesTabState extends State<NotesTab> {
                         tags: ['mobile'],
                       );
                     } catch (e) {
-                      // Desktop unreachable: keep the note on the phone and sync later.
                       if (!OfflineQueue.isNetworkError(e)) rethrow;
-                      final local = await OfflineQueue.queueNote(title: title.isEmpty ? 'Untitled Note' : title, content: content, tags: ['mobile']);
+                      final local = await OfflineQueue.queueNote(
+                        title: title.isEmpty ? 'Untitled Note' : title,
+                        content: content,
+                        tags: ['mobile'],
+                      );
                       await _loadNotes(silent: true);
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Saved on your phone. It will sync when Muse is reachable.')),
+                          const SnackBar(content: Text('Saved locally. Will sync when Muse connects.')),
                         );
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => NoteDetailView(note: local))).then((_) => _loadNotes(silent: true));
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => NoteDetailView(note: local)))
+                            .then((_) => _loadNotes(silent: true));
                       }
                       return;
                     }
                     await _loadNotes();
                     if (mounted) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => NoteDetailView(note: created)),
-                      ).then((_) => _loadNotes());
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => NoteDetailView(note: created)))
+                          .then((_) => _loadNotes());
                     }
                   } catch (e) {
                     if (mounted) {
@@ -420,54 +591,64 @@ class _NotesTabState extends State<NotesTab> {
                 n.tags.any((t) => t.toLowerCase().contains(q));
           }).toList();
 
-    // Divide into Starred and Others when in "all" scope
-    final starredNotes = _currentScope == 'all' && _search.isEmpty
-        ? filtered.where((n) => n.favorite).toList()
-        : <Note>[];
-    final otherNotes = _currentScope == 'all' && _search.isEmpty
-        ? filtered.where((n) => !n.favorite).toList()
-        : filtered;
+    // Section title matching web
+    final heading = _currentScope == 'favorites'
+        ? 'Favorite notes'
+        : _currentScope == 'archive'
+            ? 'Archived notes'
+            : _currentScope == 'trash'
+                ? 'Trash'
+                : 'Recent notes';
+
+    // Greeting matching web
+    final greeting = now.hour < 12
+        ? 'Good morning, $_userName.'
+        : now.hour < 18
+            ? 'Good afternoon, $_userName.'
+            : 'Good evening, $_userName.';
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.small(
-            heroTag: 'fab_template',
-            onPressed: () => SpecializedNoteSheet.show(context),
-            backgroundColor: AppTheme.surface,
-            tooltip: 'Specialized Template',
-            child: const Icon(Icons.dashboard_customize_rounded, color: Color(0xFF00E5FF), size: 20),
-          ),
-          const SizedBox(height: 10),
-          FloatingActionButton(
-            heroTag: 'fab_new_note',
-            onPressed: _showCreateNoteSheet,
-            tooltip: 'New Note',
-            child: const Icon(Icons.edit_rounded),
-          ),
-        ],
-      ),
+      backgroundColor: AppTheme.getBackground(context),
+      floatingActionButton: _isSelectionMode
+          ? null
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.small(
+                  heroTag: 'fab_template',
+                  onPressed: () => SpecializedNoteSheet.show(context),
+                  backgroundColor: AppTheme.getSurface(context),
+                  tooltip: 'Specialized Template',
+                  child: const Icon(Icons.layers_outlined, color: Color(0xFF00E5FF), size: 20),
+                ),
+                const SizedBox(height: 10),
+                FloatingActionButton(
+                  heroTag: 'fab_new_note',
+                  onPressed: _showCreateNoteSheet,
+                  tooltip: 'New Note',
+                  child: const Icon(Icons.add_rounded, size: 26),
+                ),
+              ],
+            ),
       body: RefreshIndicator(
         onRefresh: _loadNotes,
         color: AppTheme.primaryLight,
         child: CustomScrollView(
           slivers: [
-            // Hero Header matching desktop Muse
+            // Hero Header matching Web Client Dashboard
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      todayStr,
+                      todayStr.toUpperCase(),
                       style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppTheme.textSecondary.withValues(alpha: 0.8),
-                        letterSpacing: 0.5,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.getTextSecondary(context).withValues(alpha: 0.8),
+                        letterSpacing: 0.8,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -476,35 +657,37 @@ class _NotesTabState extends State<NotesTab> {
                       children: [
                         Expanded(
                           child: Text(
-                            now.hour < 12 ? 'Good morning.' : now.hour < 18 ? 'Good afternoon.' : 'Good evening.',
+                            greeting,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: AppTheme.textPrimary,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.getTextPrimary(context),
+                              letterSpacing: -0.4,
                             ),
                           ),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.dashboard_customize_outlined, color: Color(0xFF00E5FF), size: 24),
-                          tooltip: 'Specialized Template',
+                        // Quick Specialized Button matching web Hero Action
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: AppTheme.getSurfaceBorder(context)),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          ),
                           onPressed: () => SpecializedNoteSheet.show(context),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.add_circle_outline_rounded, color: AppTheme.primaryLight, size: 26),
-                          tooltip: 'Quick Note',
-                          onPressed: _showCreateNoteSheet,
+                          icon: const Icon(Icons.layers_rounded, size: 16, color: AppTheme.primaryLight),
+                          label: Text(
+                            'Specialized',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.getTextPrimary(context)),
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'A quiet space for your thoughts & workspace.',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppTheme.textSecondary,
-                      ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'A quiet space for your thoughts.',
+                      style: TextStyle(fontSize: 13, color: AppTheme.getTextSecondary(context)),
                     ),
                   ],
                 ),
@@ -514,7 +697,7 @@ class _NotesTabState extends State<NotesTab> {
             // Scope Filter Navigation Strip (All, Favorites, Archive, Trash)
             SliverToBoxAdapter(
               child: SizedBox(
-                height: 44,
+                height: 46,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -522,7 +705,7 @@ class _NotesTabState extends State<NotesTab> {
                     _buildScopeChip(
                       id: 'all',
                       label: 'All notes',
-                      icon: Icons.notes_rounded,
+                      icon: Icons.description_outlined,
                       count: _currentScope == 'all' ? _allNotes.length : null,
                     ),
                     _buildScopeChip(
@@ -551,17 +734,17 @@ class _NotesTabState extends State<NotesTab> {
             ),
 
             if (_offline)
-              const SliverToBoxAdapter(
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(18, 8, 18, 0),
+                  padding: const EdgeInsets.fromLTRB(18, 6, 18, 0),
                   child: Row(
                     children: [
-                      Icon(Icons.cloud_off_rounded, size: 16, color: Colors.amber),
-                      SizedBox(width: 8),
+                      const Icon(Icons.cloud_off_rounded, size: 15, color: Colors.amber),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          'Offline: showing the copy saved on this phone. Edits sync when Muse is reachable.',
-                          style: TextStyle(fontSize: 12, color: Colors.amber),
+                          'Offline: showing local copy. Edits will sync when connected.',
+                          style: TextStyle(fontSize: 11.5, color: Colors.amber.shade400),
                         ),
                       ),
                     ],
@@ -569,83 +752,145 @@ class _NotesTabState extends State<NotesTab> {
                 ),
               ),
 
-            // Search Bar
+            // Search Bar matching web topbar search
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 10),
                 child: TextField(
                   controller: _searchController,
-                  style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                  style: TextStyle(color: AppTheme.getTextPrimary(context), fontSize: 13.5),
                   onChanged: _onSearchChanged,
                   decoration: InputDecoration(
-                    hintText: _currentScope == 'all' ? 'Search by words or meaning…' : 'Search title, content, or #tag…',
-                    helperText: useServerResults ? 'Matches by keyword and by meaning' : null,
-                    helperStyle: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
-                    hintStyle: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                    hintText: _currentScope == 'all' ? 'Search your notes…' : 'Search title or tag…',
+                    hintStyle: TextStyle(color: AppTheme.getTextSecondary(context), fontSize: 13),
                     prefixIcon: _searching
                         ? const Padding(
-                            padding: EdgeInsets.all(13),
+                            padding: EdgeInsets.all(12),
                             child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryLight)),
                           )
-                        : const Icon(Icons.search, color: AppTheme.textSecondary, size: 20),
+                        : Icon(Icons.search, color: AppTheme.getTextSecondary(context), size: 19),
                     suffixIcon: _search.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear, color: AppTheme.textSecondary, size: 18),
+                            icon: Icon(Icons.close, color: AppTheme.getTextSecondary(context), size: 17),
                             onPressed: _clearSearch,
                           )
                         : null,
                     filled: true,
-                    fillColor: AppTheme.surface,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                    fillColor: AppTheme.getSurface(context),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: AppTheme.surfaceBorder),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: AppTheme.getSurfaceBorder(context)),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: AppTheme.surfaceBorder),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: AppTheme.getSurfaceBorder(context)),
                     ),
                   ),
                 ),
               ),
             ),
 
-            // Trash Toolbar banner if in trash
-            if (_currentScope == 'trash')
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.info_outline_rounded, size: 18, color: Colors.redAccent),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text(
-                            'Trash notes can be restored or permanently erased.',
-                            style: TextStyle(fontSize: 12, color: Colors.redAccent),
-                          ),
+            // List Heading & Multi-Select Toolbar matching web Dashboard
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: _isSelectionMode
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.getSurface(context),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.primaryLight.withValues(alpha: 0.5)),
                         ),
-                        if (_allNotes.isNotEmpty)
-                          TextButton(
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.redAccent,
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(
+                          children: [
+                            Text(
+                              '${_selectedIds.length} selected',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppTheme.getTextPrimary(context)),
                             ),
-                            onPressed: _emptyTrash,
-                            child: const Text('Empty Trash', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            const Spacer(),
+                            TextButton(
+                              onPressed: () => _selectAll(filtered),
+                              child: const Text('Select all', style: TextStyle(fontSize: 12)),
+                            ),
+                            TextButton(
+                              onPressed: _clearSelection,
+                              child: const Text('Deselect', style: TextStyle(fontSize: 12)),
+                            ),
+                            if (_currentScope == 'trash') ...[
+                              IconButton(
+                                icon: const Icon(Icons.restore_from_trash_rounded, color: AppTheme.accent, size: 20),
+                                tooltip: 'Restore selected',
+                                onPressed: _restoreSelected,
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 20),
+                                tooltip: 'Delete permanently',
+                                onPressed: _deletePermanentlySelected,
+                              ),
+                            ] else ...[
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                                tooltip: 'Move selected to trash',
+                                onPressed: _trashSelected,
+                              ),
+                            ],
+                          ],
+                        ),
+                      )
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                heading,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.getTextPrimary(context),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.getSurfaceBorder(context).withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  '${filtered.length}',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.getTextSecondary(context)),
+                                ),
+                              ),
+                            ],
                           ),
-                      ],
-                    ),
-                  ),
-                ),
+                          if (filtered.isNotEmpty)
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              ),
+                              onPressed: () {
+                                if (filtered.isNotEmpty) {
+                                  _toggleSelect(filtered.first.id);
+                                }
+                              },
+                              icon: Icon(Icons.check_box_outlined, size: 14, color: AppTheme.getTextSecondary(context)),
+                              label: Text(
+                                'Select',
+                                style: TextStyle(fontSize: 12, color: AppTheme.getTextSecondary(context)),
+                              ),
+                            ),
+                          if (_currentScope == 'trash' && _allNotes.isNotEmpty)
+                            TextButton(
+                              onPressed: _emptyTrash,
+                              child: const Text('Empty Trash', style: TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                            ),
+                        ],
+                      ),
               ),
+            ),
 
             // Main Content Area
             if (_loading)
@@ -662,7 +907,7 @@ class _NotesTabState extends State<NotesTab> {
                       children: [
                         const Icon(Icons.cloud_off_rounded, color: Colors.orangeAccent, size: 48),
                         const SizedBox(height: 12),
-                        Text(_error!, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textSecondary)),
+                        Text(_error!, textAlign: TextAlign.center, style: TextStyle(color: AppTheme.getTextSecondary(context))),
                         const SizedBox(height: 16),
                         ElevatedButton.icon(
                           onPressed: _loadNotes,
@@ -679,63 +924,132 @@ class _NotesTabState extends State<NotesTab> {
                 child: _buildEmptyState(),
               )
             else ...[
-              // Section 1: Starred / Pinned Notes (if available)
-              if (starredNotes.isNotEmpty) ...[
+              // Note Grid/List matching web .note-card layout
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => _buildNoteCard(filtered[index]),
+                    childCount: filtered.length,
+                  ),
+                ),
+              ),
+
+              // Pinned Reflection Section matching Web Dashboard
+              if (_currentScope == 'all' && _search.isEmpty) ...[
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
-                    child: Row(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.star_rounded, size: 16, color: Colors.amber),
-                        const SizedBox(width: 6),
                         Text(
-                          'STARRED NOTES (${starredNotes.length})',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.amber,
+                          'PINNED',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: 0.8,
+                            color: AppTheme.getTextSecondary(context),
                           ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Your favorite thoughts, close at hand',
+                          style: TextStyle(fontSize: 12, color: AppTheme.getTextSecondary(context)),
                         ),
                       ],
                     ),
                   ),
                 ),
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) => _buildNoteCard(starredNotes[index]),
-                      childCount: starredNotes.length,
-                    ),
-                  ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 12)),
-              ],
-
-              // Section 2: Recent / Other Notes
-              if (otherNotes.isNotEmpty) ...[
-                if (starredNotes.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 6, 20, 8),
-                      child: Text(
-                        'RECENT NOTES (${otherNotes.length})',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: AppTheme.textSecondary,
-                          letterSpacing: 0.8,
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
+                    child: Card(
+                      color: AppTheme.getSurface(context),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(color: AppTheme.getSurfaceBorder(context)),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () {
+                          // Quick open or create a reflection note
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              backgroundColor: AppTheme.getSurface(ctx),
+                              title: const Row(
+                                children: [
+                                  Icon(Icons.auto_awesome, color: AppTheme.primaryLight, size: 20),
+                                  SizedBox(width: 8),
+                                  Text('Weekly Reflection'),
+                                ],
+                              ),
+                              content: const Text(
+                                'What gave you energy this week? What do you want more of?',
+                                style: TextStyle(fontSize: 14),
+                              ),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary),
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    _createWeeklyReflection();
+                                  },
+                                  child: const Text('Write Reflection', style: TextStyle(color: Colors.white)),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primary.withValues(alpha: 0.15),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.auto_awesome, color: AppTheme.primaryLight, size: 18),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Weekly reflection',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppTheme.getTextPrimary(context),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'What gave me energy this week? What do I want more of?',
+                                      style: TextStyle(fontSize: 13, color: AppTheme.getTextSecondary(context)),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 6,
+                                      children: [
+                                        _buildTagPill('rituals'),
+                                        _buildTagPill('personal'),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(Icons.north_east_rounded, size: 16, color: AppTheme.getTextSecondary(context)),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) => _buildNoteCard(otherNotes[index]),
-                      childCount: otherNotes.length,
                     ),
                   ),
                 ),
@@ -743,6 +1057,21 @@ class _NotesTabState extends State<NotesTab> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTagPill(String tag) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppTheme.getBackground(context),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppTheme.getSurfaceBorder(context)),
+      ),
+      child: Text(
+        '#$tag',
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: AppTheme.primaryLight),
       ),
     );
   }
@@ -762,20 +1091,20 @@ class _NotesTabState extends State<NotesTab> {
         avatar: Icon(
           icon,
           size: 15,
-          color: isSelected ? Colors.white : (iconColor ?? AppTheme.textSecondary),
+          color: isSelected ? Colors.white : (iconColor ?? AppTheme.getTextSecondary(context)),
         ),
         label: Text(
           count != null ? '$label ($count)' : label,
           style: TextStyle(
             fontSize: 12,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-            color: isSelected ? Colors.white : AppTheme.textPrimary,
+            color: isSelected ? Colors.white : AppTheme.getTextPrimary(context),
           ),
         ),
-        backgroundColor: AppTheme.surface,
+        backgroundColor: AppTheme.getSurface(context),
         selectedColor: AppTheme.primary,
         side: BorderSide(
-          color: isSelected ? AppTheme.primaryLight : AppTheme.surfaceBorder,
+          color: isSelected ? AppTheme.primaryLight : AppTheme.getSurfaceBorder(context),
           width: 1,
         ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -786,33 +1115,32 @@ class _NotesTabState extends State<NotesTab> {
 
   Widget _buildNoteCard(Note note) {
     final isTrash = _currentScope == 'trash';
+    final isSelected = _selectedIds.contains(note.id);
     final dateStr = _formatNoteDate(note.updatedAt);
 
-    // Kind badge color
-    Color badgeBg = AppTheme.background;
-    Color badgeTextColor = AppTheme.textSecondary;
-    String badgeText = 'NOTE';
+    // Kind badge color matching web
+    Color badgeBg = AppTheme.getBackground(context);
+    Color badgeTextColor = AppTheme.getTextSecondary(context);
+    String badgeText = '';
+
     if (note.kind == 'research') {
-      badgeBg = const Color(0xFF8B5CF6).withValues(alpha: 0.18);
-      badgeTextColor = const Color(0xFFA78BFA);
-      badgeText = 'RESEARCH';
+      badgeBg = const Color(0xFF059669).withValues(alpha: 0.16);
+      badgeTextColor = const Color(0xFF10B981);
+      badgeText = 'Research';
     } else if (note.kind == 'specialized') {
-      badgeBg = const Color(0xFF10B981).withValues(alpha: 0.18);
-      badgeTextColor = const Color(0xFF34D399);
-      badgeText = 'SPECIALIZED';
+      badgeBg = const Color(0xFF7C3AED).withValues(alpha: 0.16);
+      badgeTextColor = const Color(0xFFA78BFA);
+      badgeText = 'Specialized';
     }
     if (note.isLocal) {
       badgeBg = Colors.amber.withValues(alpha: 0.15);
       badgeTextColor = Colors.amber;
-      badgeText = 'NOT SYNCED';
+      badgeText = 'Not synced';
     }
 
-    // Swipe right: favorite (or restore, in trash). Swipe left: trash (or
-    // delete forever, in trash).
     return Dismissible(
       key: ValueKey('note-${note.id}'),
-      // Unsynced notes are managed from their page (discard), not by swiping.
-      direction: note.isLocal ? DismissDirection.none : DismissDirection.horizontal,
+      direction: note.isLocal || _isSelectionMode ? DismissDirection.none : DismissDirection.horizontal,
       background: _swipeBackground(
         alignment: Alignment.centerLeft,
         color: isTrash ? AppTheme.accent : Colors.amber,
@@ -833,13 +1161,162 @@ class _NotesTabState extends State<NotesTab> {
           return false;
         }
         if (isTrash) {
-          await _deletePermanently(note); // asks first
+          await _deletePermanently(note);
           return false;
         }
         return true;
       },
       onDismissed: (_) => _trashWithUndo(note),
-      child: _buildNoteCardBody(note, isTrash, dateStr, badgeBg, badgeTextColor, badgeText),
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        color: AppTheme.getSurface(context),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: isSelected
+                ? AppTheme.primaryLight
+                : note.favorite
+                    ? Colors.amber.withValues(alpha: 0.35)
+                    : AppTheme.getSurfaceBorder(context),
+            width: isSelected || note.favorite ? 1.5 : 1,
+          ),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () async {
+            if (_isSelectionMode) {
+              _toggleSelect(note.id);
+              return;
+            }
+            if (isTrash) return;
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => NoteDetailView(note: note)),
+            );
+            if (result == true) {
+              _loadNotes();
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top row: Selection check / Badge + Favorite star / Trash actions
+                Row(
+                  children: [
+                    if (_isSelectionMode)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Icon(
+                          isSelected ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                          color: isSelected ? AppTheme.primaryLight : AppTheme.getTextSecondary(context),
+                          size: 20,
+                        ),
+                      ),
+                    if (badgeText.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: badgeBg,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: badgeTextColor.withValues(alpha: 0.3)),
+                        ),
+                        child: Text(
+                          badgeText,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: badgeTextColor,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ),
+                    const Spacer(),
+                    if (isTrash) ...[
+                      IconButton(
+                        icon: const Icon(Icons.restore_from_trash_rounded, color: AppTheme.accent, size: 20),
+                        tooltip: 'Restore',
+                        onPressed: () => _restoreNote(note),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 20),
+                        tooltip: 'Delete permanently',
+                        onPressed: () => _deletePermanently(note),
+                      ),
+                    ] else ...[
+                      IconButton(
+                        icon: Icon(
+                          note.favorite ? Icons.star_rounded : Icons.star_outline_rounded,
+                          color: note.favorite ? Colors.amber : AppTheme.getTextSecondary(context),
+                          size: 22,
+                        ),
+                        onPressed: () => _toggleFavorite(note),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Note Title
+                Text(
+                  note.title.isEmpty ? 'Untitled note' : note.title,
+                  style: TextStyle(
+                    color: AppTheme.getTextPrimary(context),
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+
+                // Excerpt snippet
+                if (note.plainText.isNotEmpty)
+                  Text(
+                    note.plainText,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppTheme.getTextSecondary(context),
+                      fontSize: 13.5,
+                      height: 1.45,
+                    ),
+                  ),
+
+                const SizedBox(height: 12),
+
+                // Footer: Tag pills & Formatted Date
+                Row(
+                  children: [
+                    if (note.tags.isNotEmpty)
+                      Expanded(
+                        child: Wrap(
+                          spacing: 6,
+                          children: note.tags.take(3).map((tag) => _buildTagPill(tag)).toList(),
+                        ),
+                      )
+                    else
+                      const Spacer(),
+
+                    Text(
+                      dateStr,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: AppTheme.getTextSecondary(context).withValues(alpha: 0.7),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (!isTrash && !_isSelectionMode) ...[
+                      const SizedBox(width: 4),
+                      Icon(Icons.chevron_right_rounded, size: 16, color: AppTheme.getTextSecondary(context)),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -851,160 +1328,8 @@ class _NotesTabState extends State<NotesTab> {
         child: Icon(icon, color: Colors.white),
       );
 
-  Widget _buildNoteCardBody(Note note, bool isTrash, String dateStr, Color badgeBg, Color badgeTextColor, String badgeText) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: note.favorite ? Colors.amber.withValues(alpha: 0.3) : AppTheme.surfaceBorder,
-          width: note.favorite ? 1.2 : 1,
-        ),
-      ),
-      child: InkWell(
-        onTap: () async {
-          if (isTrash) return;
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => NoteDetailView(note: note),
-            ),
-          );
-          if (result == true) {
-            _loadNotes();
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top row: Kind badge + Favorite / Trash actions
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: badgeBg,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: badgeTextColor.withValues(alpha: 0.3)),
-                    ),
-                    child: Text(
-                      badgeText,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: badgeTextColor,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  if (isTrash) ...[
-                    IconButton(
-                      icon: const Icon(Icons.restore_from_trash_rounded, color: AppTheme.accent, size: 20),
-                      tooltip: 'Restore',
-                      onPressed: () => _restoreNote(note),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 20),
-                      tooltip: 'Delete permanently',
-                      onPressed: () => _deletePermanently(note),
-                    ),
-                  ] else ...[
-                    IconButton(
-                      icon: Icon(
-                        note.favorite ? Icons.star_rounded : Icons.star_outline_rounded,
-                        color: note.favorite ? Colors.amber : AppTheme.textSecondary,
-                        size: 22,
-                      ),
-                      onPressed: () => _toggleFavorite(note),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              // Title
-              Text(
-                note.title.isEmpty ? 'Untitled note' : note.title,
-                style: const TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              const SizedBox(height: 6),
-
-              // Excerpt (Clean, well-spaced preview)
-              if (note.plainText.isNotEmpty)
-                Text(
-                  note.plainText,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 13.5,
-                    height: 1.45,
-                  ),
-                ),
-
-              const SizedBox(height: 14),
-
-              // Bottom footer: Tags + Date + Chevron
-              Row(
-                children: [
-                  if (note.tags.isNotEmpty)
-                    Expanded(
-                      child: Wrap(
-                        spacing: 6,
-                        children: note.tags.take(3).map((tag) => Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppTheme.background,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: AppTheme.surfaceBorder),
-                          ),
-                          child: Text(
-                            '#$tag',
-                            style: const TextStyle(
-                              color: AppTheme.primaryLight,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        )).toList(),
-                      ),
-                    )
-                  else
-                    const Spacer(),
-
-                  // Date
-                  Text(
-                    dateStr,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: AppTheme.textSecondary.withValues(alpha: 0.7),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  if (!isTrash) ...[
-                    const SizedBox(width: 6),
-                    const Icon(Icons.chevron_right_rounded, size: 16, color: AppTheme.textSecondary),
-                  ],
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildEmptyState() {
-    IconData icon = Icons.notes_rounded;
+    IconData icon = Icons.description_outlined;
     String title = 'No notes yet';
     String message = 'Create your first note to start capturing your thoughts.';
 
@@ -1015,11 +1340,11 @@ class _NotesTabState extends State<NotesTab> {
     } else if (_currentScope == 'favorites') {
       icon = Icons.star_border_rounded;
       title = 'No favorites yet';
-      message = 'Star notes in your workspace to pin them here.';
+      message = 'Star your favorite notes to keep them close at hand.';
     } else if (_currentScope == 'archive') {
       icon = Icons.archive_outlined;
       title = 'Archive is empty';
-      message = 'Archived notes will appear in this section.';
+      message = 'Archived notes will be stored here.';
     } else if (_currentScope == 'trash') {
       icon = Icons.delete_outline_rounded;
       title = 'Trash is empty';
@@ -1032,21 +1357,21 @@ class _NotesTabState extends State<NotesTab> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 48, color: AppTheme.textSecondary.withValues(alpha: 0.35)),
+            Icon(icon, size: 48, color: AppTheme.getTextSecondary(context).withValues(alpha: 0.35)),
             const SizedBox(height: 14),
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.bold,
-                color: AppTheme.textPrimary,
+                color: AppTheme.getTextPrimary(context),
               ),
             ),
             const SizedBox(height: 6),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+              style: TextStyle(fontSize: 13, color: AppTheme.getTextSecondary(context), height: 1.4),
             ),
             const SizedBox(height: 20),
             if (_search.isNotEmpty)
@@ -1057,6 +1382,7 @@ class _NotesTabState extends State<NotesTab> {
               )
             else if (_currentScope == 'all')
               ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.white),
                 onPressed: _showCreateNoteSheet,
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('Create a note'),

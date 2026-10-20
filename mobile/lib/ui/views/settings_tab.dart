@@ -30,10 +30,16 @@ class _SettingsTabState extends State<SettingsTab> {
   bool _autoReadAloud = true;
   double _speechRate = 0.5;
 
+  final TextEditingController _nameController = TextEditingController();
+  bool _nameSaved = false;
+
   @override
   void initState() {
     super.initState();
     _loadInfo();
+    _storage.getUserName().then((name) {
+      if (mounted) _nameController.text = name;
+    });
     _tts.getAutoReadAloud().then((on) {
       if (mounted) setState(() => _autoReadAloud = on);
     });
@@ -43,6 +49,27 @@ class _SettingsTabState extends State<SettingsTab> {
     ReminderService.isEnabled().then((on) {
       if (mounted) setState(() => _remindersOn = on);
     });
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveUserName() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return;
+    await _storage.setUserName(name);
+    if (mounted) {
+      setState(() => _nameSaved = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Name updated to "$name"')),
+      );
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _nameSaved = false);
+      });
+    }
   }
 
   Future<void> _setReminders(bool on) async {
@@ -89,16 +116,16 @@ class _SettingsTabState extends State<SettingsTab> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        title: const Text('Unlink Mobile Device?', style: TextStyle(color: AppTheme.textPrimary)),
-        content: const Text(
+        backgroundColor: AppTheme.getSurface(ctx),
+        title: Text('Unlink Mobile Device?', style: TextStyle(color: AppTheme.getTextPrimary(ctx))),
+        content: Text(
           'This will remove the pairing credentials from this phone. You will need to scan a new QR code to reconnect.',
-          style: TextStyle(color: AppTheme.textSecondary),
+          style: TextStyle(color: AppTheme.getTextSecondary(ctx)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text('Cancel', style: TextStyle(color: AppTheme.getTextSecondary(ctx))),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
@@ -126,7 +153,7 @@ class _SettingsTabState extends State<SettingsTab> {
         : _deviceToken ?? '';
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: AppTheme.getBackground(context),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
@@ -139,6 +166,11 @@ class _SettingsTabState extends State<SettingsTab> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [AppTheme.primary, AppTheme.primaryLight],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
@@ -148,27 +180,182 @@ class _SettingsTabState extends State<SettingsTab> {
                       ),
                     ],
                   ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Image.asset('assets/images/muse_logo.png', fit: BoxFit.cover),
+                  child: const Icon(Icons.auto_awesome, color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 14),
-                const Expanded(
+                Expanded(
                   child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Muse Companion', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
-                    SizedBox(height: 2),
-                    Text('Encrypted notes & AI partner', style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
-                  ],
-                ),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Muse Settings',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.getTextPrimary(context)),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Remote synced with Muse Desktop',
+                        style: TextStyle(fontSize: 12, color: AppTheme.getTextSecondary(context)),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 12),
 
-          // Connection card
+          // User Name Card matching Web Settings
           Card(
+            color: AppTheme.getSurface(context),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: AppTheme.getSurfaceBorder(context)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.person_outline_rounded, color: AppTheme.primaryLight, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Your Name',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.getTextPrimary(context)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Used across your notes, hero greetings, and assistant conversations.',
+                    style: TextStyle(fontSize: 12, color: AppTheme.getTextSecondary(context)),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _nameController,
+                          style: TextStyle(color: AppTheme.getTextPrimary(context), fontSize: 14),
+                          decoration: InputDecoration(
+                            hintText: 'e.g. Alex',
+                            hintStyle: TextStyle(color: AppTheme.getTextSecondary(context)),
+                            filled: true,
+                            fillColor: AppTheme.getBackground(context),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: AppTheme.getSurfaceBorder(context)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(color: AppTheme.getSurfaceBorder(context)),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: _saveUserName,
+                        child: Text(_nameSaved ? 'Saved ✓' : 'Save'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Appearance Card matching Web Settings
+          Card(
+            color: AppTheme.getSurface(context),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: AppTheme.getSurfaceBorder(context)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            AppTheme.isDark ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
+                            color: AppTheme.primaryLight,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Appearance',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.getTextPrimary(context)),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          AppTheme.isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                          color: AppTheme.primaryLight,
+                          size: 20,
+                        ),
+                        tooltip: AppTheme.isDark ? 'Switch to Light' : 'Switch to Dark',
+                        onPressed: () {
+                          AppTheme.toggleTheme();
+                          setState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    AppTheme.isDark ? 'Dark theme active (matching web dark mode)' : 'Light theme active (matching web light mode)',
+                    style: TextStyle(fontSize: 12, color: AppTheme.getTextSecondary(context)),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<ThemeMode>(
+                      showSelectedIcon: false,
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      segments: const [
+                        ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_rounded, size: 16), label: Text('Dark')),
+                        ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_rounded, size: 16), label: Text('Light')),
+                      ],
+                      selected: {AppTheme.themeNotifier.value},
+                      onSelectionChanged: (selected) {
+                        AppTheme.setTheme(selected.first);
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Connection status card
+          Card(
+            color: AppTheme.getSurface(context),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: AppTheme.getSurfaceBorder(context)),
+            ),
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -203,7 +390,7 @@ class _SettingsTabState extends State<SettingsTab> {
                             ),
                             Text(
                               _serverUrl ?? 'Not configured',
-                              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                              style: TextStyle(fontSize: 12, color: AppTheme.getTextSecondary(context)),
                             ),
                           ],
                         ),
@@ -211,8 +398,45 @@ class _SettingsTabState extends State<SettingsTab> {
                       IconButton(
                         icon: _checking
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Icon(Icons.refresh, size: 20, color: AppTheme.textSecondary),
+                            : Icon(Icons.refresh, size: 20, color: AppTheme.getTextSecondary(context)),
                         onPressed: _loadInfo,
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.smartphone_rounded, size: 17, color: AppTheme.primaryLight),
+                          const SizedBox(width: 8),
+                          Text('Device: ', style: TextStyle(fontSize: 13, color: AppTheme.getTextSecondary(context))),
+                          Expanded(
+                            child: Text(
+                              _deviceName ?? 'Phone',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.getTextPrimary(context)),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Icon(Icons.vpn_key_outlined, size: 16, color: AppTheme.primaryLight),
+                          const SizedBox(width: 8),
+                          Text('Token: ', style: TextStyle(fontSize: 13, color: AppTheme.getTextSecondary(context))),
+                          Expanded(
+                            child: Text(
+                              tokenSnippet,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 12, fontFamily: 'monospace', color: AppTheme.getTextSecondary(context)),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -220,28 +444,15 @@ class _SettingsTabState extends State<SettingsTab> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
-          // Device info card
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.smartphone_rounded, color: AppTheme.primaryLight),
-                  title: const Text('Device Name', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
-                  subtitle: Text(_deviceName ?? 'Android Phone', style: const TextStyle(fontSize: 15, color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
-                ),
-                const Divider(height: 1, color: AppTheme.surfaceBorder),
-                ListTile(
-                  leading: const Icon(Icons.vpn_key_outlined, color: AppTheme.primaryLight),
-                  title: const Text('Device Token', style: TextStyle(fontSize: 14, color: AppTheme.textSecondary)),
-                  subtitle: Text(tokenSnippet, style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary, fontFamily: 'monospace')),
-                ),
-              ],
-            ),
-          ),
           // Voice & Speech (TTS)
           Card(
+            color: AppTheme.getSurface(context),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: AppTheme.getSurfaceBorder(context)),
+            ),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 6.0),
               child: Column(
@@ -249,10 +460,10 @@ class _SettingsTabState extends State<SettingsTab> {
                 children: [
                   SwitchListTile(
                     secondary: const Icon(Icons.volume_up_rounded, color: AppTheme.primaryLight),
-                    title: const Text('Voice & Speech (TTS)', style: TextStyle(fontSize: 15, color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
-                    subtitle: const Text(
+                    title: Text('Voice & Speech (TTS)', style: TextStyle(fontSize: 15, color: AppTheme.getTextPrimary(context), fontWeight: FontWeight.w600)),
+                    subtitle: Text(
                       'Automatically read Bip responses out loud on mobile',
-                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      style: TextStyle(fontSize: 12, color: AppTheme.getTextSecondary(context)),
                     ),
                     value: _autoReadAloud,
                     onChanged: (on) async {
@@ -261,7 +472,7 @@ class _SettingsTabState extends State<SettingsTab> {
                       if (!on) await _tts.stop();
                     },
                   ),
-                  const Divider(height: 1, color: AppTheme.surfaceBorder),
+                  Divider(height: 1, color: AppTheme.getSurfaceBorder(context)),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
                     child: Column(
@@ -270,10 +481,10 @@ class _SettingsTabState extends State<SettingsTab> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Expanded(
+                            Expanded(
                               child: Text(
                                 'Speech Speed',
-                                style: TextStyle(fontSize: 14, color: AppTheme.textPrimary, fontWeight: FontWeight.w500),
+                                style: TextStyle(fontSize: 14, color: AppTheme.getTextPrimary(context), fontWeight: FontWeight.w500),
                               ),
                             ),
                             Text(
@@ -307,20 +518,20 @@ class _SettingsTabState extends State<SettingsTab> {
                       ],
                     ),
                   ),
-                  const Divider(height: 1, color: AppTheme.surfaceBorder),
+                  Divider(height: 1, color: AppTheme.getSurfaceBorder(context)),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                     child: Row(
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Text(
                             'Hear how Bip sounds on your phone',
-                            style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                            style: TextStyle(fontSize: 12, color: AppTheme.getTextSecondary(context)),
                           ),
                         ),
                         OutlinedButton.icon(
                           onPressed: () {
-                            _tts.speak("Hello! I'm Bip, your proactive Muse AI companion. Voice text-to-speech is active and working on your phone!");
+                            _tts.speak("Hello! I'm Bip, your proactive Muse AI companion. Voice dictation is ready!");
                           },
                           icon: const Icon(Icons.record_voice_over_rounded, size: 16),
                           label: const Text('Test Voice'),
@@ -332,23 +543,28 @@ class _SettingsTabState extends State<SettingsTab> {
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
           // Reminders & offline sync
           Card(
+            color: AppTheme.getSurface(context),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: AppTheme.getSurfaceBorder(context)),
+            ),
             child: Column(
               children: [
                 SwitchListTile(
                   secondary: const Icon(Icons.notifications_active_outlined, color: AppTheme.primaryLight),
-                  title: const Text('Reminders', style: TextStyle(fontSize: 15, color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
-                  subtitle: const Text(
-                    'Notify me when timed tasks are due and 10 minutes before events',
-                    style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                  title: Text('Reminders & Alarms', style: TextStyle(fontSize: 15, color: AppTheme.getTextPrimary(context), fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    'Ring notifications when tasks are due and before events',
+                    style: TextStyle(fontSize: 12, color: AppTheme.getTextSecondary(context)),
                   ),
                   value: _remindersOn,
                   onChanged: _setReminders,
                 ),
-                const Divider(height: 1, color: AppTheme.surfaceBorder),
+                Divider(height: 1, color: AppTheme.getSurfaceBorder(context)),
                 ValueListenableBuilder<int>(
                   valueListenable: OfflineQueue.pending,
                   builder: (context, pending, _) => ListTile(
@@ -356,10 +572,10 @@ class _SettingsTabState extends State<SettingsTab> {
                       pending == 0 ? Icons.cloud_done_outlined : Icons.cloud_upload_outlined,
                       color: pending == 0 ? AppTheme.accent : Colors.amber,
                     ),
-                    title: const Text('Offline captures', style: TextStyle(fontSize: 15, color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
+                    title: Text('Offline sync queue', style: TextStyle(fontSize: 15, color: AppTheme.getTextPrimary(context), fontWeight: FontWeight.w600)),
                     subtitle: Text(
-                      pending == 0 ? 'Everything is synced' : '$pending waiting to sync with Muse desktop',
-                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      pending == 0 ? 'All changes synced with Muse' : '$pending waiting to sync',
+                      style: TextStyle(fontSize: 12, color: AppTheme.getTextSecondary(context)),
                     ),
                     trailing: pending == 0
                         ? null
@@ -368,7 +584,7 @@ class _SettingsTabState extends State<SettingsTab> {
                               final sent = await OfflineQueue.flush(_api);
                               if (!context.mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(sent > 0 ? 'Synced $sent item${sent == 1 ? '' : 's'}' : 'Muse is still unreachable')),
+                                SnackBar(content: Text(sent > 0 ? 'Synced $sent item${sent == 1 ? '' : 's'}' : 'Muse is unreachable')),
                               );
                             },
                             child: const Text('Sync now'),
@@ -378,27 +594,32 @@ class _SettingsTabState extends State<SettingsTab> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
           const AlarmSetupCard(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
           // AI Quota card
           if (_usage != null) ...[
             Card(
+              color: AppTheme.getSurface(context),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: AppTheme.getSurfaceBorder(context)),
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Icon(Icons.smart_toy_outlined, color: AppTheme.primaryLight, size: 20),
-                        SizedBox(width: 8),
+                        const Icon(Icons.smart_toy_outlined, color: AppTheme.primaryLight, size: 20),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             'AI Assistant Quota',
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.getTextPrimary(context)),
                           ),
                         ),
                       ],
@@ -406,66 +627,36 @@ class _SettingsTabState extends State<SettingsTab> {
                     const SizedBox(height: 12),
                     Text(
                       'Provider: ${_usage!['provider'] ?? 'gemini'}',
-                      style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                      style: TextStyle(fontSize: 13, color: AppTheme.getTextSecondary(context)),
                     ),
                     if (_usage!['requestsToday'] != null) ...[
                       const SizedBox(height: 4),
                       Text(
                         'Requests today: ${_usage!['requestsToday']} / 1,500',
-                        style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary),
+                        style: TextStyle(fontSize: 13, color: AppTheme.getTextPrimary(context)),
                       ),
                     ],
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
           ],
 
-          // Remote Linking Help Info
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.info_outline_rounded, color: AppTheme.primaryLight, size: 20),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Connecting Away from Home',
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    '• This phone talks to: ${_serverUrl ?? 'not paired'}\n'
-                    '• Same Wi-Fi: pair using your computer\'s LAN address (shown in the desktop Pair Phone dialog).\n'
-                    '• Over the internet: pair through Tailscale or a Cloudflare Tunnel address instead.\n'
-                    '• To switch addresses, unlink below and scan a new code.',
-                    style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.5),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
           // Unlink button
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.redAccent,
-              side: const BorderSide(color: Colors.redAccent),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.redAccent,
+                side: const BorderSide(color: Colors.redAccent),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: const Icon(Icons.link_off_rounded),
+              label: const Text('Unlink This Phone', style: TextStyle(fontWeight: FontWeight.bold)),
+              onPressed: _unlink,
             ),
-            icon: const Icon(Icons.link_off_rounded),
-            label: const Text('Unlink This Phone', style: TextStyle(fontWeight: FontWeight.bold)),
-            onPressed: _unlink,
           ),
         ],
       ),
