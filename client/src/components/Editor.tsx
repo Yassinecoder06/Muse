@@ -171,8 +171,8 @@ function completionMessage(job: AiJob) {
 }
 
 export function Editor({ note, onBack, save, refresh, trash, restore, permanentlyDelete, onToast }: { note: Note; onBack: () => void; save: (input: NoteInput) => Promise<unknown>; refresh: () => Promise<Note>; trash: () => Promise<void>; restore: () => Promise<void>; permanentlyDelete: () => Promise<void>; onToast: (message: string) => void }) {
-  const isResearch = note.kind === 'research'
-  const isSpecialized = note.kind === 'specialized' && !!note.specialized
+  const isResearch = note.kind === 'research' || note.specialized?.category === 'research'
+  const isSpecialized = (note.kind === 'specialized' || isResearch) && !!note.specialized
   const ref = useRef<HTMLDivElement>(null)
   const timer = useRef<number | undefined>(undefined)
   const imageInput = useRef<HTMLInputElement>(null)
@@ -527,7 +527,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
       </button>
       <div className="note-menu-wrap"><button className="header-icon" title="Note actions" onClick={() => setMenu(!menu)}><MoreHorizontal size={19}/></button>{menu && <div className="note-menu">{note.deleted_at ? <><button onClick={() => void manage(restore, 'Note restored.')}>Restore note</button><button className="danger" onClick={() => { setMenu(false); setDeletePermanentlyConfirm(true) }}>Delete permanently</button></> : <><button onClick={() => void manage(async () => { await save({ archived: !note.archived }) }, note.archived ? 'Note unarchived.' : 'Note archived.')}>{note.archived ? 'Unarchive note' : 'Archive note'}</button><button className="danger" onClick={() => void manage(trash, 'Note moved to trash.')}>Move to trash</button></>}</div>}</div>
     </header>
-    <div className={`editor-canvas${isResearch ? ' research-canvas' : ''}${isSpecialized ? ` specialized-canvas specialized-color-${specializedNote?.color || 'blue'}` : ''}`}>
+    <div className={`editor-canvas${isResearch ? ' research-canvas' : ''}${isSpecialized ? ` specialized-canvas specialized-color-${specializedNote?.color || (isResearch ? 'emerald' : 'blue')}` : ''}`}>
       {isResearch && <aside className="research-toc" aria-label="Research report table of contents"><strong>In this report</strong><nav>{researchHeadings.map((heading, index) => <button key={`${heading}-${index}`} onClick={() => scrollToResearchSection(index)}>{heading}</button>)}</nav></aside>}
       <div className={isResearch ? 'research-body' : undefined}>
       {isResearch && <header className="research-masthead"><span>Research report</span><p>{new Date(note.created_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}<i/> {readingMinutes} min read {sourceCount ? <><i/> {sourceCount} sources</> : null}</p></header>}
@@ -535,7 +535,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
         <section className="specialized-fields">
           <header className="specialized-fields-header">
             <div className="specialized-fields-title-group">
-              <span className="specialized-title-label">Specialized · {specializedNote.category === 'workout' ? 'Workout' : specializedNote.category === 'daily' ? 'Daily tasks & feedback' : specializedNote.category === 'finance' ? 'Expense & decision' : (specializedNote.templateId || 'Custom')}</span>
+              <span className="specialized-title-label">Specialized · {specializedNote.category === 'workout' ? 'Workout' : specializedNote.category === 'daily' ? 'Daily tasks & feedback' : specializedNote.category === 'finance' ? 'Expense & decision' : specializedNote.category === 'research' ? 'Research Report' : (specializedNote.templateId || 'Custom')}</span>
               <div className="specialized-color-picker-wrap">
                 <span className="color-picker-label">Color:</span>
                 <div className="specialized-color-swatches" title="Choose color accent for this note">

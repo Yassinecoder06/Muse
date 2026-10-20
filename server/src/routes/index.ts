@@ -128,4 +128,20 @@ router.post('/templates', templates.createTemplate)
 router.put('/templates/:id', templates.updateTemplate)
 router.delete('/templates/:id', templates.deleteTemplate)
 
+// Music Downloader & Management
+router.post('/music/download', music.downloadBatch)
+router.get('/music/tasks', music.getTasks)
+router.get('/music/tasks/:id', music.getTask)
+router.delete('/music/tasks/:id', music.deleteTask)
+router.get('/music/analytics', music.getAnalytics)
+router.delete('/music/songs/:filename', music.deleteSong)
+router.post('/music/songs/batch-delete', music.deleteSongsBatch)
+
+// Music Playlists
+router.get('/music/playlists', music.listPlaylists)
+router.post('/music/playlists', music.createPlaylist)
+router.get('/music/playlists/:id', music.getPlaylist)
+router.put('/music/playlists/:id', music.updatePlaylist)
+router.delete('/music/playlists/:id', music.deletePlaylist)
+
 

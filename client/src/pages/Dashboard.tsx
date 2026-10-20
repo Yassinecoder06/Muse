@@ -1,4 +1,4 @@
-import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, Plus, RotateCcw, Search, Settings, Smartphone, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
+import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, Music, PanelLeft, Plus, RotateCcw, Search, Settings, Smartphone, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import type { Note } from '../types'
@@ -26,6 +26,7 @@ export function Dashboard({
   calendar,
   tasks,
   analytics,
+  music,
   settings,
   linkPhone,
   userEmail,
@@ -55,6 +56,7 @@ export function Dashboard({
   calendar: () => void
   tasks: () => void
   analytics: () => void
+  music?: () => void
   settings: () => void
   linkPhone?: () => void
   userEmail: string
@@ -150,6 +152,7 @@ export function Dashboard({
           <button title="Calendar" onClick={calendar}><Calendar size={17}/><span> Calendar</span></button>
           <button title="Tasks" onClick={tasks}><CheckSquare size={17}/><span> Tasks</span></button>
           <button title="Analytics" onClick={analytics}><BarChart3 size={17}/><span> Analytics</span></button>
+          {music && <button title="Music" onClick={music}><Music size={17}/><span> Music</span></button>}
         </div>
         <div className="sidebar-footer">
           <button title="Collections" onClick={collections}><FolderOpen size={17}/><span> Collections</span></button>
@@ -204,7 +207,6 @@ export function Dashboard({
             </div>
             <div className="hero-actions">
               <button className="specialized-muse" onClick={specialized}><Layers3 size={17}/> Specialized</button>
-              <button className="research-muse" onClick={research}><Globe size={17}/> Research</button>
             </div>
           </div>
 
@@ -256,7 +258,9 @@ export function Dashboard({
           {visible.length ? (
             <div className="note-grid">
               {visible.map((note, index) => {
-                const specColorClass = note.specialized?.color ? `specialized-color-${note.specialized.color}` : ''
+                const isResearch = note.kind === 'research' || note.specialized?.category === 'research'
+                const specColor = isResearch ? (note.specialized?.color || 'emerald') : note.specialized?.color
+                const specColorClass = specColor ? `specialized-color-${specColor}` : ''
                 const isSelected = selected.includes(note.id)
 
                 return (
@@ -265,7 +269,7 @@ export function Dashboard({
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * .035 }}
-                    className={`note-card${note.kind === 'research' ? ' research-card' : ''}${note.kind === 'specialized' ? ' specialized-card' : ''} ${specColorClass}${isSelected ? ' selected-card' : ''}`}
+                    className={`note-card${isResearch ? ' research-card' : ''}${note.kind === 'specialized' || isResearch ? ' specialized-card' : ''} ${specColorClass}${isSelected ? ' selected-card' : ''}`}
                     key={note.id}
                     onClick={() => {
                       if (selected.length > 0) {
@@ -287,8 +291,8 @@ export function Dashboard({
                         >
                           {isSelected ? <Check size={13}/> : null}
                         </button>
-                        {note.kind === 'research' ? (
-                          <span className="research-card-label">Research</span>
+                        {isResearch ? (
+                          <span className="specialized-card-label" style={{ color: '#059669', background: 'rgba(5, 150, 105, 0.12)' }}>Research</span>
                         ) : note.kind === 'specialized' ? (
                           <span className="specialized-card-label">{note.specialized?.category || 'Specialized'}</span>
                         ) : (

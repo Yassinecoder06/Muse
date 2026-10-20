@@ -10,7 +10,7 @@ type NodeObject = GraphNode & { x?: number; y?: number; degree?: number }
 type LinkObject = { source: string | NodeObject; target: string | NodeObject; strength: number; reason: GraphEdge['reason'] }
 
 const NOTE_COLOR = '#8660f1'
-const RESEARCH_COLOR = '#237a46'
+const RESEARCH_COLOR = '#059669'
 const SPECIALIZED_COLOR = '#2678ca'
 const DIM = 0.12
 
@@ -116,7 +116,7 @@ export function GraphView({ onBack, create }: { onBack: () => void; create: () =
           onNodeHover={(node: NodeObject | null) => setHovered(node ? node.id : null)}
           onBackgroundClick={() => setSelected(null)}
         /> : <div className="graph-empty"><Waypoints size={26}/><h3>No graph yet</h3><p>The graph grows as Muse learns your notes. Create a note, run “Organize”, and connected dots will appear here.</p></div>}
-        <aside className="graph-legend"><span><i style={{ background: NOTE_COLOR }}/> Note</span><span><i style={{ background: RESEARCH_COLOR }}/> Research</span><span><i style={{ background: SPECIALIZED_COLOR }}/> Specialized</span><span><i className="edge similar"/> Similar meaning</span><span><i className="edge tag"/> Shared tag</span></aside>
+        <aside className="graph-legend"><span><i style={{ background: NOTE_COLOR }}/> Note</span><span><i style={{ background: SPECIALIZED_COLOR }}/> Specialized</span><span><i style={{ background: RESEARCH_COLOR }}/> Research</span><span><i className="edge similar"/> Similar meaning</span><span><i className="edge tag"/> Shared tag</span></aside>
         {hasNotes && selected ? <button className="graph-clear" onClick={() => setSelected(null)}>Clear focus</button> : null}
         {graph.error ? <button className="graph-retry" onClick={() => void graph.refetch()}>Could not load the graph — retry</button> : null}
       </div>

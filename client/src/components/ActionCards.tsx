@@ -17,7 +17,13 @@ import {
   X,
   Music,
   Play,
-  Pause
+  Pause,
+  Download,
+  CheckCircle2,
+  RefreshCw,
+  Music2,
+  ListMusic,
+  ArrowRight
 } from 'lucide-react'
 import { api } from '../services/api'
 import { robotMusic, type MusicPlayerState } from '../services/robot-music.service'
@@ -131,6 +137,35 @@ function normalizeCard(raw: any): ActionCard {
       status: raw.status || d.status || 'playing'
     }
   }
+  if (type === 'music_download_plan') {
+    return {
+      type: 'music_download_plan',
+      id: raw.id || d.id || '',
+      title: raw.title || d.title || 'Music Download Plan',
+      items: raw.items || d.items || [],
+      count: raw.count || d.count || (raw.items || d.items || []).length
+    }
+  }
+  if (type === 'music_download_progress') {
+    return {
+      type: 'music_download_progress',
+      id: raw.id || d.id || '',
+      title: raw.title || d.title || 'Downloading Music',
+      tasks: raw.tasks || d.tasks || []
+    }
+  }
+  if (type === 'playlist') {
+    return {
+      type: 'playlist',
+      id: raw.id || d.id || '',
+      title: raw.title || d.title || d.name || 'Playlist',
+      name: raw.name || d.name || raw.title || 'Playlist',
+      description: raw.description || d.description || '',
+      tracks: raw.tracks || d.tracks || [],
+      count: raw.count || d.count || (raw.tracks || d.tracks || []).length,
+      status: raw.status || d.status || ''
+    }
+  }
   return raw
 }
 
@@ -141,6 +176,33 @@ export function ActionCards({ cards, onOpenNote, onNavigate }: ActionCardsProps)
     <div className="action-cards-container">
       {cards.map((rawCard, idx) => {
         const card = normalizeCard(rawCard)
+        if (card.type === 'playlist') {
+          return (
+            <PlaylistCard
+              key={`pl-${card.id || idx}-${idx}`}
+              card={card}
+              onNavigate={onNavigate}
+            />
+          )
+        }
+        if (card.type === 'music_download_plan') {
+          return (
+            <MusicDownloadPlanCard
+              key={`dlplan-${card.id || idx}-${idx}`}
+              card={card}
+              onNavigate={onNavigate}
+            />
+          )
+        }
+        if (card.type === 'music_download_progress') {
+          return (
+            <MusicDownloadProgressCard
+              key={`dlprog-${card.id || idx}-${idx}`}
+              card={card}
+              onNavigate={onNavigate}
+            />
+          )
+        }
         if (card.type === 'music') {
           return <MusicCard key={`music-${card.id || idx}-${idx}`} card={card} />
         }
@@ -519,9 +581,9 @@ function MusicCard({ card }: { card: MusicActionCard }) {
   }
 
   return (
-    <div className="action-card action-card-music" style={{ borderLeft: '3px solid #ec4899', background: 'rgba(253, 242, 248, 0.9)' }}>
+    <div className="action-card action-card-music" style={{ borderLeft: '3px solid #ef4444' }}>
       <div className="action-card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span className="action-card-badge" style={{ color: '#db2777', background: '#fce7f3' }}>
+        <span className="action-card-badge" style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.12)', fontWeight: 700 }}>
           <Music size={13} />
           <span>Bip Singing · Live Stage</span>
         </span>
@@ -535,7 +597,7 @@ function MusicCard({ card }: { card: MusicActionCard }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 4 }}>
         <h4 className="action-card-title" style={{ margin: 0, fontSize: 13 }}>
-          🎤 {card.title}
+          🎤 <span className="music-song-name-red">{card.title}</span>
         </h4>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button
@@ -556,6 +618,377 @@ function MusicCard({ card }: { card: MusicActionCard }) {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function MusicDownloadPlanCard({
+  card,
+  onNavigate
+}: {
+  card: any
+  onNavigate?: (path: string) => void
+}) {
+  const [submitting, setSubmitting] = useState(false)
+  const [confirmed, setConfirmed] = useState(false)
+  const [activeTasks, setActiveTasks] = useState<any[]>([])
+  const [createdTaskIds, setCreatedTaskIds] = useState<string[]>([])
+
+  const items = card.items || []
+  const toDownload = items.filter((it: any) => !it.already_downloaded)
+  const allAlreadyDownloaded = items.length > 0 && toDownload.length === 0
+
+  const handleConfirm = async () => {
+    if (allAlreadyDownloaded) {
+      onNavigate?.('/music')
+      return
+    }
+    try {
+      setSubmitting(true)
+      const res = await api.downloadMusicBatch(toDownload)
+      const tasks = res.tasks || []
+      setConfirmed(true)
+      setActiveTasks(tasks)
+      setCreatedTaskIds(tasks.map((t: any) => t.task_id))
+    } catch (err: any) {
+      console.error('Failed to submit music download', err)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (confirmed) {
+    return (
+      <MusicDownloadProgressCard
+        card={{
+          type: 'music_download_progress',
+          title: `Downloading ${toDownload.length} Track${toDownload.length > 1 ? 's' : ''}`,
+          tasks: activeTasks,
+          taskIds: createdTaskIds
+        }}
+        onNavigate={onNavigate}
+      />
+    )
+  }
+
+  return (
+    <div className="action-card action-card-music-plan">
+      <div className="action-card-header">
+        <span className="action-card-badge badge-music-plan">
+          <Music2 size={13} />
+          <span>Music Download Plan</span>
+        </span>
+        <button
+          className="action-card-link-btn"
+          onClick={() => onNavigate?.('/music')}
+          title="Open Music Hub"
+        >
+          <span>Music Hub</span>
+          <ArrowRight size={12} />
+        </button>
+      </div>
+
+      <h4 className="action-card-title">{card.title || `Download ${items.length} Songs`}</h4>
+
+      <div className="plan-items-list">
+        {items.map((it: any, i: number) => (
+          <div key={it.id || i} className="plan-item-row">
+            <span className="plan-item-num">{i + 1}.</span>
+            <div className="plan-item-meta">
+              <span className="plan-item-title music-song-name-red">{it.title || it.query}</span>
+              {it.artist && <span className="plan-item-artist">by <strong style={{ color: '#2563eb' }}>{it.artist}</strong></span>}
+              <code className="plan-item-filename">{it.filename}</code>
+              {it.already_downloaded && (
+                <span
+                  className="already-downloaded-pill"
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#10b981',
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    padding: '2px 7px',
+                    borderRadius: 6,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3
+                  }}
+                  title="This song is already downloaded in your library and will not be re-downloaded"
+                >
+                  <CheckCircle2 size={11} /> Already in library (skipped)
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="plan-actions-row">
+        <button
+          className="plan-confirm-btn"
+          disabled={submitting || items.length === 0}
+          onClick={handleConfirm}
+          style={allAlreadyDownloaded ? { background: '#10b981' } : undefined}
+        >
+          {submitting ? (
+            <>
+              <RefreshCw size={14} className="spin-icon" />
+              <span>Starting Downloads...</span>
+            </>
+          ) : allAlreadyDownloaded ? (
+            <>
+              <CheckCircle2 size={14} />
+              <span>All in Library · Open Music Hub</span>
+            </>
+          ) : (
+            <>
+              <Download size={14} />
+              <span>Confirm & Download ({toDownload.length}{items.length > toDownload.length ? ` of ${items.length}` : ''})</span>
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function MusicDownloadProgressCard({
+  card,
+  onNavigate
+}: {
+  card: any
+  onNavigate?: (path: string) => void
+}) {
+  const isActivelyDownloading = (status: string) =>
+    ['queued', 'searching', 'downloading', 'converting'].includes(status)
+
+  const targetIds: string[] = card.taskIds || (Array.isArray(card.tasks) ? card.tasks.map((t: any) => t.task_id).filter(Boolean) : [])
+
+  const [tasks, setTasks] = useState<any[]>(() =>
+    (card.tasks || []).filter((t: any) => isActivelyDownloading(t.status || 'downloading'))
+  )
+  const [hasFinishedAll, setHasFinishedAll] = useState(false)
+
+  useEffect(() => {
+    let mounted = true
+    const poll = async () => {
+      try {
+        const res = await api.getMusicTasks()
+        if (mounted && Array.isArray(res.tasks)) {
+          if (targetIds.length > 0) {
+            // ONLY show the tasks that belong to THIS download action AND are actively downloading!
+            const matching = res.tasks.filter(
+              (t: any) => targetIds.includes(t.task_id) && isActivelyDownloading(t.status)
+            )
+            setTasks(matching)
+
+            const allTargetTasks = res.tasks.filter((t: any) => targetIds.includes(t.task_id))
+            if (allTargetTasks.length > 0 && allTargetTasks.every((t: any) => t.status === 'completed' || t.status === 'failed')) {
+              setHasFinishedAll(true)
+            }
+          } else {
+            // Fallback: only currently active downloads across the board
+            const active = res.tasks.filter((t: any) => isActivelyDownloading(t.status))
+            setTasks(active)
+          }
+        }
+      } catch {}
+    }
+
+    poll()
+    const timer = setInterval(poll, 1200)
+    return () => {
+      mounted = false
+      clearInterval(timer)
+    }
+  }, [targetIds.join(',')])
+
+  const relevantTasks = tasks.slice(0, 5)
+
+  return (
+    <div className="action-card action-card-music-progress" style={{ borderLeft: '4px solid #2563eb' }}>
+      <div className="action-card-header">
+        <span className="action-card-badge badge-music-progress" style={{ color: '#2563eb', background: 'rgba(37, 99, 235, 0.12)' }}>
+          <Download size={13} className="pulse-icon" style={{ color: '#2563eb' }} />
+          <span>Active Downloads{relevantTasks.length > 0 ? ` (${relevantTasks.length})` : ''}</span>
+        </span>
+        <button
+          className="action-card-link-btn"
+          onClick={() => onNavigate?.('/music')}
+          title="Open Music Hub"
+          style={{ color: '#2563eb' }}
+        >
+          <span>Music Hub</span>
+          <ArrowRight size={12} />
+        </button>
+      </div>
+
+      <div className="card-tasks-list">
+        {relevantTasks.length === 0 ? (
+          hasFinishedAll ? (
+            <div className="card-downloads-complete-box">
+              <div className="complete-icon-circle">
+                <CheckCircle2 size={18} />
+              </div>
+              <div className="complete-info">
+                <span className="complete-title">All Downloads Complete</span>
+                <span className="complete-desc">Your music is ready to play in the Music Hub.</span>
+              </div>
+              <button
+                className="music-hub-quick-btn"
+                onClick={() => onNavigate?.('/music')}
+                title="Open Music Hub"
+              >
+                <span>Open Library</span>
+                <ArrowRight size={12} />
+              </button>
+            </div>
+          ) : (
+            <div className="card-empty-tasks-text">No active download tasks</div>
+          )
+        ) : (
+          relevantTasks.map((t: any) => {
+            const pct = Math.max(5, Math.min(100, t.progress_percent || 0))
+
+            return (
+              <div key={t.task_id} className="card-task-item">
+                <div className="card-task-info">
+                  <div className="card-task-title-group">
+                    <span className="card-task-title music-song-name-red">{t.title || t.filename || t.query}</span>
+                    {t.artist && <span className="card-task-artist">by {t.artist}</span>}
+                  </div>
+                  <span className="card-task-status" style={{ color: '#2563eb' }}>
+                    {t.status === 'converting' ? (
+                      <>
+                        <RefreshCw size={12} className="spin-icon" style={{ color: '#2563eb' }} />
+                        <span>Converting MP3</span>
+                      </>
+                    ) : t.status === 'searching' ? (
+                      <>
+                        <RefreshCw size={12} className="spin-icon" style={{ color: '#2563eb' }} />
+                        <span>Searching stream</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download size={12} style={{ color: '#2563eb' }} />
+                        <span>{Math.round(pct)}%</span>
+                      </>
+                    )}
+                  </span>
+                </div>
+
+                <div className="card-task-progress-bar" style={{ background: 'rgba(37, 99, 235, 0.12)' }}>
+                  <div
+                    className={`card-task-progress-fill ${t.status === 'converting' ? 'converting-animated' : ''}`}
+                    style={{
+                      width: `${pct}%`,
+                      background: 'linear-gradient(90deg, #2563eb, #3b82f6)'
+                    }}
+                  />
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PlaylistCard({
+  card,
+  onNavigate
+}: {
+  card: any
+  onNavigate?: (path: string) => void
+}) {
+  const [musicState, setMusicState] = useState<MusicPlayerState>(robotMusic.getState())
+  const tracks = card.tracks || []
+
+  useEffect(() => {
+    return robotMusic.subscribe(setMusicState)
+  }, [])
+
+  const playlistTitle = card.name || card.title
+  const isCurrentPlaylist = musicState.isPlaying && musicState.playlistName === playlistTitle
+
+  const handlePlayToggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (tracks.length === 0) return
+    if (isCurrentPlaylist) {
+      robotMusic.togglePlayPause()
+    } else {
+      void robotMusic.playPlaylist(playlistTitle, tracks, 0)
+    }
+  }
+
+  return (
+    <div className="action-card action-card-playlist" style={{ borderLeft: '4px solid #8b5cf6' }}>
+      <div className="action-card-header">
+        <span className="action-card-badge" style={{ color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.12)' }}>
+          <ListMusic size={13} />
+          <span>Music Playlist</span>
+        </span>
+        <button
+          className="action-card-link-btn"
+          onClick={() => onNavigate?.('/music')}
+          title="Open Music Hub"
+        >
+          <span>Music Hub</span>
+          <ArrowRight size={12} />
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 4 }}>
+        <h4 className="action-card-title playlist-card-title" style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>
+          🎧 {playlistTitle}
+        </h4>
+        <button
+          className="plan-confirm-btn"
+          style={{ padding: '5px 12px', fontSize: 12, background: isCurrentPlaylist ? '#10b981' : undefined }}
+          onClick={handlePlayToggle}
+          disabled={tracks.length === 0}
+        >
+          {isCurrentPlaylist ? (
+            <>
+              <Pause size={12} fill="currentColor" />
+              <span>Pause Mix</span>
+            </>
+          ) : (
+            <>
+              <Play size={12} fill="currentColor" />
+              <span>Play Mix ({tracks.length})</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {isCurrentPlaylist && musicState.currentTrack && (
+        <div style={{ marginTop: 6, fontSize: 12, color: '#10b981', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+          <Music size={13} className="spin-icon" />
+          <span>Track {(musicState.playlistIndex || 0) + 1} of {tracks.length}: </span>
+          <span className="music-song-name-red">{musicState.currentTrack.title}</span>
+        </div>
+      )}
+
+      {card.description && (
+        <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary, #64748b)' }}>
+          {card.description}
+        </p>
+      )}
+
+      {tracks.length > 0 && (
+        <div className="playlist-card-chips-row">
+          {tracks.slice(0, 4).map((t: any, idx: number) => (
+            <span key={idx} className="playlist-track-chip">
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#8b5cf6', marginRight: 4 }}>#{idx + 1}</span>
+              <span className="chip-song-red">{t.title || t.filename}</span>
+            </span>
+          ))}
+          {tracks.length > 4 && (
+            <span className="playlist-track-more">+{tracks.length - 4} more</span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

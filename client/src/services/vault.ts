@@ -9,7 +9,7 @@ const decoder = new TextDecoder()
 type StoredKey = CryptoKey
 export type VaultRecord = { id: string; recordType: 'note' | 'template' | 'research_document' | 'research_artifact' | 'report_metadata' | 'attachment'; ciphertext: string; revision?: number; createdAt?: string; updatedAt?: string; deletedAt?: string | null }
 export type SecureNote = Note & { kind: 'note' | 'research' | 'specialized'; specialized?: SpecializedPayload }
-export type SpecializedPayload = { category: 'daily' | 'workout' | 'finance' | 'custom'; templateId?: string; fields: Record<string, unknown>; aiInstruction?: string }
+export type SpecializedPayload = { category: 'daily' | 'workout' | 'finance' | 'custom' | 'research'; templateId?: string; fields: Record<string, unknown>; aiInstruction?: string; color?: string; syncWithCalendar?: boolean }
 
 let database: ReturnType<typeof openDB> | undefined
 let activeUserId: string | null = null

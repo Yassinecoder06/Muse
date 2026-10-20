@@ -11,10 +11,10 @@ import { resolveReminder } from '../controllers/tasks.controller.js'
 import { searchWeb } from './web-search.service.js'
 import { evaluateMath } from './calculator.service.js'
 import { executeInSandbox } from './sandbox.service.js'
-import { getAvailableSongs } from '../controllers/music.controller.js'
+import { getAvailableSongs, createPlaylistInternal, resolvePlaylistTracks, parseTrackInfo } from '../controllers/music.controller.js'
 
 export interface AgentActionCard {
-  type: 'note' | 'note_updated' | 'task' | 'task_updated' | 'event' | 'memory' | 'template' | 'specialized_note' | 'item_deleted' | 'confirm_required' | 'music'
+  type: 'note' | 'note_updated' | 'task' | 'task_updated' | 'event' | 'memory' | 'template' | 'specialized_note' | 'item_deleted' | 'confirm_required' | 'music' | 'music_download_plan' | 'music_download_progress' | 'playlist'
   id?: string
   title?: string
   contentSnippet?: string
@@ -38,6 +38,7 @@ export interface ToolExecutionResult {
   args: Record<string, unknown>
   result: Record<string, unknown>
   actionCard?: AgentActionCard
+  actionCards?: AgentActionCard[]
   error?: string
 }
 
@@ -290,13 +291,13 @@ export const agentToolDeclarations = [
   },
   {
     name: 'create_specialized_note',
-    description: 'Create a specialized structured note using an existing template (e.g. "workout", "daily", "finance", or any user custom template title). Use this when the user requests a specialized note that matches an existing template.',
+    description: 'Create a specialized structured note using an existing template (e.g. "research", "workout", "daily", "finance", or any user custom template title). Use this when the user requests a specialized note that matches an existing template.',
     parameters: {
       type: 'OBJECT',
       properties: {
         template_name: {
           type: 'STRING',
-          description: 'Name or category of the template to use (e.g. "workout", "daily", "finance", or custom template name like "Book Review")'
+          description: 'Name or category of the template to use (e.g. "research", "workout", "daily", "finance", or custom template name like "Book Review")'
         },
         title: { type: 'STRING', description: 'Title of the specialized note' },
         fields: {
@@ -404,13 +405,85 @@ export const agentToolDeclarations = [
   },
   {
     name: 'play_music',
-    description: 'Play a song from the music folder and make Bip hold a microphone and sing along to the music. Use this whenever the user asks Bip to sing, play a song, or play music.',
+    description: 'Play a song from the music folder and make Bip hold a microphone and sing along to the music. If the requested song is not in the library, it will automatically propose downloading it first. Use this whenever the user asks Bip to sing, play a song, or play music.',
     parameters: {
       type: 'OBJECT',
       properties: {
         song_name: {
           type: 'STRING',
-          description: 'Optional name, artist, or partial title of the song to play (e.g. "Dua Lipa"). If omitted, plays the first available song.'
+          description: 'Name, artist, or partial title of the song to play (e.g. "Dua Lipa", "Bohemian Rhapsody", "Queen"). If omitted, plays the first available song.'
+        }
+      }
+    }
+  },
+  {
+    name: 'plan_music_download',
+    description: 'Plan and reformulate music download requests. Use this whenever the user asks to download, fetch, or get songs/music (single or multiple songs in one prompt). Always separate and specify each song title and author/artist in the "songs" array ("Artist - Title.mp3"). It checks for duplicates already in the library so nothing is downloaded twice.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        songs: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              title: { type: 'STRING', description: 'Title of the song (e.g. "Demons", "Blinding Lights")' },
+              artist: { type: 'STRING', description: 'Artist / Author name (e.g. "Imagine Dragons", "The Weeknd")' }
+            },
+            required: ['title', 'artist']
+          },
+          description: 'List of songs with separate title and artist/author naming'
+        },
+        queries: {
+          type: 'ARRAY',
+          items: { type: 'STRING' },
+          description: 'Optional raw query strings fallback (e.g. ["Imagine Dragons - Demons", "Believer by Imagine Dragons"])'
+        }
+      }
+    }
+  },
+  {
+    name: 'get_music_download_tasks',
+    description: 'Check the status and progress of ongoing and recently completed music download tasks.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {}
+    }
+  },
+  {
+    name: 'create_playlist',
+    description: 'Create a new music playlist in Muse. Any songs in the playlist that are not yet downloaded in the library will automatically generate a download plan card so the user can download them in one click. Use this whenever the user asks Bip to create, make, or build a music playlist with a name and songs.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        name: { type: 'STRING', description: 'Name of the playlist (e.g. "Workout Bangers", "Top 10 Japanese Songs")' },
+        songs: {
+          type: 'ARRAY',
+          items: { type: 'STRING' },
+          description: 'List of song titles, artists, or keywords to include in the playlist (e.g. ["YOASOBI - Idol", "Kenshi Yonezu - Lemon"])'
+        },
+        description: { type: 'STRING', description: 'Optional short description for the playlist' }
+      },
+      required: ['name']
+    }
+  },
+  {
+    name: 'list_playlists',
+    description: 'List all of the user\'s music playlists and their tracks.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {}
+    }
+  },
+  {
+    name: 'play_playlist',
+    description: 'Play a music playlist from the beginning and sing along with Bip. Call this whenever the user asks to play a playlist (e.g. "play playlist", "play my playlist", "play workout playlist").',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        playlist_name: {
+          type: 'STRING',
+          description: 'Optional name or partial name of the playlist to play. If omitted or user says "play a playlist", plays the first available playlist.'
         }
       }
     }
@@ -728,25 +801,93 @@ export async function executeAgentTool(
 
       case 'play_music':
       case 'sing_song': {
-        const query = typeof args.song_name === 'string' ? args.song_name.trim().toLowerCase() : ''
+        const query = typeof args.song_name === 'string' ? args.song_name.trim() : ''
         const songs = getAvailableSongs()
+
+        if (query) {
+          const qLower = query.toLowerCase()
+          const match = songs.find(s =>
+            s.title.toLowerCase().includes(qLower) ||
+            s.filename.toLowerCase().includes(qLower) ||
+            (s.artist && s.artist.toLowerCase().includes(qLower))
+          )
+
+          if (match) {
+            const actionCard: AgentActionCard = {
+              type: 'music',
+              title: match.title,
+              status: 'playing',
+              data: {
+                filename: match.filename,
+                title: match.title,
+                url: match.url
+              }
+            }
+
+            return {
+              toolName: name,
+              args,
+              result: {
+                success: true,
+                message: `Now singing and playing "${match.title}"! 🎤🎶`,
+                song: match
+              },
+              actionCard
+            }
+          }
+
+          // Song was explicitly requested, but does NOT exist in library!
+          // Prepare download plan for this specific requested song so user can download it first.
+          const parsed = parseTrackInfo(query)
+          const cleanArtist = parsed.artist || ''
+          const cleanTitle = parsed.title || query
+          const cleanFilename = cleanArtist ? `${cleanArtist} - ${cleanTitle}.mp3` : `${cleanTitle}.mp3`
+          const downloadItem = {
+            id: `dl_${Date.now()}_0`,
+            query: cleanArtist ? `${cleanArtist} - ${cleanTitle}` : cleanTitle,
+            artist: cleanArtist,
+            title: cleanTitle,
+            filename: cleanFilename,
+            already_downloaded: false
+          }
+
+          const actionCard: AgentActionCard = {
+            type: 'music_download_plan',
+            title: `Download "${cleanTitle}" to Play`,
+            status: 'plan',
+            data: {
+              items: [downloadItem],
+              count: 1,
+              alreadyCount: 0,
+              newCount: 1
+            }
+          }
+
+          return {
+            toolName: name,
+            args,
+            result: {
+              success: false,
+              not_in_library: true,
+              message: `"${cleanTitle}"${cleanArtist ? ` by ${cleanArtist}` : ''} is not in your library yet. I've prepared the download plan for it below so we can download it first! Once downloaded, I will sing and play it for you! 🎤🎶`,
+              download_plan: downloadItem
+            },
+            actionCard
+          }
+        }
+
         if (songs.length === 0) {
           return {
             toolName: name,
             args,
             result: {
               success: false,
-              message: 'No music files found in the music/ directory. Please place .mp3, .wav, or .ogg songs in the music/ folder!'
+              message: 'No music files found in your music/ library yet. Tell me what song you want to hear (e.g. "play Bohemian Rhapsody" or "sing Dua Lipa"), and I will download and sing it for you! 🎤🎶'
             }
           }
         }
 
-        let selected = songs[0]
-        if (query) {
-          const match = songs.find(s => s.title.toLowerCase().includes(query) || s.filename.toLowerCase().includes(query))
-          if (match) selected = match
-        }
-
+        const selected = songs[0]
         const actionCard: AgentActionCard = {
           type: 'music',
           title: selected.title,
@@ -767,6 +908,358 @@ export async function executeAgentTool(
             song: selected
           },
           actionCard
+        }
+      }
+
+      case 'plan_music_download': {
+        const rawSongs: Array<{ title?: string; artist?: string; query?: string }> = []
+        if (Array.isArray(args.songs) && args.songs.length > 0) {
+          for (const s of args.songs) {
+            if (typeof s === 'object' && s !== null) {
+              rawSongs.push({
+                title: String(s.title || '').trim(),
+                artist: String(s.artist || '').trim()
+              })
+            } else if (typeof s === 'string' && s.trim()) {
+              rawSongs.push({ query: s.trim() })
+            }
+          }
+        } else if (Array.isArray(args.queries) && args.queries.length > 0) {
+          for (const q of args.queries) {
+            if (typeof q === 'string' && q.trim()) rawSongs.push({ query: q.trim() })
+            else if (typeof q === 'object' && q !== null) rawSongs.push(q)
+          }
+        } else if (typeof args.queries === 'string' && args.queries.trim()) {
+          rawSongs.push({ query: args.queries.trim() })
+        }
+
+        if (rawSongs.length === 0) {
+          return {
+            toolName: name,
+            args,
+            result: { success: false, message: 'No songs were provided to download.' }
+          }
+        }
+
+        const available = getAvailableSongs()
+        const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
+        const items = rawSongs.map((entry, idx) => {
+          let artist = entry.artist || ''
+          let title = entry.title || entry.query || ''
+
+          // Clean common prefix/suffixes e.g. "download ", "song "
+          title = title.replace(/^(download|get|fetch|play)\s+/i, '').trim()
+
+          if (!artist) {
+            // Check for "by" syntax: "song by artist"
+            if (/\s+by\s+/i.test(title)) {
+              const parts = title.split(/\s+by\s+/i)
+              title = parts[0].trim()
+              artist = parts[1].trim()
+            } else if (title.includes(' - ')) {
+              const parts = title.split(' - ')
+              artist = parts[0].trim()
+              title = parts.slice(1).join(' - ').trim()
+            } else {
+              // Try matching known artists from available library or common bands
+              for (const ex of available) {
+                if (ex.artist && ex.artist.length > 2) {
+                  const aLower = ex.artist.toLowerCase()
+                  const tLower = title.toLowerCase()
+                  if (tLower.endsWith(` ${aLower}`)) {
+                    title = title.slice(0, -(ex.artist.length + 1)).trim()
+                    artist = ex.artist
+                    break
+                  } else if (tLower.startsWith(`${aLower} `)) {
+                    title = title.slice(ex.artist.length + 1).trim()
+                    artist = ex.artist
+                    break
+                  }
+                }
+              }
+            }
+          }
+
+          // Capitalize first letters nicely
+          const formatCap = (s: string) => s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+          if (artist) artist = formatCap(artist)
+          if (title) title = formatCap(title)
+
+          const cleanFilename = artist ? `${artist} - ${title}.mp3` : `${title}.mp3`
+          const searchQuery = artist ? `${artist} - ${title}` : title
+
+          // CHECK DEDUPLICATION: Is this song already in the library?
+          const normTitle = norm(title)
+          const normArtist = norm(artist)
+
+          const alreadyInLibrary = available.some(s => {
+            if (s.filename.toLowerCase() === cleanFilename.toLowerCase()) return true
+            const sTitle = norm(s.title)
+            const sArtist = norm(s.artist || '')
+            if (normArtist && sArtist) {
+              return normTitle === sTitle && (sArtist.includes(normArtist) || normArtist.includes(sArtist))
+            }
+            return normTitle === sTitle && normTitle.length > 3
+          })
+
+          return {
+            id: `dl_${Date.now()}_${idx}`,
+            query: searchQuery,
+            artist,
+            title,
+            filename: cleanFilename,
+            already_downloaded: alreadyInLibrary
+          }
+        })
+
+        const alreadyCount = items.filter(it => it.already_downloaded).length
+        const newCount = items.length - alreadyCount
+
+        let message = `I've prepared the download plan for ${items.length} track${items.length > 1 ? 's' : ''}.`
+        if (alreadyCount > 0) {
+          message += ` Note: ${alreadyCount} track${alreadyCount > 1 ? 's are' : ' is'} already downloaded in your library and will be skipped to avoid downloading twice.`
+        }
+        message += ` Please review and confirm on the card to begin downloading.`
+
+        const actionCard: AgentActionCard = {
+          type: 'music_download_plan',
+          title: newCount > 0 ? `Download ${newCount} New Track${newCount > 1 ? 's' : ''}` : `All ${items.length} Tracks Already Downloaded`,
+          status: 'plan',
+          data: {
+            items,
+            count: items.length,
+            alreadyCount,
+            newCount
+          }
+        }
+
+        return {
+          toolName: name,
+          args,
+          result: {
+            success: true,
+            planned_count: items.length,
+            already_downloaded_count: alreadyCount,
+            new_to_download_count: newCount,
+            items,
+            message
+          },
+          actionCard
+        }
+      }
+
+      case 'get_music_download_tasks': {
+        try {
+          const downloaderUrl = process.env.MUSIC_DOWNLOADER_URL || 'http://music-downloader:8001'
+          const res = await fetch(`${downloaderUrl}/api/tasks`)
+          const data = (await res.json()) as { tasks: any[] }
+          return {
+            toolName: name,
+            args,
+            result: {
+              success: true,
+              tasks: data.tasks || []
+            }
+          }
+        } catch (e: any) {
+          return {
+            toolName: name,
+            args,
+            result: {
+              success: false,
+              message: `Could not retrieve download tasks: ${e.message}`
+            }
+          }
+        }
+      }
+
+      case 'create_playlist': {
+        const playlistName = String(args.name || '').trim() || 'New Playlist'
+        const rawSongs = Array.isArray(args.songs) ? args.songs : []
+        const description = String(args.description || '').trim()
+
+        try {
+          const playlist = await createPlaylistInternal(userId, playlistName, rawSongs, description)
+          const available = getAvailableSongs()
+
+          // Check which tracks are missing from disk (size === 0 or not found in available songs)
+          const missingTracks = (playlist.tracks || []).filter(t => {
+            if (!t.size || t.size === 0) return true
+            return !available.some(s => s.filename.toLowerCase() === (t.filename || '').toLowerCase())
+          })
+
+          const playlistActionCard: AgentActionCard = {
+            type: 'playlist',
+            id: playlist.id,
+            title: playlist.name,
+            data: {
+              id: playlist.id,
+              name: playlist.name,
+              description: playlist.description,
+              tracks: playlist.tracks,
+              count: playlist.tracks.length
+            }
+          }
+
+          const actionCards: AgentActionCard[] = [playlistActionCard]
+          let downloadMessage = ''
+
+          if (missingTracks.length > 0) {
+            const downloadItems = missingTracks.map((t, idx) => {
+              const cleanArtist = t.artist || ''
+              const cleanTitle = t.title || t.filename.replace(/\.mp3$/, '')
+              return {
+                id: `dl_${Date.now()}_${idx}`,
+                query: cleanArtist ? `${cleanArtist} - ${cleanTitle}` : cleanTitle,
+                artist: cleanArtist,
+                title: cleanTitle,
+                filename: t.filename || (cleanArtist ? `${cleanArtist} - ${cleanTitle}.mp3` : `${cleanTitle}.mp3`),
+                already_downloaded: false
+              }
+            })
+
+            actionCards.push({
+              type: 'music_download_plan',
+              title: `Download ${downloadItems.length} New Track${downloadItems.length > 1 ? 's' : ''} for "${playlist.name}"`,
+              status: 'plan',
+              data: {
+                items: downloadItems,
+                count: downloadItems.length,
+                alreadyCount: 0,
+                newCount: downloadItems.length,
+                playlistId: playlist.id,
+                playlistName: playlist.name
+              }
+            })
+
+            downloadMessage = ` ${missingTracks.length} track${missingTracks.length > 1 ? 's are' : ' is'} not downloaded in your library yet, so I've also prepared the download plan for them below. Confirm the download card to fetch them all!`
+          }
+
+          return {
+            toolName: name,
+            args,
+            result: {
+              success: true,
+              playlist,
+              missing_to_download_count: missingTracks.length,
+              message: `Created playlist "${playlist.name}" with ${playlist.tracks.length} track${playlist.tracks.length === 1 ? '' : 's'}!${downloadMessage}`
+            },
+            actionCard: playlistActionCard,
+            actionCards
+          }
+        } catch (err: any) {
+          return {
+            toolName: name,
+            args,
+            result: {
+              success: false,
+              message: `Failed to create playlist: ${err.message}`
+            }
+          }
+        }
+      }
+
+      case 'list_playlists': {
+        try {
+          const { data, error } = await supabase
+            .from('music_playlists')
+            .select('*')
+            .eq('user_id', userId)
+            .order('updated_at', { ascending: false })
+
+          if (error) throw error
+          return {
+            toolName: name,
+            args,
+            result: {
+              success: true,
+              playlists: (data || []).map(p => ({
+                id: p.id,
+                name: p.name,
+                description: p.description,
+                track_count: Array.isArray(p.tracks) ? p.tracks.length : 0
+              }))
+            }
+          }
+        } catch (err: any) {
+          return {
+            toolName: name,
+            args,
+            result: { success: false, message: `Failed to list playlists: ${err.message}` }
+          }
+        }
+      }
+
+      case 'play_playlist': {
+        const query = String(args.playlist_name || '').trim().toLowerCase()
+        try {
+          const { data, error } = await supabase
+            .from('music_playlists')
+            .select('*')
+            .eq('user_id', userId)
+
+          if (error) throw error
+          const playlists = data || []
+          const found = query
+            ? playlists.find(p => p.name.toLowerCase().includes(query))
+            : (playlists.find(p => Array.isArray(p.tracks) && p.tracks.length > 0) || playlists[0])
+
+          if (!found) {
+            return {
+              toolName: name,
+              args,
+              result: { success: false, message: `Could not find a playlist matching "${args.playlist_name || ''}". You can ask me to create one first!` }
+            }
+          }
+
+          const rawTracks = Array.isArray(found.tracks) ? found.tracks : []
+          const tracks = resolvePlaylistTracks(rawTracks)
+          if (tracks.length === 0) {
+            return {
+              toolName: name,
+              args,
+              result: { success: false, message: `Playlist "${found.name}" is currently empty.` }
+            }
+          }
+
+          // Persist resolved tracks in background
+          void supabase
+            .from('music_playlists')
+            .update({ tracks, updated_at: new Date().toISOString() })
+            .eq('id', found.id)
+
+          const actionCard: AgentActionCard = {
+            type: 'playlist',
+            id: found.id,
+            title: found.name,
+            status: 'playing',
+            data: {
+              id: found.id,
+              name: found.name,
+              description: found.description,
+              tracks,
+              count: tracks.length,
+              status: 'playing'
+            }
+          }
+
+          return {
+            toolName: name,
+            args,
+            result: {
+              success: true,
+              message: `Now singing and playing playlist "${found.name}" (${tracks.length} tracks)! 🎤🎶`,
+              playlist: { ...found, tracks }
+            },
+            actionCard
+          }
+        } catch (err: any) {
+          return {
+            toolName: name,
+            args,
+            result: { success: false, message: `Failed to play playlist: ${err.message}` }
+          }
         }
       }
 
@@ -1106,7 +1599,7 @@ export async function executeAgentTool(
         const tags = Array.isArray(args.tags) ? args.tags.map(String) : []
         const userFields = typeof args.fields === 'object' && args.fields !== null ? args.fields : {}
 
-        let category: 'workout' | 'daily' | 'finance' | 'custom' = 'custom'
+        let category: 'workout' | 'daily' | 'finance' | 'custom' | 'research' = 'custom'
         let templateId: string | undefined = undefined
         let aiInstruction = ''
         let color = 'blue'
@@ -1127,6 +1620,24 @@ export async function executeAgentTool(
             time: new Date().toLocaleTimeString('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hour12: false }),
             name: title || 'Gym Workout',
             exerciseCount: '4',
+            ...userFields
+          }
+        } else if (
+          templateQuery.includes('research') ||
+          templateQuery.includes('report') ||
+          templateQuery.includes('investigat')
+        ) {
+          category = 'research'
+          title = title || 'Research Report'
+          color = 'emerald'
+          aiInstruction = 'Help conduct deep structured research with evidence-based reasoning, citations, and critical review.'
+          finalFields = {
+            topic: String(userFields.topic || title || ''),
+            objective: String(userFields.objective || ''),
+            keyFindings: String(userFields.keyFindings || ''),
+            methodology: String(userFields.methodology || ''),
+            analysis: String(userFields.analysis || ''),
+            references: String(userFields.references || ''),
             ...userFields
           }
         } else if (

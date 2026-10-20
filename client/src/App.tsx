@@ -13,6 +13,7 @@ import { Editor } from './components/Editor'
 import { CalendarView } from './components/CalendarView'
 import { TasksView } from './components/TasksView'
 import { AnalyticsView } from './components/AnalyticsView'
+import { MusicView } from './components/music/MusicView'
 import { CommandPalette } from './components/CommandPalette'
 import { ChatPanel } from './components/ChatPanel'
 import { AssistantWorkspace } from './components/AssistantWorkspace'
@@ -269,6 +270,7 @@ function MuseApp() {
     calendar={() => navigate('/calendar')}
     tasks={() => navigate('/tasks')}
     analytics={() => navigate('/analytics')}
+    music={() => navigate('/music')}
     settings={() => setSettings(true)}
     linkPhone={() => setRemoteModalOpen(true)}
     userEmail=""
@@ -289,6 +291,7 @@ function MuseApp() {
         <Route path="/calendar" element={<CalendarView onBack={() => navigate('/')}/>}/>
         <Route path="/tasks" element={<TasksView onBack={() => navigate('/')}/>}/>
         <Route path="/analytics" element={<AnalyticsView onBack={() => navigate('/')} onOpenNote={id => navigate(`/note/${id}`)} onOpenTasks={() => navigate('/tasks')}/>}/>
+        <Route path="/music" element={<MusicView onBack={() => navigate('/')} onNavigate={path => navigate(path)}/>}/>
         <Route path="/assistant" element={<AssistantWorkspace onBack={() => navigate('/')} onCreateNote={input => create.mutate(input)} onNavigate={path => navigate(path)}/>}/>
         <Route path="*" element={dashboard}/>
       </Routes>
@@ -297,7 +300,13 @@ function MuseApp() {
     {ask && <ChatPanel mode="search" onClose={() => setAsk(false)} onCreateNote={input => create.mutate(input)}/>}
     {research && <ResearchPanel onClose={() => setResearch(false)} onDone={id => { setResearch(false); if (id) { queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate(`/note/${id}`) } }}/>}
     <Toast message={toast} onClose={() => setToast('')}/>
-    {specialized && <SpecializedNotePanel onClose={() => setSpecialized(false)} onCreate={(category, customTemplate, color) => createSpecialized.mutate({ category, customTemplate, color })}/>}
+    {specialized && (
+      <SpecializedNotePanel
+        onClose={() => setSpecialized(false)}
+        onCreate={(category, customTemplate, color) => createSpecialized.mutate({ category, customTemplate, color })}
+        onStartAiResearch={() => { setSpecialized(false); setResearch(true) }}
+      />
+    )}
     {collections && (
       <div className="command-backdrop" onMouseDown={() => setCollections(false)}>
         <section className="command collection-panel" onMouseDown={event => event.stopPropagation()}>

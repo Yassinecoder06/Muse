@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Loader2, Maximize2, Mic, MicOff, Music, Pencil, RotateCcw, Sparkles, Square, Trash2, Volume2, VolumeX, X } from 'lucide-react'
+import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Loader2, Maximize2, Mic, MicOff, Music, Pencil, Plus, RotateCcw, Sparkles, Square, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { BipFigure, type BipMood } from './BipFigure'
 import { FormattedMessage } from '../FormattedMessage'
 import { ActionCards } from '../ActionCards'
@@ -502,6 +502,16 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
         })
       }
 
+      // If action_cards contains a playlist card, play it
+      const playlistCard = res.assistantMessage.action_cards?.find((c: any) => c.type === 'playlist' || c.data?.type === 'playlist')
+      if (playlistCard) {
+        const d = (playlistCard as any).data || playlistCard
+        const tracks = Array.isArray(d.tracks) ? d.tracks : (playlistCard as any).tracks || []
+        if (tracks.length > 0) {
+          void robotMusic.playPlaylist(d.name || d.title || (playlistCard as any).title, tracks, 0)
+        }
+      }
+
       const newMsg: Message = {
         id: res.assistantMessage.id,
         role: 'assistant',
@@ -613,16 +623,26 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     }
   }
 
-  const handleReset = () => {
+  const handleNewChat = async () => {
     robotAudio.play('boop')
     tts.stop()
     setIsSpeaking(false)
     setSpeakingIndex(null)
-    sessionStorage.removeItem('muse-bip-session-id')
-    setSessionId(null)
+    try {
+      const created = await api.createChatSession({ title: 'New Conversation' })
+      sessionStorage.setItem('muse-bip-session-id', created.id)
+      setSessionId(created.id)
+    } catch {
+      sessionStorage.removeItem('muse-bip-session-id')
+      setSessionId(null)
+    }
     setMessages([DEFAULT_GREETING])
     setMood('happy')
     window.setTimeout(() => setMood('idle'), 1500)
+  }
+
+  const handleReset = () => {
+    handleNewChat()
   }
 
   function handleQuickAction(action: 'new-note' | 'tasks' | 'calendar' | 'idea' | 'sing') {
@@ -697,6 +717,12 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
               <span>Bip · Little Helper</span>
             </div>
             <div className="bip-dialog-actions">
+              <button
+                title="Start New Conversation (Fresh Context)"
+                onClick={handleNewChat}
+              >
+                <Plus size={14} />
+              </button>
               <button
                 title={soundEnabled ? 'Sound effects on (click to mute)' : 'Sound effects muted (click to enable)'}
                 onClick={handleToggleSound}

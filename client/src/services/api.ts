@@ -90,7 +90,8 @@ const specializedDefaults: Record<SpecializedCategory, { title: string; fields: 
   daily: { title: 'Daily plan', fields: { date: new Date().toISOString().slice(0, 10), feedback: '', wins: '', blockers: '', nextFocus: '' }, aiInstruction: 'Help plan tasks and provide concise daily feedback.' },
   workout: { title: 'Gym Workout', fields: { date: new Date().toISOString().slice(0, 10), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }), name: 'Gym Workout', exerciseCount: '4' }, aiInstruction: 'Help structure workouts, track exercises, sets, and analyze progress without medical claims.' },
   finance: { title: 'Financial decision', fields: { date: new Date().toISOString().slice(0, 10), amount: '', currency: 'USD', category: '', merchant: '', decision: '', rationale: '', outcome: '' }, aiInstruction: 'Help categorize expenses and compare financial decisions; state assumptions clearly.' },
-  custom: { title: 'Custom note', fields: { 'Field 1': '' }, aiInstruction: 'Follow this template’s fields and propose only supported updates.' }
+  custom: { title: 'Custom note', fields: { 'Field 1': '' }, aiInstruction: 'Follow this template’s fields and propose only supported updates.' },
+  research: { title: 'Research Report', fields: { topic: '', objective: '', keyFindings: '', methodology: '', analysis: '', references: '' }, aiInstruction: 'Help conduct deep structured research with evidence-based reasoning, citations, and critical review.' }
 }
 
 async function createSpecializedSecureNote(category: SpecializedCategory, customTemplate?: { title?: string; fields?: Record<string, unknown>; aiInstruction?: string; color?: string; syncWithCalendar?: boolean }) {
@@ -99,7 +100,7 @@ async function createSpecializedSecureNote(category: SpecializedCategory, custom
   const title = customTemplate?.title || defaults.title
   const fields = customTemplate?.fields ? { ...customTemplate.fields } : { ...defaults.fields }
   const aiInstruction = customTemplate?.aiInstruction || defaults.aiInstruction
-  const color = customTemplate?.color || 'blue'
+  const color = customTemplate?.color || (category === 'research' ? 'emerald' : 'blue')
   const note = newSecureNote({
     title,
     kind: 'specialized',
@@ -210,10 +211,12 @@ export const api = {
     const title = customTemplate?.title || defaults.title
     const fields = customTemplate?.fields ? { ...customTemplate.fields } : { ...defaults.fields }
     const aiInstruction = customTemplate?.aiInstruction || defaults.aiInstruction
-    const color = customTemplate?.color || 'blue'
+    const color = customTemplate?.color || (category === 'research' ? 'emerald' : 'blue')
     const syncWithCalendar = Boolean(customTemplate?.syncWithCalendar)
     const initialContent = category === 'workout'
       ? '<h3>Workout Log</h3><p><strong>Exercises & Sets:</strong></p><p>• </p>'
+      : category === 'research'
+      ? '<h3>Executive Summary</h3><p></p><h3>Key Findings</h3><p></p><h3>Detailed Analysis</h3><p></p><h3>Methodology & Sources</h3><p></p>'
       : ''
     const created = await request<Note>('/notes', {
       method: 'POST',
@@ -520,7 +523,36 @@ export const api = {
     request<CustomTemplate>('/templates', { method: 'POST', body: JSON.stringify(data) }),
   updateTemplate: (id: string, data: Partial<CustomTemplate>) =>
     request<CustomTemplate>(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteTemplate: (id: string) => request<void>(`/templates/${id}`, { method: 'DELETE' })
+  deleteTemplate: (id: string) => request<void>(`/templates/${id}`, { method: 'DELETE' }),
+
+  // Music & Downloader
+  listMusicSongs: () => request<{ songs: Array<{ filename: string; title: string; artist?: string; size: number; mtime: number; url: string }> }>('/music/songs'),
+  downloadMusicBatch: (items: Array<{ query: string; artist?: string; title?: string; filename?: string }>) =>
+    request<{ tasks: any[] }>('/music/download', { method: 'POST', body: JSON.stringify({ items }) }),
+  getMusicTasks: () => request<{ tasks: any[] }>('/music/tasks'),
+  deleteMusicTask: (id: string) => request<{ success: boolean }>(`/music/tasks/${id}`, { method: 'DELETE' }),
+  deleteMusicSong: (filename: string) => request<{ success: boolean; message: string }>(`/music/songs/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
+  deleteMusicSongsBatch: (filenames: string[]) =>
+    request<{ success: boolean; deletedCount: number; message: string }>('/music/songs/batch-delete', {
+      method: 'POST',
+      body: JSON.stringify({ filenames })
+    }),
+  getMusicAnalytics: () => request<{
+    totalSongs: number
+    totalBytes: number
+    totalMb: number
+    topArtists: Array<{ name: string; count: number }>
+    recentSongs: Array<{ filename: string; title: string; artist?: string; size: number; mtime: number; url: string }>
+  }>('/music/analytics'),
+
+  // Music Playlists
+  listMusicPlaylists: () => request<{ playlists: Array<{ id: string; name: string; description?: string; tracks: any[]; created_at: string; updated_at: string }> }>('/music/playlists'),
+  createMusicPlaylist: (data: { name: string; description?: string; tracks?: any[] }) =>
+    request<any>('/music/playlists', { method: 'POST', body: JSON.stringify(data) }),
+  getMusicPlaylist: (id: string) => request<any>(`/music/playlists/${id}`),
+  updateMusicPlaylist: (id: string, data: { name?: string; description?: string; tracks?: any[] }) =>
+    request<any>(`/music/playlists/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteMusicPlaylist: (id: string) => request<{ success: boolean }>(`/music/playlists/${id}`, { method: 'DELETE' })
 }
 
 export type AiCapability = 'chat' | 'embedding' | 'tts' | 'stt'

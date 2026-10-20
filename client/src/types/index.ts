@@ -1,7 +1,7 @@
 export type Task = { id: string; note_id: string | null; text: string; completed: boolean; created_at: string; completed_at?: string | null; due_date?: string | null; due_time?: string | null; priority?: string; reminder_at?: string | null; reminder_minutes_before?: number | null }
 export type CalendarEvent = { id: string; user_id?: string; note_id?: string | null; title: string; description?: string; start_time: string; end_time?: string | null; all_day: boolean; location?: string; created_at?: string; updated_at?: string }
 export type NoteKind = 'note' | 'research' | 'specialized'
-export type SpecializedCategory = 'daily' | 'workout' | 'finance' | 'custom'
+export type SpecializedCategory = 'daily' | 'workout' | 'finance' | 'custom' | 'research'
 export type SpecializedNote = { category: SpecializedCategory; templateId?: string; fields: Record<string, unknown>; aiInstruction?: string; color?: string; syncWithCalendar?: boolean }
 export type Note = { id: string; title: string; content: string; summary: string | null; favorite: boolean; archived: boolean; deleted_at: string | null; created_at: string; updated_at: string; kind: NoteKind; tags: string[]; tasks: Task[]; specialized?: SpecializedNote; aiStatus?: 'idle' | 'processing' | 'complete' | 'error' }
 export type NoteInput = Partial<Pick<Note, 'title' | 'content' | 'favorite' | 'archived' | 'tags' | 'summary' | 'tasks' | 'specialized'>>
@@ -93,6 +93,72 @@ export interface MusicActionCard {
   status?: string
 }
 
+export interface MusicDownloadPlanItem {
+  id: string
+  query: string
+  artist?: string
+  title: string
+  filename: string
+}
+
+export interface MusicDownloadPlanActionCard {
+  type: 'music_download_plan'
+  id?: string
+  title: string
+  items: MusicDownloadPlanItem[]
+  count: number
+}
+
+export interface MusicDownloadProgressActionCard {
+  type: 'music_download_progress'
+  id?: string
+  title: string
+  tasks: Array<{
+    task_id: string
+    title?: string
+    artist?: string
+    filename?: string
+    status: string
+    progress_percent: number
+    speed_str?: string
+    eta_str?: string
+    error?: string
+  }>
+}
+
+export interface MusicPlaylist {
+  id: string
+  user_id: string
+  name: string
+  description?: string
+  tracks: Array<{
+    filename: string
+    title: string
+    artist?: string
+    url: string
+    size?: number
+  }>
+  created_at: string
+  updated_at: string
+}
+
+export interface PlaylistActionCard {
+  type: 'playlist'
+  id?: string
+  title: string
+  name?: string
+  description?: string
+  count?: number
+  tracks?: Array<{
+    filename: string
+    title: string
+    artist?: string
+    url: string
+    size?: number
+  }>
+  status?: string
+}
+
 export type ActionCard =
   | ConfirmRequiredActionCard
   | NoteActionCard
@@ -103,6 +169,9 @@ export type ActionCard =
   | SpecializedNoteActionCard
   | DeletedItemActionCard
   | MusicActionCard
+  | MusicDownloadPlanActionCard
+  | MusicDownloadProgressActionCard
+  | PlaylistActionCard
 
 export interface ChatMessage {
   id: string
