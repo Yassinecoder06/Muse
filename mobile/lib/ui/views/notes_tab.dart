@@ -7,6 +7,7 @@ import '../../data/services/app_events.dart';
 import '../../data/services/note_store.dart';
 import '../../data/services/offline_queue.dart';
 import '../theme/app_theme.dart';
+import '../widgets/specialized_note_sheet.dart';
 import 'note_detail_view.dart';
 
 class NotesTab extends StatefulWidget {
@@ -429,10 +430,24 @@ class _NotesTabState extends State<NotesTab> {
 
     return Scaffold(
       backgroundColor: AppTheme.background,
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showCreateNoteSheet,
-        tooltip: 'New Note',
-        child: const Icon(Icons.edit_rounded),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.small(
+            heroTag: 'fab_template',
+            onPressed: () => SpecializedNoteSheet.show(context),
+            backgroundColor: AppTheme.surface,
+            tooltip: 'Specialized Template',
+            child: const Icon(Icons.dashboard_customize_rounded, color: Color(0xFF00E5FF), size: 20),
+          ),
+          const SizedBox(height: 10),
+          FloatingActionButton(
+            heroTag: 'fab_new_note',
+            onPressed: _showCreateNoteSheet,
+            tooltip: 'New Note',
+            child: const Icon(Icons.edit_rounded),
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _loadNotes,
@@ -470,6 +485,11 @@ class _NotesTabState extends State<NotesTab> {
                               color: AppTheme.textPrimary,
                             ),
                           ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.dashboard_customize_outlined, color: Color(0xFF00E5FF), size: 24),
+                          tooltip: 'Specialized Template',
+                          onPressed: () => SpecializedNoteSheet.show(context),
                         ),
                         IconButton(
                           icon: const Icon(Icons.add_circle_outline_rounded, color: AppTheme.primaryLight, size: 26),

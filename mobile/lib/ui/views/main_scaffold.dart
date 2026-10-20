@@ -8,10 +8,13 @@ import '../../data/services/offline_queue.dart';
 import '../../data/services/reminder_service.dart';
 import 'bip_alarm_screen.dart';
 import '../theme/app_theme.dart';
+import '../widgets/bip_companion_button.dart';
+import '../widgets/bip_voice_sheet.dart';
 import '../widgets/quick_capture_sheet.dart';
-import 'bip_chat_tab.dart';
 import 'notes_tab.dart';
 import 'tasks_tab.dart';
+import 'music_tab.dart';
+import 'insights_tab.dart';
 import 'settings_tab.dart';
 
 class MainScaffold extends StatefulWidget {
@@ -156,34 +159,35 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
         .join('\n\n');
     ReceiveSharingIntent.instance.reset();
     if (image == null && text.isEmpty) return;
-    setState(() => _currentIndex = 1);
+    setState(() => _currentIndex = 0);
     showQuickCapture(context, initialText: text, imagePath: image?.path, imageMime: image?.mimeType);
   }
 
   void _handleLaunchAction() {
     final action = AppEvents.launchAction.value;
     if (action == null || !mounted) return;
+    AppEvents.launchAction.value = null;
     if (action == 'ask_bip') {
-      // BipChatTab starts listening and clears the action.
-      setState(() => _currentIndex = 0);
+      BipVoiceSheet.show(context);
       return;
     }
-    AppEvents.launchAction.value = null;
     showQuickCapture(context, startDictation: action == 'voice_note');
   }
 
   final List<Widget> _tabs = const [
-    BipChatTab(),
     NotesTab(),
     TasksTab(),
+    MusicTab(),
+    InsightsTab(),
     SettingsTab(),
   ];
 
   final List<String> _titles = const [
-    'Bip AI Assistant',
     'Notes',
-    'Tasks & Schedule',
-    'Companion Settings',
+    'Schedule',
+    'Music Hub',
+    'Insights',
+    'Settings',
   ];
 
   @override
@@ -207,12 +211,24 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
               child: const Icon(Icons.auto_awesome, color: Colors.white, size: 16),
             ),
             const SizedBox(width: 10),
-            Text(
-              _titles[_currentIndex],
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            Expanded(
+              child: Text(
+                _titles[_currentIndex],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
             ),
           ],
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: BipCompanionButton(
+              onCustomTap: () => BipVoiceSheet.show(context),
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -255,14 +271,15 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
       bottomNavigationBar: isKeyboardOpen
           ? null
           : BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: AppTheme.surface,
+              selectedItemColor: AppTheme.primaryLight,
+              unselectedItemColor: AppTheme.textSecondary,
+              selectedFontSize: 11,
+              unselectedFontSize: 11,
               currentIndex: _currentIndex,
               onTap: (index) => setState(() => _currentIndex = index),
               items: const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.smart_toy_outlined),
-                  activeIcon: Icon(Icons.smart_toy_rounded),
-                  label: 'Bip AI',
-                ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.edit_note_outlined),
                   activeIcon: Icon(Icons.edit_note_rounded),
@@ -272,6 +289,16 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
                   icon: Icon(Icons.event_note_outlined),
                   activeIcon: Icon(Icons.event_note_rounded),
                   label: 'Schedule',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.headphones_outlined),
+                  activeIcon: Icon(Icons.headphones_rounded),
+                  label: 'Music',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.insights_outlined),
+                  activeIcon: Icon(Icons.insights_rounded),
+                  label: 'Insights',
                 ),
                 BottomNavigationBarItem(
                   icon: Icon(Icons.tune_outlined),

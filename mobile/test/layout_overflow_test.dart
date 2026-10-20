@@ -14,8 +14,11 @@ import 'package:muse_mobile/ui/views/notes_tab.dart';
 import 'package:muse_mobile/ui/views/pairing_screen.dart';
 import 'package:muse_mobile/ui/views/settings_tab.dart';
 import 'package:muse_mobile/ui/views/tasks_tab.dart';
+import 'package:muse_mobile/ui/views/music_tab.dart';
+import 'package:muse_mobile/ui/views/insights_tab.dart';
 import 'package:muse_mobile/ui/widgets/quick_capture_sheet.dart';
 import 'package:muse_mobile/ui/widgets/reminder_sheet.dart';
+import 'package:muse_mobile/ui/widgets/specialized_note_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Renders every screen with long, realistic data at real phone sizes and
@@ -92,6 +95,45 @@ class FakeApi extends ApiService {
   Future<Map<String, String>> authHeaders() async => {};
 
   @override
+  Future<List<Map<String, dynamic>>> fetchMusicSongs() async => [
+        {'filename': 'queen-bohemian.mp3', 'title': 'Bohemian Rhapsody', 'artist': 'Queen', 'size': 5400000},
+        {'filename': 'dua-lipa-levitating.mp3', 'title': 'Levitating', 'artist': 'Dua Lipa', 'size': 3200000},
+      ];
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMusicPlaylists() async => [
+        {
+          'id': 'p1',
+          'name': 'Favorite Rock Classics & Epic Guitar Solos',
+          'tracks': [
+            {'title': 'Bohemian Rhapsody', 'artist': 'Queen'}
+          ]
+        }
+      ];
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchMusicTasks() async => [
+        {'id': 'task-1', 'title': 'Blinding Lights', 'status': 'downloading', 'progress': 45.0},
+        {'id': 'task-2', 'title': 'Believer', 'status': 'completed', 'progress': 100.0},
+      ];
+
+  @override
+  Future<Map<String, dynamic>> fetchAnalyticsActivity({int days = 30}) async => {
+        'chats': [{'id': 'c1'}],
+        'ai': [{'id': 'a1'}],
+      };
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTemplates() async => [
+        {
+          'id': 't1',
+          'name': 'Gym Workout Log',
+          'category': 'gym',
+          'fields': {'routine': 'Legs & Core', 'exercises': 'Squats 4x8, Leg press 3x12'},
+        }
+      ];
+
+  @override
   Future<String> resolveUrl(String pathOrUrl) async => 'http://muse.test$pathOrUrl';
 }
 
@@ -157,6 +199,9 @@ void main() {
     'Settings': (() => const SettingsTab(), null),
     'Pairing': (() => const PairingScreen(), null),
     'Bip alarm': (() => BipAlarmScreen(taskId: 't1', title: 'Prepare the slides for the Monday all-hands meeting', due: today.add(const Duration(minutes: 3))), null),
+    'Music': (() => const MusicTab(), null),
+    'Insights': (() => const InsightsTab(), null),
+    'Specialized Note sheet': (() => sheetLauncher((c) => SpecializedNoteSheet.show(c)), (t) => t.tap(find.text('open'))),
     'Quick capture': (() => sheetLauncher((c) => showQuickCapture(c, initialText: 'Shared text')), (t) => t.tap(find.text('open'))),
     'Reminder sheet': (
       () => sheetLauncher((c) => showReminderSheet(c, TodoTask(id: 't1', title: 'Prepare the slides for the Monday all-hands meeting', completed: false, dueDate: ymd(today), dueTime: '15:30'))),
