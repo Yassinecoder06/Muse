@@ -131,7 +131,7 @@ class _InsightsTabState extends State<InsightsTab> {
     final chatsList = _activity['chats'] as List<dynamic>? ?? [];
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: AppTheme.getBackground(context),
       body: RefreshIndicator(
         onRefresh: () => _loadInsights(silent: false),
         child: ListView(

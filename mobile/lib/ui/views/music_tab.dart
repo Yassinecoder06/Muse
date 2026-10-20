@@ -483,7 +483,7 @@ class _MusicTabState extends State<MusicTab> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: AppTheme.getBackground(context),
       body: Column(
         children: [
           // Voice Assistant Quick Suggestion Banner

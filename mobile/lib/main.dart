@@ -27,6 +27,7 @@ void main() async {
   await DeviceTimezone.load();
   await OfflineQueue.init();
   await ReminderService.init();
+  await AppTheme.initTheme();
 
   // Long-press the app icon: jump straight into capturing.
   const quickActions = QuickActions();
@@ -82,13 +83,20 @@ class _MuseMobileAppState extends State<MuseMobileApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Muse Companion',
-      debugShowCheckedModeBanner: false,
-      navigatorKey: _navigatorKey,
-      scaffoldMessengerKey: _messengerKey,
-      theme: AppTheme.darkTheme,
-      home: widget.initialPaired ? const MainScaffold() : const PairingScreen(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppTheme.themeNotifier,
+      builder: (context, currentMode, _) {
+        return MaterialApp(
+          title: 'Muse Companion',
+          debugShowCheckedModeBanner: false,
+          navigatorKey: _navigatorKey,
+          scaffoldMessengerKey: _messengerKey,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: currentMode,
+          home: widget.initialPaired ? const MainScaffold() : const PairingScreen(),
+        );
+      },
     );
   }
 }

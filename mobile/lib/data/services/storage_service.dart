@@ -6,6 +6,7 @@ class StorageService {
   static const _keyDeviceToken = 'muse_device_token';
   static const _keyDeviceName = 'muse_device_name';
   static const _keyDeviceId = 'muse_device_id';
+  static const _keyUserName = 'muse_user_name';
 
   // The device token is a long-lived credential for the whole Muse account, so
   // it lives in the Android Keystore / iOS Keychain rather than plain prefs.
@@ -50,6 +51,16 @@ class StorageService {
   Future<String?> getDeviceName() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_keyDeviceName);
+  }
+
+  Future<String> getUserName() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyUserName) ?? 'Explorer';
+  }
+
+  Future<void> setUserName(String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyUserName, name.trim());
   }
 
   Future<bool> isPaired() async {
