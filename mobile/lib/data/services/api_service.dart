@@ -557,4 +557,173 @@ class ApiService {
     }
     return {};
   }
+
+  // --- Music Hub ---
+  Future<List<Map<String, dynamic>>> fetchMusicSongs() async {
+    try {
+      final base = await _getBaseUrl();
+      final headers = await _getHeaders();
+      final uri = Uri.parse('$base/api/music/songs');
+      final res = await _http.get(uri, headers: headers).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final songs = data['songs'] as List<dynamic>? ?? [];
+        return songs.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMusicPlaylists() async {
+    try {
+      final base = await _getBaseUrl();
+      final headers = await _getHeaders();
+      final uri = Uri.parse('$base/api/music/playlists');
+      final res = await _http.get(uri, headers: headers).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final playlists = data['playlists'] as List<dynamic>? ?? [];
+        return playlists.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<Map<String, dynamic>> createMusicPlaylist(String name, {List<dynamic>? tracks}) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$base/api/music/playlists');
+    final res = await _http.post(
+      uri,
+      headers: headers,
+      body: jsonEncode({'name': name, 'tracks': tracks ?? []}),
+    ).timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to create playlist');
+  }
+
+  Future<void> deleteMusicPlaylist(String id) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$base/api/music/playlists/$id');
+    await _http.delete(uri, headers: headers).timeout(const Duration(seconds: 10));
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMusicTasks() async {
+    try {
+      final base = await _getBaseUrl();
+      final headers = await _getHeaders();
+      final uri = Uri.parse('$base/api/music/tasks');
+      final res = await _http.get(uri, headers: headers).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final tasks = data['tasks'] as List<dynamic>? ?? [];
+        return tasks.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<void> deleteMusicTask(String id) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$base/api/music/tasks/$id');
+    await _http.delete(uri, headers: headers).timeout(const Duration(seconds: 10));
+  }
+
+  Future<Map<String, dynamic>> downloadMusic(List<Map<String, dynamic>> items) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$base/api/music/download');
+    final res = await _http.post(
+      uri,
+      headers: headers,
+      body: jsonEncode({'items': items}),
+    ).timeout(const Duration(seconds: 15));
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to schedule music download');
+  }
+
+  Future<void> deleteMusicSong(String filename) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$base/api/music/songs/${Uri.encodeComponent(filename)}');
+    await _http.delete(uri, headers: headers).timeout(const Duration(seconds: 10));
+  }
+
+  // --- Templates & Specialized Notes ---
+  Future<List<Map<String, dynamic>>> fetchTemplates() async {
+    try {
+      final base = await _getBaseUrl();
+      final headers = await _getHeaders();
+      final uri = Uri.parse('$base/api/templates');
+      final res = await _http.get(uri, headers: headers).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final list = jsonDecode(res.body) as List<dynamic>? ?? [];
+        return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<Note> createSpecializedNote({
+    required String title,
+    required String category,
+    required Map<String, String> fields,
+    List<String>? tags,
+  }) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$base/api/notes');
+
+    // Generate markdown structure mirroring web templates
+    final buffer = StringBuffer();
+    fields.forEach((k, v) {
+      if (v.trim().isNotEmpty) {
+        final label = k.replaceAllMapped(RegExp(r'([A-Z])'), (m) => ' ${m[1]}').trim();
+        buffer.writeln('### ${label[0].toUpperCase()}${label.substring(1)}');
+        buffer.writeln(v.trim());
+        buffer.writeln();
+      }
+    });
+
+    final res = await _http.post(
+      uri,
+      headers: headers,
+      body: jsonEncode({
+        'title': title.trim().isEmpty ? 'Specialized Note' : title.trim(),
+        'content': buffer.toString().trim(),
+        'tags': tags ?? [category],
+        'kind': 'specialized',
+        'category': category,
+        'fields': fields,
+      }),
+    ).timeout(const Duration(seconds: 15));
+
+    if (res.statusCode == 201 || res.statusCode == 200) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final note = Note.fromJson(data);
+      AppEvents.notifyDataChanged();
+      return note;
+    }
+    throw Exception('Failed to create specialized note');
+  }
+
+  // --- Analytics Activity ---
+  Future<Map<String, dynamic>> fetchAnalyticsActivity({int days = 30}) async {
+    try {
+      final base = await _getBaseUrl();
+      final headers = await _getHeaders();
+      final uri = Uri.parse('$base/api/analytics/activity?days=$days');
+      final res = await _http.get(uri, headers: headers).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return {'chats': [], 'ai': []};
+  }
 }
