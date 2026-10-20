@@ -27,7 +27,7 @@ import { chatRoutes, generateChain } from './providers/router.js'
 import type { ChatMessage, ToolSpec } from './providers/llm.js'
 
 const MAX_TOOL_ROUNDS = 18
-const HISTORY_MESSAGES = 16
+const HISTORY_MESSAGES = 32
 
 export interface AgentRunOutput {
   userMessage: {
