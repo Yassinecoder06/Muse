@@ -53,7 +53,7 @@ export async function getArtifacts(req: Request, res: Response, next: NextFuncti
 export async function exportReport(req: Request, res: Response, next: NextFunction) {
   try {
     const note = await notes.get(user(req), z.string().uuid().parse(req.params.noteId))
-    if (note.kind !== 'research') { res.status(400).json({ error: 'Only research reports can be exported.' }); return }
+    if (note.kind !== 'research' && (note.specialized as any)?.category !== 'research') { res.status(400).json({ error: 'Only research reports can be exported.' }); return }
     const format = z.enum(['html', 'pdf', 'docx']).parse(req.query.format || 'html'); const name = (note.title || 'muse-report').replace(/[^a-z0-9-_]+/gi, '-').slice(0, 80)
     if (format === 'html') { res.type('html').attachment(`${name}.html`).send(reportExports.html(note.title, note.content)); return }
     if (format === 'docx') { res.type('application/vnd.openxmlformats-officedocument.wordprocessingml.document').attachment(`${name}.docx`).send(await reportExports.docx(note.title, note.content)); return }

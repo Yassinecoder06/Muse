@@ -100,7 +100,20 @@ async function process(job: AiJob) {
       await jobs.progress(job.id, { stage, label, completedStages: [...completedStages], documentCount: documents.length })
       if (stats) await reportRepository.stage(job.id, job.user_id, stage, started, stats.input, stats.output, stats.status, stats.error)
     })
-    const created = await notes.create(job.user_id, { title: generated.title, content: generated.content }, 'research')
+    const created = await notes.create(job.user_id, {
+      title: generated.title,
+      content: generated.content,
+      specialized: {
+        category: 'research',
+        color: 'emerald',
+        fields: {
+          topic,
+          reportType: job.payload?.reportType || 'research',
+          sourcesCount: generated.sources.length,
+          qualityScore: generated.quality?.score ?? 100
+        }
+      }
+    }, 'specialized')
     await vectors.upsertVector(created)
     await reportRepository.save(created.id, job.id, job.user_id, { reportType: generated.plan.report_type, objective: generated.plan.objective, audience: generated.plan.target_audience, instructions: job.payload?.instructions || '', outputFormat: generated.outputFormat, plan: generated.plan, quality: generated.quality, revisions: generated.revisions })
     result = { noteId: created.id, title: generated.title, sources: generated.sources.map(({ title: sourceTitle, url }) => ({ title: sourceTitle, url })), stages: completedStages, documentCount: documents.length, quality: generated.quality, outputFormat: generated.outputFormat }

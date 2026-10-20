@@ -10,7 +10,8 @@ import {
   Pencil,
   Plus,
   ArrowLeft,
-  X
+  X,
+  Globe
 } from 'lucide-react'
 import type { SpecializedCategory } from '../types'
 import { ConfirmModal } from './ConfirmModal'
@@ -36,15 +37,18 @@ export const SPECIALIZED_COLORS = [
 const builtInOptions: { category: SpecializedCategory; title: string; description: string; icon: typeof CalendarDays }[] = [
   { category: 'daily', title: 'Daily tasks & feedback', description: 'Plan your day, track tasks, wins, blockers, and reflect.', icon: CalendarDays },
   { category: 'workout', title: 'Gym workout', description: 'Log date, time, workout name, and exercises.', icon: Dumbbell },
-  { category: 'finance', title: 'Expense & decision', description: 'Capture spending, merchant, rationale, and compare choices.', icon: ReceiptText }
+  { category: 'finance', title: 'Expense & decision', description: 'Capture spending, merchant, rationale, and compare choices.', icon: ReceiptText },
+  { category: 'research', title: 'Research & Report', description: 'Investigate any topic with web evidence, key findings, and deep analysis.', icon: Globe }
 ]
 
 export function SpecializedNotePanel({
   onClose,
-  onCreate
+  onCreate,
+  onStartAiResearch
 }: {
   onClose: () => void
   onCreate: (category: SpecializedCategory, customTemplate?: CustomTemplate, color?: string) => void
+  onStartAiResearch?: () => void
 }) {
   const [viewMode, setViewMode] = useState<'select' | 'builder'>('select')
   const [search, setSearch] = useState('')
@@ -242,18 +246,55 @@ export function SpecializedNotePanel({
                   <div className="template-cards-grid">
                     {filteredDefaults.map(option => {
                       const Icon = option.icon
+                      const isResearch = option.category === 'research'
                       return (
                         <button
                           key={option.category}
                           className="template-card-btn"
-                          onClick={() => onCreate(option.category, undefined, color)}
+                          onClick={() => onCreate(option.category, undefined, isResearch && color === 'blue' ? 'emerald' : color)}
                         >
-                          <div className="template-icon-wrap">
+                          <div
+                            className="template-icon-wrap"
+                            style={isResearch ? { background: 'rgba(5, 150, 105, 0.15)', color: '#059669' } : undefined}
+                          >
                             <Icon size={18} />
                           </div>
                           <div className="template-info">
-                            <strong>{option.title}</strong>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <strong>{option.title}</strong>
+                              {isResearch && (
+                                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: 'rgba(5, 150, 105, 0.15)', color: '#059669' }}>
+                                  Green
+                                </span>
+                              )}
+                            </div>
                             <small>{option.description}</small>
+                            {isResearch && onStartAiResearch && (
+                              <div style={{ marginTop: 6 }}>
+                                <span
+                                  className="template-card-subaction-pill"
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    color: '#059669',
+                                    background: 'rgba(5, 150, 105, 0.1)',
+                                    border: '1px solid rgba(5, 150, 105, 0.25)',
+                                    borderRadius: 6,
+                                    padding: '2px 8px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4
+                                  }}
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    onStartAiResearch()
+                                  }}
+                                  title="Run automated deep AI research with web scraping and report synthesis"
+                                >
+                                  ⚡ Run AI Deep Research
+                                </span>
+                              </div>
+                            )}
                           </div>
                         </button>
                       )
