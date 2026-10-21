@@ -1,7 +1,7 @@
-import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, Music, PanelLeft, Plus, RotateCcw, Search, Settings, Smartphone, Sparkles, Star, Sun, Trash2, Waypoints } from 'lucide-react'
+import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, Music, PanelLeft, Plus, RotateCcw, Search, Settings, Smartphone, Sparkles, Star, Sun, Trash2, Waypoints, X } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
-import type { Note } from '../types'
+import type { Note, NoteInput } from '../types'
 import { ConfirmModal } from '../components/ConfirmModal'
 
 type Counts = { all: number; favorites: number; archive: number; trash: number }
@@ -43,7 +43,7 @@ export function Dashboard({
   setScope: (value: string) => void
   query: string
   setQuery: (value: string) => void
-  create: () => void
+  create: (input?: NoteInput) => void
   open: (note: Note) => void
   toggleFavorite?: (id: string, current: boolean) => void
   dark: boolean
@@ -116,13 +116,40 @@ export function Dashboard({
     return !current
   })
 
+  const [reflectionDismissed, setReflectionDismissed] = useState(() => localStorage.getItem('muse-dismiss-reflection') === 'true')
+
+  const existingReflection = notes.find(n =>
+    !n.deleted_at && !n.archived && (
+      n.title.trim().toLowerCase() === 'weekly reflection' ||
+      n.title.toLowerCase().startsWith('weekly reflection') ||
+      (n.tags && n.tags.includes('rituals') && n.tags.includes('personal'))
+    )
+  )
+
+  const handleReflectionClick = () => {
+    if (existingReflection) {
+      open(existingReflection)
+    } else {
+      create({
+        title: 'Weekly reflection',
+        content: '## Weekly Reflection\n\n### What gave me energy this week?\n\n### What do I want more of?\n\n',
+        tags: ['rituals', 'personal'],
+        favorite: true
+      })
+    }
+  }
+
+  const reflectionMatches = !query ||
+    'weekly reflection what gave me energy this week what do i want more of rituals personal'.includes(query.toLowerCase()) ||
+    Boolean(existingReflection && `${existingReflection.title} ${text(existingReflection.content)} ${existingReflection.tags.join(' ')}`.toLowerCase().includes(query.toLowerCase()))
+
   return (
     <div className={`app-layout${collapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="brand">
           <i><span/></i> Muse
         </div>
-        <button className="new-note" onClick={create} title="New note (Ctrl+M / ⌘M)">
+        <button className="new-note" onClick={() => create()} title="New note (Ctrl+M / ⌘M)">
           <Plus size={17}/>New note <kbd>⌘ M</kbd>
         </button>
         <nav>
@@ -381,28 +408,60 @@ export function Dashboard({
                   <RotateCcw size={15}/> Clear search
                 </button>
               ) : scope === 'all' ? (
-                <button onClick={create}>
+                <button onClick={() => create()}>
                   <Plus size={16}/> Create a note
                 </button>
               ) : null}
             </div>
           )}
 
-          {scope === 'all' && (
+          {scope === 'all' && !reflectionDismissed && reflectionMatches && (
             <>
               <div className="list-heading pinned">
                 <h2>Pinned</h2>
                 <span>Your favorite thoughts, close at hand</span>
               </div>
-              <article className="reflection">
+              <article
+                className="reflection"
+                role="button"
+                tabIndex={0}
+                onClick={handleReflectionClick}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    handleReflectionClick()
+                  }
+                }}
+                title={existingReflection ? 'Open weekly reflection' : 'Start weekly reflection'}
+              >
                 <div>✦</div>
                 <span>
-                  <h3>Weekly reflection</h3>
-                  <p>What gave me energy this week? What do I want more of?</p>
-                  <b className="tag">rituals</b>
-                  <b className="tag">personal</b>
+                  <h3>{existingReflection?.title || 'Weekly reflection'}</h3>
+                  <p>
+                    {existingReflection
+                      ? (text(existingReflection.content) || 'Open to continue your reflection…')
+                      : 'What gave me energy this week? What do I want more of?'}
+                  </p>
+                  {(existingReflection?.tags?.length ? existingReflection.tags : ['rituals', 'personal']).map(tag => (
+                    <b className="tag" key={tag}>{tag}</b>
+                  ))}
                 </span>
-                <strong>↗</strong>
+                <div className="reflection-actions">
+                  <button
+                    type="button"
+                    className="reflection-dismiss"
+                    title="Dismiss reflection prompt"
+                    aria-label="Dismiss reflection prompt"
+                    onClick={e => {
+                      e.stopPropagation()
+                      setReflectionDismissed(true)
+                      localStorage.setItem('muse-dismiss-reflection', 'true')
+                    }}
+                  >
+                    <X size={15}/>
+                  </button>
+                  <strong className="reflection-arrow" title={existingReflection ? 'Open reflection' : 'Start reflection'}>↗</strong>
+                </div>
               </article>
             </>
           )}

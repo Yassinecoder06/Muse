@@ -8269,5 +8269,130 @@
   color: #a7a2b5;
 }
 
+/* ==========================================================================
+   Interactive Pinned Reflection & Toast Actions
+   ========================================================================== */
+
+.reflection {
+  cursor: pointer;
+  position: relative;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+  user-select: none;
+}
+
+.reflection:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(34, 34, 43, 0.08);
+  border-color: #d8d4e2;
+}
+
+.reflection:active {
+  transform: translateY(0);
+}
+
+.reflection:focus-visible {
+  outline: 2px solid #9a79ff;
+  outline-offset: 2px;
+}
+
+.reflection-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  align-self: center;
+}
+
+.reflection-arrow {
+  font-size: 20px;
+  font-weight: 400;
+  color: #8d898c;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease;
+  display: inline-block;
+  line-height: 1;
+}
+
+.reflection:hover .reflection-arrow {
+  transform: translate(3px, -3px);
+  color: #7c3aed;
+}
+
+.reflection-dismiss {
+  background: transparent;
+  border: 0;
+  color: #a09da7;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.reflection:hover .reflection-dismiss,
+.reflection-dismiss:focus-visible {
+  opacity: 1;
+}
+
+.reflection-dismiss:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: #1f1e24;
+}
+
+[data-theme=dark] .reflection {
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+[data-theme=dark] .reflection:hover {
+  border-color: #484556;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme=dark] .reflection:hover .reflection-arrow {
+  color: #c4b5fd;
+}
+
+[data-theme=dark] .reflection-dismiss {
+  color: #898692;
+}
+
+[data-theme=dark] .reflection-dismiss:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.toast-action {
+  background: #493b70;
+  color: #e0d4ff;
+  border: 1px solid #635097;
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 8px !important;
+  transition: all 0.15s ease;
+}
+
+.toast-action:hover {
+  background: #5c4b8d;
+  color: #ffffff;
+}
+
+[data-theme=dark] .toast-action {
+  background: #3b2f5c;
+  color: #d8c7ff;
+  border-color: #554484;
+}
+
+[data-theme=dark] .toast-action:hover {
+  background: #4c3c76;
+  color: #ffffff;
+}
+
+
 
 
