@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
@@ -44,6 +45,8 @@ class MusicService {
   final ValueNotifier<dynamic> sleepTimerDuration = ValueNotifier(null); // 15, 30, 45, 60, 'track', or null
   final ValueNotifier<int> crossfadeSeconds = ValueNotifier(0);
   final ValueNotifier<Set<String>> offlineTrackFilenames = ValueNotifier({});
+  final ValueNotifier<({int current, int total, bool active})> batchDownloadStatus =
+      ValueNotifier((current: 0, total: 0, active: false));
 
   List<Map<String, dynamic>> _originalQueue = [];
   Timer? _sleepTimer;
@@ -142,6 +145,37 @@ class MusicService {
     return offlineTrackFilenames.value.contains(filename);
   }
 
+  Future<File> _cacheFile() async =>
+      File('${(await getApplicationSupportDirectory()).path}/muse_songs_cache.json');
+
+  Future<void> saveSongsCache(List<Map<String, dynamic>> songs) async {
+    try {
+      final file = await _cacheFile();
+      await file.writeAsString(jsonEncode(songs));
+    } catch (_) {}
+  }
+
+  Future<List<Map<String, dynamic>>?> loadSongsCache() async {
+    try {
+      final file = await _cacheFile();
+      if (!await file.exists()) return null;
+      final raw = await file.readAsString();
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list.whereType<Map>().map((m) => m.cast<String, dynamic>()).toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<File?> getOfflineCoverFile(String filename) async {
+    try {
+      final dir = await _getOfflineDir();
+      final file = File('${dir.path}/$filename.cover.jpg');
+      if (await file.exists()) return file;
+    } catch (_) {}
+    return null;
+  }
+
   Future<bool> downloadTrackOffline(Map<String, dynamic> track) async {
     final filename = track['filename'] as String? ?? '';
     if (filename.isEmpty) return false;
@@ -153,6 +187,15 @@ class MusicService {
       final res = await http.get(Uri.parse(fullUrl));
       if (res.statusCode == 200) {
         await file.writeAsBytes(res.bodyBytes);
+        try {
+          final coverPath = '/api/music/cover/${Uri.encodeComponent(filename)}';
+          final coverUrl = await _api.resolveUrl(coverPath);
+          final coverRes = await http.get(Uri.parse(coverUrl));
+          if (coverRes.statusCode == 200) {
+            final coverFile = File('${dir.path}/$filename.cover.jpg');
+            await coverFile.writeAsBytes(coverRes.bodyBytes);
+          }
+        } catch (_) {}
         await refreshOfflineTracks();
         return true;
       }
@@ -162,12 +205,32 @@ class MusicService {
     return false;
   }
 
+  Future<void> downloadAllOffline(List<Map<String, dynamic>> songs) async {
+    final toDownload = songs.where((s) {
+      final f = s['filename'] as String? ?? '';
+      return f.isNotEmpty && !isTrackOffline(f);
+    }).toList();
+
+    if (toDownload.isEmpty) return;
+
+    batchDownloadStatus.value = (current: 0, total: toDownload.length, active: true);
+    for (int i = 0; i < toDownload.length; i++) {
+      batchDownloadStatus.value = (current: i + 1, total: toDownload.length, active: true);
+      await downloadTrackOffline(toDownload[i]);
+    }
+    batchDownloadStatus.value = (current: toDownload.length, total: toDownload.length, active: false);
+  }
+
   Future<void> deleteOfflineTrack(String filename) async {
     try {
       final dir = await _getOfflineDir();
       final file = File('${dir.path}/$filename');
       if (file.existsSync()) {
         file.deleteSync();
+      }
+      final coverFile = File('${dir.path}/$filename.cover.jpg');
+      if (coverFile.existsSync()) {
+        coverFile.deleteSync();
       }
       await refreshOfflineTracks();
     } catch (_) {}

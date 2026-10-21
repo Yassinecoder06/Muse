@@ -5,6 +5,7 @@ import '../../data/services/api_service.dart';
 import '../../data/services/app_events.dart';
 import '../../data/services/offline_queue.dart';
 import '../../data/services/reminder_service.dart';
+import '../../data/services/task_cache.dart';
 import '../theme/app_theme.dart';
 
 const reminderPresets = <(String, int)>[
@@ -123,20 +124,46 @@ class _ReminderSheetState extends State<_ReminderSheet> {
         final allowed = await ReminderService.ensureAlarmPermissions();
         if (!allowed) messenger.showSnackBar(const SnackBar(content: Text('Notifications are blocked for Muse, so the alarm cannot ring. Allow them in system settings.')));
       }
-      await _api.updateTaskReminder(
-        widget.task.id,
-        dueDate: needsDate ? DateFormat('yyyy-MM-dd').format(DateTime.now()) : null,
-        dueTime: dueTimeChanged ? dueTime : null,
-        minutesBefore: minutes,
-        at: _mode == 'exact' ? _exactAt : null,
-        clear: _mode == 'none',
-      );
+
+      final dateStr = needsDate ? DateFormat('yyyy-MM-dd').format(DateTime.now()) : null;
+      try {
+        await _api.updateTaskReminder(
+          widget.task.id,
+          dueDate: dateStr,
+          dueTime: dueTimeChanged ? dueTime : null,
+          minutesBefore: minutes,
+          at: _mode == 'exact' ? _exactAt : null,
+          clear: _mode == 'none',
+        );
+        final cached = await TaskCache.get(widget.task.id);
+        if (cached != null) {
+          DateTime? remAt = _mode == 'exact' ? _exactAt : null;
+          if (_mode == 'none') remAt = null;
+          await TaskCache.put(cached.copyWith(
+            dueDate: dateStr ?? cached.dueDate,
+            dueTime: (dueTimeChanged ? dueTime : null) ?? cached.dueTime,
+            reminderMinutesBefore: _mode == 'none' ? null : minutes,
+            reminderAt: remAt,
+          ));
+        }
+      } catch (e) {
+        if (!OfflineQueue.isNetworkError(e)) rethrow;
+        // Offline: save the reminder update to the local queue!
+        await OfflineQueue.queueTaskUpdate(
+          widget.task,
+          dueDate: dateStr,
+          dueTime: dueTimeChanged ? dueTime : null,
+          reminderMinutesBefore: _mode == 'none' ? null : minutes,
+          reminderAt: _mode == 'exact' ? _exactAt : null,
+          clearReminder: _mode == 'none',
+        );
+      }
       AppEvents.notifyDataChanged(); // Tasks tab reloads and schedules the alarm
       navigator.pop(true);
     } catch (e) {
       setState(() {
         _saving = false;
-        _error = OfflineQueue.isNetworkError(e) ? 'Setting a reminder needs a connection to Muse.' : e.toString().replaceFirst('Exception: ', '');
+        _error = e.toString().replaceFirst('Exception: ', '');
       });
     }
   }

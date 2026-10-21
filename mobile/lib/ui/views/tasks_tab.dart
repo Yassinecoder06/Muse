@@ -5,8 +5,10 @@ import '../../data/models/task.dart';
 import '../../data/models/event.dart';
 import '../../data/services/api_service.dart';
 import '../../data/services/app_events.dart';
+import '../../data/services/event_cache.dart';
 import '../../data/services/offline_queue.dart';
 import '../../data/services/reminder_service.dart';
+import '../../data/services/task_cache.dart';
 import '../theme/app_theme.dart';
 import '../widgets/reminder_sheet.dart';
 
@@ -58,6 +60,22 @@ class _TasksTabState extends State<TasksTab> {
       });
     }
 
+    // 1. Immediately display cached tasks & events so offline viewing is instantaneous
+    try {
+      final cachedTasks = await TaskCache.loadTasks();
+      final cachedEvents = await EventCache.loadEvents();
+      if ((cachedTasks != null || cachedEvents != null) && mounted) {
+        final overlaidTasks = await OfflineQueue.overlayTasks(cachedTasks ?? []);
+        final overlaidEvents = await OfflineQueue.overlayEvents(cachedEvents ?? []);
+        setState(() {
+          _tasks = overlaidTasks;
+          _events = overlaidEvents;
+          _loading = false;
+        });
+      }
+    } catch (_) {}
+
+    // 2. Fetch fresh data from server
     try {
       final from = DateTime.now().subtract(const Duration(days: 30));
       final to = DateTime.now().add(const Duration(days: 60));
@@ -68,15 +86,39 @@ class _TasksTabState extends State<TasksTab> {
       ]);
 
       if (!mounted) return;
+      final serverTasks = results[0] as List<TodoTask>;
+      final serverEvents = results[1] as List<CalendarEvent>;
+
+      await TaskCache.saveTasks(serverTasks);
+      await EventCache.saveEvents(serverEvents);
+
+      final finalTasks = await OfflineQueue.overlayTasks(serverTasks);
+      final finalEvents = await OfflineQueue.overlayEvents(serverEvents);
+
       setState(() {
-        _tasks = results[0] as List<TodoTask>;
-        _events = results[1] as List<CalendarEvent>;
+        _tasks = finalTasks;
+        _events = finalEvents;
         _loading = false;
       });
       // Reminders always follow the freshest lists (including desktop edits).
       await ReminderService.sync(_tasks, _events);
     } catch (e) {
       if (!mounted || silent) return;
+      if (OfflineQueue.isNetworkError(e)) {
+        // Offline: preserve cached and buffered items without error banner
+        final cachedTasks = await TaskCache.loadTasks() ?? [];
+        final cachedEvents = await EventCache.loadEvents() ?? [];
+        final overlaidTasks = await OfflineQueue.overlayTasks(cachedTasks);
+        final overlaidEvents = await OfflineQueue.overlayEvents(cachedEvents);
+        setState(() {
+          _tasks = overlaidTasks;
+          _events = overlaidEvents;
+          _loading = false;
+          _error = null;
+        });
+        await ReminderService.sync(_tasks, _events);
+        return;
+      }
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _loading = false;
@@ -95,7 +137,7 @@ class _TasksTabState extends State<TasksTab> {
     });
 
     try {
-      // Offline: the tick stays and syncs later.
+      // Offline: the tick stays, updates TaskCache, and syncs later.
       await OfflineQueue.setTaskCompleted(_api, task.id, nextStatus);
       unawaited(ReminderService.sync(_tasks, _events));
     } catch (_) {
@@ -146,7 +188,7 @@ class _TasksTabState extends State<TasksTab> {
       label: 'Task',
       removeLocally: () => _tasks.removeAt(index),
       restoreLocally: () => _tasks.insert(index.clamp(0, _tasks.length), task),
-      deleteRemotely: () => _api.deleteTask(task.id),
+      deleteRemotely: () => OfflineQueue.deleteTask(_api, task.id),
     );
   }
 
@@ -338,7 +380,7 @@ class _TasksTabState extends State<TasksTab> {
                   try {
                     // Online: the list refreshes via AppEvents. Offline: queued.
                     if (remindMinutes != null) await ReminderService.ensureAlarmPermissions();
-                    final savedNow = await OfflineQueue.createTask(
+                    final createdTask = await OfflineQueue.createTask(
                       _api,
                       title: text,
                       dueDate: dateStr,
@@ -346,10 +388,17 @@ class _TasksTabState extends State<TasksTab> {
                       priority: priority,
                       reminderMinutesBefore: remindMinutes,
                     );
-                    if (!savedNow && mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Saved on your phone. It will sync when Muse is reachable.')),
-                      );
+                    if (mounted) {
+                      setState(() {
+                        if (!_tasks.any((t) => t.id == createdTask.id)) {
+                          _tasks.insert(0, createdTask);
+                        }
+                      });
+                      if (createdTask.isLocal) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Saved on your phone. It will sync when Muse is reachable.')),
+                        );
+                      }
                     }
                   } catch (e) {
                     if (mounted) {
@@ -377,7 +426,7 @@ class _TasksTabState extends State<TasksTab> {
       label: 'Event',
       removeLocally: () => _events.removeAt(index),
       restoreLocally: () => _events.insert(index.clamp(0, _events.length), event),
-      deleteRemotely: () => _api.deleteEvent(event.id),
+      deleteRemotely: () => OfflineQueue.deleteEvent(_api, event.id),
     );
   }
 
@@ -533,7 +582,8 @@ class _TasksTabState extends State<TasksTab> {
                       : start.add(Duration(minutes: durationMinutes));
 
                   try {
-                    final created = await _api.createEvent(
+                    final created = await OfflineQueue.createEvent(
+                      _api,
                       title: title,
                       location: locationCtrl.text.trim(),
                       description: descCtrl.text.trim(),
@@ -544,6 +594,11 @@ class _TasksTabState extends State<TasksTab> {
                     setState(() {
                       _events.add(created);
                     });
+                    if (created.isLocal && mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Saved on your phone. It will sync when Muse is reachable.')),
+                      );
+                    }
                   } catch (e) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -634,6 +689,20 @@ class _TasksTabState extends State<TasksTab> {
                         setState(() => _events.add(ev));
                       }
                     } catch (e) {
+                      if (OfflineQueue.isNetworkError(e)) {
+                        final local = await OfflineQueue.queueEvent(
+                          title: promptCtrl.text.trim(),
+                          startTime: DateTime.now().add(const Duration(hours: 1)),
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (mounted) {
+                          setState(() => _events.add(local));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Saved on your phone. It will sync when Muse is reachable.')),
+                          );
+                        }
+                        return;
+                      }
                       setPromptState(() => submitting = false);
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -671,6 +740,20 @@ class _TasksTabState extends State<TasksTab> {
                             setState(() => _events.add(ev));
                           }
                         } catch (e) {
+                          if (OfflineQueue.isNetworkError(e)) {
+                            final local = await OfflineQueue.queueEvent(
+                              title: p,
+                              startTime: DateTime.now().add(const Duration(hours: 1)),
+                            );
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (mounted) {
+                              setState(() => _events.add(local));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Saved on your phone. It will sync when Muse is reachable.')),
+                              );
+                            }
+                            return;
+                          }
                           setPromptState(() => submitting = false);
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
