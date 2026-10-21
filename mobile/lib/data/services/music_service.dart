@@ -16,6 +16,7 @@ class MusicService {
     _init();
   }
 
+  factory MusicService() => instance;
   static final MusicService instance = MusicService._();
 
   final ApiService _api = ApiService();
@@ -75,13 +76,20 @@ class MusicService {
       );
     } catch (_) {}
 
+    int lastNotifSec = -1;
     _stateSub = _player.onPlayerStateChanged.listen((state) {
       playerState.value = state;
+      lastNotifSec = -1;
       _updateNotification();
     });
 
     _posSub = _player.onPositionChanged.listen((pos) {
       position.value = pos;
+      final curSec = pos.inSeconds;
+      if (curSec != lastNotifSec) {
+        lastNotifSec = curSec;
+        _updateNotification();
+      }
       final fadeSec = crossfadeSeconds.value;
       final durSec = duration.value.inSeconds;
       if (fadeSec > 0 && durSec > fadeSec && pos.inSeconds >= durSec - fadeSec) {
@@ -93,6 +101,8 @@ class MusicService {
 
     _durSub = _player.onDurationChanged.listen((dur) {
       duration.value = dur;
+      lastNotifSec = -1;
+      _updateNotification();
     });
 
     _compSub = _player.onPlayerComplete.listen((_) {
@@ -521,7 +531,7 @@ class MusicService {
     }
   }
 
-  void _updateNotification() {
+  Future<void> _updateNotification() async {
     final track = currentTrack.value;
     if (track == null) {
       _cancelNotification();
@@ -531,6 +541,21 @@ class MusicService {
     final isPlaying = playerState.value == PlayerState.playing;
     final title = track['title'] as String? ?? track['filename'] as String? ?? 'Music';
     final artist = track['artist'] as String? ?? activePlaylistName.value ?? 'Muse Music';
+    final pos = position.value;
+    final dur = duration.value;
+    final durSec = dur.inSeconds;
+    final posSec = pos.inSeconds;
+    final posStr = _formatDuration(pos);
+    final durStr = _formatDuration(dur);
+    final filename = track['filename'] as String? ?? '';
+
+    AndroidBitmap<Object> largeIconBitmap = const DrawableResourceAndroidBitmap('ic_muse_logo');
+    try {
+      final offlineCover = await getOfflineCoverFile(filename);
+      if (offlineCover != null && await offlineCover.exists()) {
+        largeIconBitmap = FilePathAndroidBitmap(offlineCover.path);
+      }
+    } catch (_) {}
 
     final androidDetails = AndroidNotificationDetails(
       _channelId,
@@ -544,21 +569,35 @@ class MusicService {
       category: AndroidNotificationCategory.transport,
       visibility: NotificationVisibility.public,
       color: const Color(0xFF7C3AED),
+      icon: 'ic_muse_logo',
+      largeIcon: largeIconBitmap,
+      subText: durSec > 0 ? '$posStr / $durStr' : null,
+      showProgress: durSec > 0,
+      maxProgress: durSec > 0 ? durSec : 100,
+      progress: durSec > 0 ? posSec.clamp(0, durSec) : 0,
+      indeterminate: false,
+      styleInformation: const MediaStyleInformation(),
       actions: [
         const AndroidNotificationAction(
           'music_prev',
-          'Prev',
+          'Previous',
+          icon: DrawableResourceAndroidBitmap('ic_media_prev'),
           showsUserInterface: false,
+          cancelNotification: false,
         ),
         AndroidNotificationAction(
           isPlaying ? 'music_pause' : 'music_play',
           isPlaying ? 'Pause' : 'Play',
+          icon: DrawableResourceAndroidBitmap(isPlaying ? 'ic_media_pause' : 'ic_media_play'),
           showsUserInterface: false,
+          cancelNotification: false,
         ),
         const AndroidNotificationAction(
           'music_next',
           'Next',
+          icon: DrawableResourceAndroidBitmap('ic_media_next'),
           showsUserInterface: false,
+          cancelNotification: false,
         ),
       ],
     );
@@ -569,13 +608,19 @@ class MusicService {
       presentBadge: false,
     );
 
-    _notifications.show(
+    await _notifications.show(
       id: _notificationId,
       title: title,
-      body: artist,
+      body: durSec > 0 ? '$artist • $posStr / $durStr' : artist,
       notificationDetails: NotificationDetails(android: androidDetails, iOS: iosDetails),
       payload: 'muse_music',
     );
+  }
+
+  String _formatDuration(Duration d) {
+    final m = d.inMinutes;
+    final s = d.inSeconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
   }
 
   void _cancelNotification() {
