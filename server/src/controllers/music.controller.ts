@@ -10,6 +10,7 @@ export interface MusicTrack {
   size: number
   mtime: number
   url: string
+  coverUrl?: string
 }
 
 const SUPPORTED_EXTENSIONS = new Set(['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'])
@@ -121,7 +122,8 @@ export function getAvailableSongs(): MusicTrack[] {
           artist: parsed.artist,
           size: stat.size,
           mtime: stat.mtimeMs,
-          url: `/api/music/stream/${encodeURIComponent(entry.name)}`
+          url: `/api/music/stream/${encodeURIComponent(entry.name)}`,
+          coverUrl: `/api/music/cover/${encodeURIComponent(entry.name)}`
         })
       } catch {}
     }
@@ -429,6 +431,150 @@ export async function streamSong(req: Request, res: Response) {
     if (!res.headersSent) {
       res.status(500).json({ error: err?.message || 'Error streaming music' })
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Music Cover Art Search & Caching (iTunes API Integration)
+// ---------------------------------------------------------------------------
+
+export function getCoversDir(): string {
+  const musicDir = getMusicDir()
+  const coversDir = path.join(musicDir, '.covers')
+  if (!fs.existsSync(coversDir)) {
+    try {
+      fs.mkdirSync(coversDir, { recursive: true })
+    } catch {}
+  }
+  return coversDir
+}
+
+export async function searchCoverArt(req: Request, res: Response) {
+  try {
+    const query = String(req.query.term || req.query.query || '').trim()
+    if (!query) {
+      return res.status(400).json({ error: 'Search term is required' })
+    }
+
+    const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=10`
+    const itunesRes = await fetch(itunesUrl)
+    if (!itunesRes.ok) {
+      return res.status(itunesRes.status).json({ error: 'Failed to search iTunes covers' })
+    }
+
+    const data = await itunesRes.json()
+    const results = Array.isArray(data.results) ? data.results : []
+    const candidates = results.map((item: any) => {
+      const rawArt = item.artworkUrl100 || ''
+      const highRes = rawArt.replace('100x100', '600x600')
+      return {
+        trackId: item.trackId,
+        title: item.trackName,
+        artist: item.artistName,
+        album: item.collectionName,
+        coverUrl: highRes,
+        thumbnailUrl: rawArt,
+        releaseDate: item.releaseDate
+      }
+    })
+
+    res.json({ candidates })
+  } catch (err: any) {
+    console.error('Error searching cover art:', err)
+    res.status(500).json({ error: err?.message || 'Failed to search cover art' })
+  }
+}
+
+export async function getCoverArt(req: Request, res: Response) {
+  try {
+    const rawParam = req.params.filename
+    const filename = Array.isArray(rawParam) ? rawParam[0] : rawParam
+    if (!filename || typeof filename !== 'string') {
+      return res.status(400).json({ error: 'Filename is required' })
+    }
+
+    const safeBase = path.basename(filename)
+    const coversDir = getCoversDir()
+    const coverPath = path.join(coversDir, `${safeBase}.jpg`)
+
+    if (fs.existsSync(coverPath)) {
+      res.setHeader('Content-Type', 'image/jpeg')
+      res.setHeader('Cache-Control', 'public, max-age=86400')
+      return fs.createReadStream(coverPath).pipe(res)
+    }
+
+    // Auto-enrich from iTunes using track title & artist
+    const parsed = parseTrackInfo(safeBase)
+    const term = parsed.artist ? `${parsed.artist} ${parsed.title}` : parsed.title
+
+    try {
+      const itunesUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&entity=song&limit=3`
+      const itunesRes = await fetch(itunesUrl)
+      if (itunesRes.ok) {
+        const data = await itunesRes.json()
+        const first = data.results?.[0]
+        if (first?.artworkUrl100) {
+          const highRes = first.artworkUrl100.replace('100x100', '600x600')
+          const imgRes = await fetch(highRes)
+          if (imgRes.ok) {
+            const buffer = Buffer.from(await imgRes.arrayBuffer())
+            fs.writeFileSync(coverPath, buffer)
+            res.setHeader('Content-Type', 'image/jpeg')
+            res.setHeader('Cache-Control', 'public, max-age=86400')
+            return res.send(buffer)
+          }
+        }
+      }
+    } catch {}
+
+    // Fallback: stylish modern gradient SVG placeholder with music note
+    res.setHeader('Content-Type', 'image/svg+xml')
+    res.setHeader('Cache-Control', 'public, max-age=3600')
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300">
+      <defs>
+        <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#312e81" />
+          <stop offset="100%" stop-color="#6366f1" />
+        </linearGradient>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#g)" />
+      <circle cx="150" cy="150" r="70" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="8" />
+      <path d="M135 180V120L175 110V170M135 180A15 15 0 1 1 120 165A15 15 0 0 1 135 180ZM175 170A15 15 0 1 1 160 155A15 15 0 0 1 175 170Z" fill="white" opacity="0.9" />
+    </svg>`
+    res.send(svg)
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Error fetching cover art' })
+  }
+}
+
+export async function saveCoverArt(req: Request, res: Response) {
+  try {
+    const rawParam = req.params.filename
+    const filename = Array.isArray(rawParam) ? rawParam[0] : rawParam
+    const coverUrl = req.body?.coverUrl
+    if (!filename || !coverUrl || typeof coverUrl !== 'string') {
+      return res.status(400).json({ error: 'filename and coverUrl are required' })
+    }
+
+    const safeBase = path.basename(filename)
+    const coversDir = getCoversDir()
+    const coverPath = path.join(coversDir, `${safeBase}.jpg`)
+
+    const imgRes = await fetch(coverUrl)
+    if (!imgRes.ok) {
+      return res.status(400).json({ error: 'Failed to download cover image from source URL' })
+    }
+
+    const buffer = Buffer.from(await imgRes.arrayBuffer())
+    fs.writeFileSync(coverPath, buffer)
+
+    res.json({
+      success: true,
+      message: 'Cover art updated successfully',
+      coverUrl: `/api/music/cover/${encodeURIComponent(safeBase)}?t=${Date.now()}`
+    })
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to save cover art' })
   }
 }
 

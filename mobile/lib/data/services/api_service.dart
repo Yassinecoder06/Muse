@@ -817,6 +817,35 @@ class ApiService {
     await _http.delete(uri, headers: headers).timeout(const Duration(seconds: 10));
   }
 
+  Future<List<Map<String, dynamic>>> searchMusicCovers(String query) async {
+    try {
+      final base = await _getBaseUrl();
+      final uri = Uri.parse('$base/api/music/cover/search?query=${Uri.encodeComponent(query)}');
+      final res = await _http.get(uri).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final candidates = data['candidates'] as List<dynamic>? ?? [];
+        return candidates.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<bool> saveMusicCover(String filename, String coverUrl) async {
+    try {
+      final base = await _getBaseUrl();
+      final headers = await _getHeaders();
+      final uri = Uri.parse('$base/api/music/cover/${Uri.encodeComponent(filename)}');
+      final res = await _http.post(
+        uri,
+        headers: headers,
+        body: jsonEncode({'coverUrl': coverUrl}),
+      ).timeout(const Duration(seconds: 15));
+      return res.statusCode == 200;
+    } catch (_) {}
+    return false;
+  }
+
   // --- Templates & Specialized Notes ---
   Future<List<Map<String, dynamic>>> fetchTemplates() async {
     try {

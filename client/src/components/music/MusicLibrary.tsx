@@ -20,12 +20,21 @@ import {
   ArrowUpCircle,
   PlayCircle,
   SkipBack,
-  SkipForward
+  SkipForward,
+  Shuffle,
+  Repeat,
+  Repeat1,
+  Maximize2,
+  Moon,
+  Image as ImageIcon,
+  Sliders
 } from 'lucide-react'
 import { api } from '../../services/api'
 import { robotMusic, type MusicPlayerState } from '../../services/robot-music.service'
 import { ConfirmModal } from '../ConfirmModal'
 import { DraggableTrackList, type TrackItem } from './DraggableTrackList'
+import { CoverArtModal } from './CoverArtModal'
+import { NowPlayingModal } from './NowPlayingModal'
 
 interface MusicTrackItem {
   filename: string
@@ -34,6 +43,7 @@ interface MusicTrackItem {
   size: number
   mtime: number
   url: string
+  coverUrl?: string
 }
 
 interface Playlist {
@@ -76,6 +86,17 @@ export function MusicLibrary({
   const [newPlaylistName, setNewPlaylistName] = useState('')
   const [addingToId, setAddingToId] = useState<string | null>(null)
   const [addedStatus, setAddedStatus] = useState<string | null>(null)
+
+  // Cover Art Search & Now Playing Modals
+  const [coverModalSong, setCoverModalSong] = useState<MusicTrackItem | null>(null)
+  const [showNowPlaying, setShowNowPlaying] = useState(false)
+  const [showPlayerSleepMenu, setShowPlayerSleepMenu] = useState(false)
+
+  const handleCoverSelected = (filename: string, newCoverUrl: string) => {
+    setSongs(prev =>
+      prev.map(s => (s.filename === filename ? { ...s, coverUrl: newCoverUrl } : s))
+    )
+  }
 
   const fetchSongs = async () => {
     try {
@@ -316,9 +337,25 @@ export function MusicLibrary({
       {playerState.currentTrack && (
         <div className="music-player-wrapper">
           <div className="music-active-player-banner">
-            <div className="player-track-info">
-              <div className="player-track-icon">
-                <Music2 size={20} className={playerState.isPlaying ? 'pulsing-note' : ''} />
+            <div
+              className="player-track-info"
+              onClick={() => setShowNowPlaying(true)}
+              style={{ cursor: 'pointer' }}
+              title="Click to open Expanded Now Playing view"
+            >
+              <div className="player-track-icon cover-interactive">
+                <img
+                  src={
+                    playerState.currentTrack.coverUrl ||
+                    `/api/music/cover/${encodeURIComponent(playerState.currentTrack.filename)}`
+                  }
+                  alt={playerState.currentTrack.title}
+                  className="player-thumb-img"
+                  onError={e => {
+                    ;(e.currentTarget as HTMLElement).style.display = 'none'
+                  }}
+                />
+                <Music2 size={18} className={playerState.isPlaying ? 'pulsing-note' : ''} />
               </div>
               <div className="player-track-meta">
                 <span className="player-title">{playerState.currentTrack.title}</span>
@@ -331,6 +368,14 @@ export function MusicLibrary({
 
             <div className="player-controls">
               <div className="player-buttons-group">
+                <button
+                  type="button"
+                  className={`player-step-btn ${playerState.shuffle ? 'active-tint' : ''}`}
+                  onClick={() => robotMusic.toggleShuffle()}
+                  title={`Shuffle: ${playerState.shuffle ? 'On' : 'Off'}`}
+                >
+                  <Shuffle size={15} />
+                </button>
                 <button
                   type="button"
                   className="player-step-btn"
@@ -361,6 +406,14 @@ export function MusicLibrary({
                 >
                   <SkipForward size={17} />
                 </button>
+                <button
+                  type="button"
+                  className={`player-step-btn ${playerState.repeatMode !== 'off' ? 'active-tint' : ''}`}
+                  onClick={() => robotMusic.toggleRepeatMode()}
+                  title={`Repeat Mode: ${playerState.repeatMode} (Click to toggle)`}
+                >
+                  {playerState.repeatMode === 'one' ? <Repeat1 size={15} /> : <Repeat size={15} />}
+                </button>
               </div>
               <span className="player-time-text">
                 {formatTime(playerState.currentTime)} / {formatTime(playerState.duration)}
@@ -375,33 +428,136 @@ export function MusicLibrary({
               />
             </div>
 
-            <div className="player-volume-wrap">
+            <div className="player-extras-group">
+              {/* Playback speed cycle */}
               <button
-                className="player-vol-icon-btn"
-                onClick={() => robotMusic.setVolume(playerState.volume > 0 ? 0 : 0.8)}
+                type="button"
+                className="player-speed-badge"
+                onClick={() => {
+                  const speeds = [1, 1.25, 1.5, 2, 0.75]
+                  const next = speeds[(speeds.indexOf(playerState.playbackRate) + 1) % speeds.length]
+                  robotMusic.setPlaybackRate(next)
+                }}
+                title="Playback speed (click to cycle)"
               >
-                {playerState.volume > 0 ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                {playerState.playbackRate}x
               </button>
-              <input
-                type="range"
-                className="player-vol-slider"
-                min={0}
-                max={1}
-                step={0.05}
-                value={playerState.volume}
-                onChange={e => robotMusic.setVolume(parseFloat(e.target.value))}
-              />
-            </div>
 
-            {/* Priority Queue Toggle Button */}
-            <button
-              className={`player-queue-toggle-btn ${showQueue ? 'active' : ''}`}
-              onClick={() => setShowQueue(!showQueue)}
-              title="Open playback priority queue"
-            >
-              <ListMusic size={15} />
-              <span>Queue ({activeQueue.length})</span>
-            </button>
+              {/* Sleep Timer */}
+              <div className="player-sleep-wrapper" style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  className={`player-step-btn ${playerState.sleepTimerDuration ? 'active-tint' : ''}`}
+                  onClick={() => setShowPlayerSleepMenu(!showPlayerSleepMenu)}
+                  title="Sleep Timer"
+                >
+                  <Moon size={15} />
+                  {playerState.sleepTimerRemaining !== null && (
+                    <span className="player-badge-text">
+                      {Math.ceil(playerState.sleepTimerRemaining / 60)}m
+                    </span>
+                  )}
+                  {playerState.sleepTimerDuration === 'track' && (
+                    <span className="player-badge-text">1trk</span>
+                  )}
+                </button>
+
+                {showPlayerSleepMenu && (
+                  <div className="player-quick-sleep-popup">
+                    <div className="sleep-popup-title">Stop playback after:</div>
+                    <button
+                      onClick={() => {
+                        robotMusic.setSleepTimer(null)
+                        setShowPlayerSleepMenu(false)
+                      }}
+                    >
+                      Off
+                    </button>
+                    <button
+                      onClick={() => {
+                        robotMusic.setSleepTimer('track')
+                        setShowPlayerSleepMenu(false)
+                      }}
+                    >
+                      End of Track
+                    </button>
+                    <button
+                      onClick={() => {
+                        robotMusic.setSleepTimer(15)
+                        setShowPlayerSleepMenu(false)
+                      }}
+                    >
+                      15 min
+                    </button>
+                    <button
+                      onClick={() => {
+                        robotMusic.setSleepTimer(30)
+                        setShowPlayerSleepMenu(false)
+                      }}
+                    >
+                      30 min
+                    </button>
+                    <button
+                      onClick={() => {
+                        robotMusic.setSleepTimer(60)
+                        setShowPlayerSleepMenu(false)
+                      }}
+                    >
+                      1 hour
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Search Cover Art on iTunes */}
+              <button
+                type="button"
+                className="player-step-btn"
+                onClick={() => setCoverModalSong(playerState.currentTrack as any)}
+                title="Search iTunes Cover Art"
+              >
+                <ImageIcon size={15} />
+              </button>
+
+              {/* Volume Slider */}
+              <div className="player-volume-wrap">
+                <button
+                  className="player-vol-icon-btn"
+                  onClick={() => robotMusic.setVolume(playerState.volume > 0 ? 0 : 0.8)}
+                >
+                  {playerState.volume > 0 ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                </button>
+                <input
+                  type="range"
+                  className="player-vol-slider"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={playerState.volume}
+                  onChange={e => robotMusic.setVolume(parseFloat(e.target.value))}
+                />
+              </div>
+
+              {/* Priority Queue Toggle Button */}
+              <button
+                className={`player-queue-toggle-btn ${showQueue ? 'active' : ''}`}
+                onClick={() => setShowQueue(!showQueue)}
+                title="Open playback priority queue"
+              >
+                <ListMusic size={15} />
+                <span>Queue ({activeQueue.length})</span>
+              </button>
+
+              {/* Expand Fullscreen / Now Playing */}
+              <button
+                type="button"
+                className="player-expand-btn"
+                onClick={() => setShowNowPlaying(true)}
+                title="Expand Now Playing view"
+              >
+                <Maximize2 size={16} />
+              </button>
+            </div>
           </div>
 
           {/* Draggable Active Queue Panel */}
@@ -535,6 +691,27 @@ export function MusicLibrary({
                   )}
                 </button>
 
+                <div
+                  className="track-cover-badge"
+                  onClick={e => {
+                    e.stopPropagation()
+                    setCoverModalSong(song)
+                  }}
+                  title="Search & change album cover on iTunes"
+                >
+                  <img
+                    src={song.coverUrl || `/api/music/cover/${encodeURIComponent(song.filename)}`}
+                    alt={song.title}
+                    className="track-cover-img"
+                    onError={e => {
+                      ;(e.currentTarget as HTMLElement).style.display = 'none'
+                    }}
+                  />
+                  <div className="track-cover-overlay-hint">
+                    <ImageIcon size={11} />
+                  </div>
+                </div>
+
                 <div className="track-details">
                   <div className="track-title-row">
                     <span className="track-title music-song-name-red" title={song.title}>
@@ -556,6 +733,18 @@ export function MusicLibrary({
                 </div>
 
                 <div className="track-actions">
+                  <button
+                    className="track-cover-btn"
+                    onClick={e => {
+                      e.stopPropagation()
+                      setCoverModalSong(song)
+                    }}
+                    title="Search and change album cover on iTunes"
+                  >
+                    <ImageIcon size={13} />
+                    <span>Cover</span>
+                  </button>
+
                   <button
                     className="track-sing-btn"
                     onClick={e => {
@@ -755,6 +944,22 @@ export function MusicLibrary({
         danger
         onConfirm={handleBatchDelete}
         onCancel={() => !isBatchDeleting && setBatchConfirmOpen(false)}
+      />
+
+      {/* Fullscreen / Expanded Now Playing View */}
+      <NowPlayingModal
+        isOpen={showNowPlaying}
+        onClose={() => setShowNowPlaying(false)}
+        playerState={playerState}
+        onOpenCoverSearch={track => setCoverModalSong(track as any)}
+      />
+
+      {/* Cover Art Search & Selection Modal (iTunes Catalog) */}
+      <CoverArtModal
+        isOpen={!!coverModalSong}
+        song={coverModalSong}
+        onClose={() => setCoverModalSong(null)}
+        onCoverSelected={handleCoverSelected}
       />
     </div>
   )
