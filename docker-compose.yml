@@ -48,21 +48,6 @@ services:
       - ./supabase/migrations:/migrations:ro
       - ./docker/migrate/migrate.sh:/migrate.sh:ro
     entrypoint: ["sh", "/migrate.sh"]
-  kong:
-    image: kong:2.8.1
-    restart: unless-stopped
-    depends_on:
-      db: { condition: service_healthy }
-    environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
-      KONG_DNS_ORDER: LAST,A,CNAME
-      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
-      KONG_TRUSTED_IPS: 172.18.0.0/16
-      ANON_KEY: ${ANON_KEY}
-      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
-    volumes: ["./docker/supabase/kong.yml:/var/lib/kong/kong.yml:ro"]
-    ports: ["127.0.0.1:8000:8000", "127.0.0.1:8443:8443"]
   nginx:
     build:
       context: .
@@ -73,9 +58,12 @@ services:
         VITE_SUPABASE_ANON_KEY: ${ANON_KEY}
     restart: unless-stopped
     depends_on:
-      kong: { condition: service_started }
-      server: { condition: service_healthy }
+      auth: { condition: service_started }
+      rest: { condition: service_started }
     ports: ["127.0.0.1:8080:80"]
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./supabase/templates:/usr/share/nginx/html/email-templates:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
       interval: 10s
@@ -91,7 +79,7 @@ services:
       NODE_ENV: production
       PORT: 3002
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
-      SUPABASE_URL: http://kong:8000
+      SUPABASE_URL: http://nginx:80
       QDRANT_URL: http://qdrant:6333
       OLLAMA_EMBEDDING_BASE_URL: ${OLLAMA_EMBEDDING_BASE_URL_DOCKER:-http://host.docker.internal:11434}
       MUSIC_DOWNLOADER_URL: http://music-downloader:8001
@@ -99,7 +87,9 @@ services:
       - ./music:/app/music:rw
     depends_on:
       migrate: { condition: service_completed_successfully }
-      kong: { condition: service_started }
+      nginx: { condition: service_started }
+      rest: { condition: service_started }
+      auth: { condition: service_started }
       qdrant: { condition: service_started }
       music-downloader: { condition: service_started }
     extra_hosts: ["host.docker.internal:host-gateway"]
@@ -129,7 +119,7 @@ services:
   auth:
     image: supabase/gotrue:v2.158.1
     restart: unless-stopped
-    depends_on: [db, mailer-templates]
+    depends_on: [db]
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       GOTRUE_API_PORT: 9999
@@ -154,20 +144,16 @@ services:
       GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: "true"
       GOTRUE_MAILER_NOTIFICATIONS_PASSWORD_CHANGED_ENABLED: "true"
       GOTRUE_MAILER_NOTIFICATIONS_EMAIL_CHANGED_ENABLED: "true"
-      # Auth is exposed through Kong below /auth/v1, so links in messages must
+      # Auth is exposed through Nginx below /auth/v1, so links in messages must
       # retain that gateway prefix.
       GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
       GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
       GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
-      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: http://mailer-templates:8080/confirmation.html
-      GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE: http://mailer-templates:8080/email-change.html
-      GOTRUE_MAILER_TEMPLATES_RECOVERY: http://mailer-templates:8080/recovery.html
-      GOTRUE_MAILER_TEMPLATES_PASSWORD_CHANGED_NOTIFICATION: http://mailer-templates:8080/password-changed.html
-      GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGED_NOTIFICATION: http://mailer-templates:8080/email-changed.html
-  mailer-templates:
-    image: nginx:1.27-alpine
-    restart: unless-stopped
-    volumes: ["./supabase/templates:/usr/share/nginx/html:ro"]
+      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: http://nginx/email-templates/confirmation.html
+      GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE: http://nginx/email-templates/email-change.html
+      GOTRUE_MAILER_TEMPLATES_RECOVERY: http://nginx/email-templates/recovery.html
+      GOTRUE_MAILER_TEMPLATES_PASSWORD_CHANGED_NOTIFICATION: http://nginx/email-templates/password-changed.html
+      GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGED_NOTIFICATION: http://nginx/email-templates/email-changed.html
   rest:
     image: postgrest/postgrest:v12.2.3
     restart: unless-stopped
@@ -177,69 +163,6 @@ services:
       PGRST_DB_SCHEMAS: public,storage
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: ${JWT_SECRET:-replace-this-with-a-32-character-minimum-secret}
-  realtime:
-    image: supabase/realtime:v2.30.34
-    restart: unless-stopped
-    depends_on: [db]
-    environment:
-      APP_NAME: realtime
-      ERLANG_COOKIE: ${REALTIME_ERLANG_COOKIE:-musecookie}
-      PORT: 4000
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_USER: supabase_admin
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      DB_NAME: postgres
-      DB_AFTER_CONNECT_QUERY: SET search_path TO realtime
-      DB_ENC_KEY: ${REALTIME_DB_ENC_KEY:-supabaserealtime}
-      API_JWT_SECRET: ${JWT_SECRET:-replace-this-with-a-32-character-minimum-secret}
-      SECRET_KEY_BASE: ${REALTIME_SECRET_KEY_BASE:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
-      RLIMIT_NOFILE: "10000"
-      SEED_SELF_HOST: "true"
-  storage:
-    image: supabase/storage-api:v1.11.13
-    restart: unless-stopped
-    depends_on: [db, rest]
-    environment:
-      ANON_KEY: ${ANON_KEY}
-      SERVICE_KEY: ${SERVICE_ROLE_KEY}
-      POSTGREST_URL: http://rest:3000
-      PGRST_JWT_SECRET: ${JWT_SECRET:-replace-this-with-a-32-character-minimum-secret}
-      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD:-postgres}@db:5432/postgres
-      FILE_SIZE_LIMIT: 52428800
-      STORAGE_BACKEND: file
-      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
-    volumes: ["storage-data:/var/lib/storage"]
-  meta:
-    image: supabase/postgres-meta:v0.84.2
-    restart: unless-stopped
-    depends_on: [db]
-    environment:
-      PG_META_PORT: 8080
-      PG_META_DB_HOST: db
-      PG_META_DB_PORT: 5432
-      PG_META_DB_NAME: postgres
-      PG_META_DB_USER: supabase_admin
-      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-  studio:
-    image: supabase/studio:20240729-ce42139
-    restart: unless-stopped
-    depends_on: [kong]
-    ports: ["127.0.0.1:${STUDIO_PORT:-54323}:3000"]
-    environment:
-      STUDIO_PG_META_URL: http://meta:8080
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      DEFAULT_ORGANIZATION_NAME: Muse
-      DEFAULT_PROJECT_NAME: Muse Local
-      SUPABASE_URL: http://kong:8000
-      SUPABASE_PUBLIC_URL: http://localhost:8000
-      SUPABASE_ANON_KEY: ${ANON_KEY}
-      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://$(hostname -i):3000/api/profile').then(r => { if (r.status !== 200) throw new Error(r.status) }).catch(() => process.exit(1))\""]
-      interval: 5s
-      timeout: 5s
-      retries: 3
   qdrant:
     image: qdrant/qdrant:latest
     restart: unless-stopped
@@ -247,5 +170,4 @@ services:
     volumes: ["qdrant-data:/qdrant/storage"]
 volumes:
   postgres-data:
-  storage-data:
   qdrant-data:
