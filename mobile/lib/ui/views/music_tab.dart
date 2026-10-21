@@ -1324,397 +1324,14 @@ class _MusicTabState extends State<MusicTab> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: false,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
       builder: (sheetContext) {
-        return ValueListenableBuilder<Map<String, dynamic>?>(
-          valueListenable: _music.currentTrack,
-          builder: (context, track, _) {
-            if (track == null) return const SizedBox.shrink();
-            final filename = track['filename'] as String? ?? '';
-            final title = track['title'] as String? ?? filename;
-            final artist = track['artist'] as String? ?? '';
-
-            return ValueListenableBuilder<PlayerState>(
-              valueListenable: _music.playerState,
-              builder: (context, state, _) {
-                final isPlaying = state == PlayerState.playing;
-
-                return ValueListenableBuilder<Duration>(
-                  valueListenable: _music.position,
-                  builder: (context, pos, _) {
-                    return ValueListenableBuilder<Duration>(
-                      valueListenable: _music.duration,
-                      builder: (context, dur, _) {
-                        return SafeArea(
-                          top: false,
-                          child: Container(
-                            padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
-                            decoration: BoxDecoration(
-                              color: AppTheme.isDark ? const Color(0xFF14121F) : Colors.white,
-                              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                              boxShadow: const [
-                                BoxShadow(color: Colors.black45, blurRadius: 24, offset: Offset(0, -6)),
-                              ],
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                // Handle
-                                Center(
-                                  child: Container(
-                                    width: 44,
-                                    height: 4,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.withValues(alpha: 0.4),
-                                      borderRadius: BorderRadius.circular(2),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-
-                                // Header
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'PLAYING FROM',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w800,
-                                            letterSpacing: 0.8,
-                                            color: AppTheme.getTextSecondary(context),
-                                          ),
-                                        ),
-                                        ValueListenableBuilder<String?>(
-                                          valueListenable: _music.activePlaylistName,
-                                          builder: (ctx, plName, _) => Text(
-                                            plName ?? 'Music Library',
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.bold,
-                                              color: AppTheme.getTextPrimary(context),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
-                                      color: AppTheme.getTextPrimary(context),
-                                      onPressed: () => Navigator.pop(sheetContext),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-
-                                // Big Album Artwork with Change Cover badge
-                                Stack(
-                                  alignment: Alignment.bottomRight,
-                                  children: [
-                                    Container(
-                                      width: 240,
-                                      height: 240,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(20),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: const Color(0xFF7C3AED).withValues(alpha: 0.35),
-                                            blurRadius: 24,
-                                            offset: const Offset(0, 10),
-                                          ),
-                                        ],
-                                      ),
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(20),
-                                        child: _buildCoverThumbnail(filename, size: 240, isCurrentSong: false),
-                                      ),
-                                    ),
-                                    Padding(
-                                      padding: const EdgeInsets.all(10),
-                                      child: ElevatedButton.icon(
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.black.withValues(alpha: 0.65),
-                                          foregroundColor: Colors.white,
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                        ),
-                                        onPressed: () {
-                                          Navigator.pop(sheetContext);
-                                          _showCoverArtSheet(track);
-                                        },
-                                        icon: const Icon(Icons.image_search_rounded, size: 14),
-                                        label: const Text('Cover'),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 14),
-
-                                // Visualizer Animation
-                                _SoundWaveVisualizer(isPlaying: isPlaying),
-                                const SizedBox(height: 12),
-
-                                // Track Title & Artist
-                                Text(
-                                  title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppTheme.getTextPrimary(context),
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  artist.isNotEmpty ? artist : 'Bip Singing Companion',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF8B5CF6),
-                                  ),
-                                ),
-                                const SizedBox(height: 14),
-
-                                // Timeline slider
-                                SliderTheme(
-                                  data: SliderTheme.of(context).copyWith(
-                                    trackHeight: 4,
-                                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                                    activeTrackColor: const Color(0xFF8B5CF6),
-                                    inactiveTrackColor: AppTheme.isDark ? Colors.white12 : Colors.black12,
-                                    thumbColor: const Color(0xFF8B5CF6),
-                                  ),
-                                  child: Slider(
-                                    value: dur.inMilliseconds > 0
-                                        ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
-                                        : 0.0,
-                                    onChanged: (val) {
-                                      final targetMs = (val * dur.inMilliseconds).toInt();
-                                      _music.seek(Duration(milliseconds: targetMs));
-                                    },
-                                  ),
-                                ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(_formatDuration(pos),
-                                          style: TextStyle(fontSize: 11, color: AppTheme.getTextSecondary(context))),
-                                      Text(
-                                        dur.inSeconds > 0 ? '-${_formatDuration(dur - pos)}' : '0:00',
-                                        style: TextStyle(fontSize: 11, color: AppTheme.getTextSecondary(context)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-
-                                // Playback Controls Row (Bigger, comfortable hit targets)
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                  children: [
-                                    // Shuffle
-                                    ValueListenableBuilder<bool>(
-                                      valueListenable: _music.isShuffle,
-                                      builder: (ctx, isShuf, _) => IconButton(
-                                        icon: Icon(
-                                          Icons.shuffle_rounded,
-                                          color: isShuf
-                                              ? const Color(0xFF8B5CF6)
-                                              : AppTheme.getTextSecondary(context),
-                                          size: 26,
-                                        ),
-                                        padding: const EdgeInsets.all(8),
-                                        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                                        onPressed: _music.toggleShuffle,
-                                      ),
-                                    ),
-
-                                    // Prev
-                                    IconButton(
-                                      icon: Icon(Icons.skip_previous_rounded,
-                                          size: 38, color: AppTheme.getTextPrimary(context)),
-                                      padding: const EdgeInsets.all(8),
-                                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                                      onPressed: _music.previous,
-                                    ),
-
-                                    // Big Play / Pause
-                                    Container(
-                                      width: 66,
-                                      height: 66,
-                                      decoration: BoxDecoration(
-                                        gradient: const LinearGradient(
-                                          colors: [Color(0xFF7C3AED), Color(0xFFEC4899)],
-                                        ),
-                                        shape: BoxShape.circle,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: const Color(0xFF7C3AED).withValues(alpha: 0.4),
-                                            blurRadius: 18,
-                                            offset: const Offset(0, 6),
-                                          ),
-                                        ],
-                                      ),
-                                      child: IconButton(
-                                        icon: Icon(
-                                          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                          size: 38,
-                                          color: Colors.white,
-                                        ),
-                                        onPressed: _music.togglePlayPause,
-                                      ),
-                                    ),
-
-                                    // Next
-                                    IconButton(
-                                      icon: Icon(Icons.skip_next_rounded,
-                                          size: 38, color: AppTheme.getTextPrimary(context)),
-                                      padding: const EdgeInsets.all(8),
-                                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                                      onPressed: _music.next,
-                                    ),
-
-                                    // Repeat
-                                    ValueListenableBuilder<String>(
-                                      valueListenable: _music.repeatMode,
-                                      builder: (ctx, mode, _) => IconButton(
-                                        icon: Icon(
-                                          mode == 'one' ? Icons.repeat_one_rounded : Icons.repeat_rounded,
-                                          color: mode != 'off'
-                                              ? const Color(0xFF8B5CF6)
-                                              : AppTheme.getTextSecondary(context),
-                                          size: 26,
-                                        ),
-                                        padding: const EdgeInsets.all(8),
-                                        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                                        onPressed: _music.toggleRepeatMode,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-
-                                // Secondary toolbar: Speed, Sleep, Crossfade, Offline
-                                SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      // Speed chip
-                                      ValueListenableBuilder<double>(
-                                        valueListenable: _music.playbackRate,
-                                        builder: (ctx, rate, _) => ActionChip(
-                                          label: Text('${rate}x Speed',
-                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                          avatar: const Icon(Icons.speed_rounded, size: 16),
-                                          onPressed: () {
-                                            const rates = [1.0, 1.25, 1.5, 2.0, 0.75];
-                                            final next = rates[(rates.indexOf(rate) + 1) % rates.length];
-                                            _music.setPlaybackRate(next);
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-
-                                      // Sleep timer chip
-                                      ValueListenableBuilder<int?>(
-                                        valueListenable: _music.sleepTimerRemaining,
-                                        builder: (ctx, rem, _) => ActionChip(
-                                          label: Text(
-                                            rem != null ? '${(rem / 60).ceil()}m Sleep' : 'Sleep Timer',
-                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                          ),
-                                          avatar: Icon(Icons.bedtime_outlined,
-                                              size: 16, color: rem != null ? Colors.amber : null),
-                                          onPressed: () => _showSleepTimerDialog(context),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-
-                                      // Crossfade chip
-                                      ValueListenableBuilder<int>(
-                                        valueListenable: _music.crossfadeSeconds,
-                                        builder: (ctx, fade, _) => ActionChip(
-                                          label: Text(
-                                            fade > 0 ? '${fade}s Fade' : 'Crossfade Off',
-                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                          ),
-                                          avatar: const Icon(Icons.tune_rounded, size: 16),
-                                          onPressed: () {
-                                            const fades = [0, 3, 5, 8, 12];
-                                            final next = fades[(fades.indexOf(fade) + 1) % fades.length];
-                                            _music.setCrossfade(next);
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-
-                                      // Offline download chip
-                                      ValueListenableBuilder<Set<String>>(
-                                        valueListenable: _music.offlineTrackFilenames,
-                                        builder: (ctx, offlineSet, _) {
-                                          final isOffline = offlineSet.contains(filename);
-                                          return ActionChip(
-                                            label: Text(
-                                              isOffline ? 'Saved Offline' : 'Save Offline',
-                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                            ),
-                                            avatar: Icon(
-                                              isOffline ? Icons.offline_pin_rounded : Icons.download_rounded,
-                                              size: 16,
-                                              color: isOffline ? Colors.green : null,
-                                            ),
-                                            onPressed: () async {
-                                              if (isOffline) {
-                                                await _music.deleteOfflineTrack(filename);
-                                                if (context.mounted) {
-                                                  ScaffoldMessenger.of(context).showSnackBar(
-                                                    const SnackBar(
-                                                        content: Text('Removed offline audio file')),
-                                                  );
-                                                }
-                                              } else {
-                                                final ok = await _music.downloadTrackOffline(track);
-                                                if (context.mounted) {
-                                                  ScaffoldMessenger.of(context).showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(ok
-                                                          ? 'Song cached for offline listening!'
-                                                          : 'Download failed'),
-                                                    ),
-                                                  );
-                                                }
-                                              }
-                                            },
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                );
-              },
-            );
-          },
+        return _NowPlayingSheet(
+          onShowCoverArt: (track) => _showCoverArtSheet(track),
+          onShowSleepTimer: () => _showSleepTimerDialog(context),
+          buildCoverThumbnail: _buildCoverThumbnail,
         );
       },
     );
@@ -2816,6 +2433,535 @@ class _SoundWaveVisualizerState extends State<_SoundWaveVisualizer>
           }),
         );
       },
+    );
+  }
+}
+
+class _NowPlayingSheet extends StatefulWidget {
+  final void Function(Map<String, dynamic> track) onShowCoverArt;
+  final VoidCallback onShowSleepTimer;
+  final Widget Function(String filename, {double size, bool isCurrentSong, bool isPlaying}) buildCoverThumbnail;
+
+  const _NowPlayingSheet({
+    required this.onShowCoverArt,
+    required this.onShowSleepTimer,
+    required this.buildCoverThumbnail,
+  });
+
+  @override
+  State<_NowPlayingSheet> createState() => _NowPlayingSheetState();
+}
+
+class _NowPlayingSheetState extends State<_NowPlayingSheet> {
+  final DraggableScrollableController _dragController = DraggableScrollableController();
+  final MusicService _music = MusicService();
+  double _currentExtent = 0.88;
+
+  @override
+  void initState() {
+    super.initState();
+    _dragController.addListener(_onExtentChanged);
+  }
+
+  void _onExtentChanged() {
+    if (_dragController.isAttached) {
+      final ext = _dragController.size;
+      if ((ext - _currentExtent).abs() > 0.01) {
+        setState(() => _currentExtent = ext);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _dragController.removeListener(_onExtentChanged);
+    _dragController.dispose();
+    super.dispose();
+  }
+
+  void _toggleFullScreen() {
+    if (!_dragController.isAttached) return;
+    final target = _currentExtent >= 0.95 ? 0.88 : 1.0;
+    _dragController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  String _formatDuration(Duration d) {
+    final m = d.inMinutes;
+    final s = d.inSeconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isFullScreen = _currentExtent >= 0.95;
+
+    return NotificationListener<DraggableScrollableNotification>(
+      onNotification: (notification) {
+        if (notification.extent <= 0.44) {
+          Navigator.of(context).pop();
+          return true;
+        }
+        return false;
+      },
+      child: DraggableScrollableSheet(
+        controller: _dragController,
+        initialChildSize: 0.88,
+        minChildSize: 0.40,
+        maxChildSize: 1.0,
+        snap: true,
+        snapSizes: const [0.88, 1.0],
+        builder: (sheetInnerContext, scrollController) {
+          return ValueListenableBuilder<Map<String, dynamic>?>(
+            valueListenable: _music.currentTrack,
+            builder: (context, track, _) {
+              if (track == null) return const SizedBox.shrink();
+              final filename = track['filename'] as String? ?? '';
+              final title = track['title'] as String? ?? filename;
+              final artist = track['artist'] as String? ?? '';
+
+              return ValueListenableBuilder<PlayerState>(
+                valueListenable: _music.playerState,
+                builder: (context, state, _) {
+                  final isPlaying = state == PlayerState.playing;
+
+                  return ValueListenableBuilder<Duration>(
+                    valueListenable: _music.position,
+                    builder: (context, pos, _) {
+                      return ValueListenableBuilder<Duration>(
+                        valueListenable: _music.duration,
+                        builder: (context, dur, _) {
+                          final artworkSize = isFullScreen ? 280.0 : 230.0;
+                          final topRadius = isFullScreen ? 0.0 : 28.0;
+
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: AppTheme.isDark ? const Color(0xFF13101E) : Colors.white,
+                              borderRadius: BorderRadius.vertical(top: Radius.circular(topRadius)),
+                              boxShadow: const [
+                                BoxShadow(color: Colors.black54, blurRadius: 28, offset: Offset(0, -8)),
+                              ],
+                            ),
+                            child: SafeArea(
+                              top: isFullScreen,
+                              bottom: true,
+                              child: SingleChildScrollView(
+                                controller: scrollController,
+                                physics: const ClampingScrollPhysics(),
+                                padding: EdgeInsets.fromLTRB(
+                                  24,
+                                  isFullScreen ? 8 : 12,
+                                  24,
+                                  16,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // Drag Handle (Tap to toggle full screen, or drag up / down)
+                                    GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: _toggleFullScreen,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 20),
+                                        child: Container(
+                                          width: 48,
+                                          height: 5,
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey.withValues(alpha: 0.45),
+                                            borderRadius: BorderRadius.circular(3),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+
+                                    // Header with Playlist Name, Full Screen Toggle, and Drop Down
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'PLAYING FROM',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w800,
+                                                  letterSpacing: 0.9,
+                                                  color: AppTheme.getTextSecondary(context),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 1),
+                                              ValueListenableBuilder<String?>(
+                                                valueListenable: _music.activePlaylistName,
+                                                builder: (ctx, plName, _) => Text(
+                                                  plName ?? 'Music Library',
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: AppTheme.getTextPrimary(context),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            // Full Screen expand / collapse button
+                                            IconButton(
+                                              icon: Icon(
+                                                isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
+                                                size: 26,
+                                              ),
+                                              color: isFullScreen
+                                                  ? (AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary)
+                                                  : AppTheme.getTextSecondary(context),
+                                              tooltip: isFullScreen ? 'Exit Full Screen' : 'Drop Up to Full Screen',
+                                              onPressed: _toggleFullScreen,
+                                            ),
+                                            // Drop Down minimize button
+                                            IconButton(
+                                              icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
+                                              color: AppTheme.getTextPrimary(context),
+                                              tooltip: 'Minimize',
+                                              onPressed: () => Navigator.pop(sheetInnerContext),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    SizedBox(height: isFullScreen ? 20 : 12),
+
+                                    // Big Album Artwork with Cover Button
+                                    Stack(
+                                      alignment: Alignment.bottomRight,
+                                      children: [
+                                        AnimatedContainer(
+                                          duration: const Duration(milliseconds: 250),
+                                          curve: Curves.easeOutCubic,
+                                          width: artworkSize,
+                                          height: artworkSize,
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(22),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: (AppTheme.isDark
+                                                        ? const Color(0xFF7C3AED)
+                                                        : AppTheme.primary)
+                                                    .withValues(alpha: 0.38),
+                                                blurRadius: 28,
+                                                offset: const Offset(0, 12),
+                                              ),
+                                            ],
+                                          ),
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(22),
+                                            child: widget.buildCoverThumbnail(
+                                              filename,
+                                              size: artworkSize,
+                                              isCurrentSong: false,
+                                            ),
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.all(10),
+                                          child: ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.black.withValues(alpha: 0.68),
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                              textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                            ),
+                                            onPressed: () {
+                                              Navigator.pop(sheetInnerContext);
+                                              widget.onShowCoverArt(track);
+                                            },
+                                            icon: const Icon(Icons.image_search_rounded, size: 14),
+                                            label: const Text('Cover'),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    SizedBox(height: isFullScreen ? 18 : 12),
+
+                                    // Visualizer Animation
+                                    _SoundWaveVisualizer(isPlaying: isPlaying),
+                                    SizedBox(height: isFullScreen ? 16 : 10),
+
+                                    // Track Title & Artist
+                                    Text(
+                                      title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: isFullScreen ? 22 : 18,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppTheme.getTextPrimary(context),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      artist.isNotEmpty ? artist : 'Bip Singing Companion',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: isFullScreen ? 14.5 : 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF8B5CF6),
+                                      ),
+                                    ),
+                                    SizedBox(height: isFullScreen ? 16 : 10),
+
+                                    // Timeline slider
+                                    SliderTheme(
+                                      data: SliderTheme.of(context).copyWith(
+                                        trackHeight: 4.5,
+                                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                        activeTrackColor: const Color(0xFF8B5CF6),
+                                        inactiveTrackColor: AppTheme.isDark ? Colors.white12 : Colors.black12,
+                                        thumbColor: const Color(0xFF8B5CF6),
+                                      ),
+                                      child: Slider(
+                                        value: dur.inMilliseconds > 0
+                                            ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
+                                            : 0.0,
+                                        onChanged: (val) {
+                                          final targetMs = (val * dur.inMilliseconds).toInt();
+                                          _music.seek(Duration(milliseconds: targetMs));
+                                        },
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(_formatDuration(pos),
+                                              style: TextStyle(fontSize: 11, color: AppTheme.getTextSecondary(context))),
+                                          Text(
+                                            dur.inSeconds > 0 ? '-${_formatDuration(dur - pos)}' : '0:00',
+                                            style: TextStyle(fontSize: 11, color: AppTheme.getTextSecondary(context)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    SizedBox(height: isFullScreen ? 18 : 12),
+
+                                    // Playback Controls Row
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                      children: [
+                                        // Shuffle
+                                        ValueListenableBuilder<bool>(
+                                          valueListenable: _music.isShuffle,
+                                          builder: (ctx, isShuf, _) => IconButton(
+                                            icon: Icon(
+                                              Icons.shuffle_rounded,
+                                              color: isShuf
+                                                  ? const Color(0xFF8B5CF6)
+                                                  : AppTheme.getTextSecondary(context),
+                                              size: 26,
+                                            ),
+                                            padding: const EdgeInsets.all(8),
+                                            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                            tooltip: isShuf ? 'Shuffle On' : 'Shuffle Off',
+                                            onPressed: _music.toggleShuffle,
+                                          ),
+                                        ),
+
+                                        // Previous
+                                        IconButton(
+                                          icon: Icon(Icons.skip_previous_rounded,
+                                              size: 38, color: AppTheme.getTextPrimary(context)),
+                                          padding: const EdgeInsets.all(8),
+                                          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                                          tooltip: 'Previous',
+                                          onPressed: _music.previous,
+                                        ),
+
+                                        // Big Play / Pause Button
+                                        Container(
+                                          width: 66,
+                                          height: 66,
+                                          decoration: BoxDecoration(
+                                            gradient: const LinearGradient(
+                                              colors: [Color(0xFF7C3AED), Color(0xFFEC4899)],
+                                            ),
+                                            shape: BoxShape.circle,
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: const Color(0xFF7C3AED).withValues(alpha: 0.4),
+                                                blurRadius: 18,
+                                                offset: const Offset(0, 6),
+                                              ),
+                                            ],
+                                          ),
+                                          child: IconButton(
+                                            icon: Icon(
+                                              isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                              size: 38,
+                                              color: Colors.white,
+                                            ),
+                                            tooltip: isPlaying ? 'Pause' : 'Play',
+                                            onPressed: _music.togglePlayPause,
+                                          ),
+                                        ),
+
+                                        // Next
+                                        IconButton(
+                                          icon: Icon(Icons.skip_next_rounded,
+                                              size: 38, color: AppTheme.getTextPrimary(context)),
+                                          padding: const EdgeInsets.all(8),
+                                          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                                          tooltip: 'Next',
+                                          onPressed: _music.next,
+                                        ),
+
+                                        // Repeat
+                                        ValueListenableBuilder<String>(
+                                          valueListenable: _music.repeatMode,
+                                          builder: (ctx, mode, _) => IconButton(
+                                            icon: Icon(
+                                              mode == 'one' ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+                                              color: mode != 'off'
+                                                  ? const Color(0xFF8B5CF6)
+                                                  : AppTheme.getTextSecondary(context),
+                                              size: 26,
+                                            ),
+                                            padding: const EdgeInsets.all(8),
+                                            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                            tooltip: mode == 'one' ? 'Repeat One' : (mode == 'all' ? 'Repeat All' : 'Repeat Off'),
+                                            onPressed: _music.toggleRepeatMode,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    SizedBox(height: isFullScreen ? 22 : 14),
+
+                                    // Secondary Toolbar: Speed, Sleep, Crossfade, Offline
+                                    SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          // Speed chip
+                                          ValueListenableBuilder<double>(
+                                            valueListenable: _music.playbackRate,
+                                            builder: (ctx, rate, _) => ActionChip(
+                                              label: Text('${rate}x Speed',
+                                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                              avatar: const Icon(Icons.speed_rounded, size: 16),
+                                              onPressed: () {
+                                                const rates = [1.0, 1.25, 1.5, 2.0, 0.75];
+                                                final next = rates[(rates.indexOf(rate) + 1) % rates.length];
+                                                _music.setPlaybackRate(next);
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+
+                                          // Sleep timer chip
+                                          ValueListenableBuilder<int?>(
+                                            valueListenable: _music.sleepTimerRemaining,
+                                            builder: (ctx, rem, _) => ActionChip(
+                                              label: Text(
+                                                rem != null ? '${(rem / 60).ceil()}m Sleep' : 'Sleep Timer',
+                                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                              ),
+                                              avatar: Icon(Icons.bedtime_outlined,
+                                                  size: 16, color: rem != null ? Colors.amber : null),
+                                              onPressed: widget.onShowSleepTimer,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+
+                                          // Crossfade chip
+                                          ValueListenableBuilder<int>(
+                                            valueListenable: _music.crossfadeSeconds,
+                                            builder: (ctx, fade, _) => ActionChip(
+                                              label: Text(
+                                                fade > 0 ? '${fade}s Fade' : 'Crossfade Off',
+                                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                              ),
+                                              avatar: const Icon(Icons.tune_rounded, size: 16),
+                                              onPressed: () {
+                                                const fades = [0, 3, 5, 8, 12];
+                                                final next = fades[(fades.indexOf(fade) + 1) % fades.length];
+                                                _music.setCrossfade(next);
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+
+                                          // Offline download chip
+                                          ValueListenableBuilder<Set<String>>(
+                                            valueListenable: _music.offlineTrackFilenames,
+                                            builder: (ctx, offlineSet, _) {
+                                              final isOffline = offlineSet.contains(filename);
+                                              return ActionChip(
+                                                label: Text(
+                                                  isOffline ? 'Saved Offline' : 'Save Offline',
+                                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                                ),
+                                                avatar: Icon(
+                                                  isOffline ? Icons.offline_pin_rounded : Icons.download_rounded,
+                                                  size: 16,
+                                                  color: isOffline ? Colors.green : null,
+                                                ),
+                                                onPressed: () async {
+                                                  if (isOffline) {
+                                                    await _music.deleteOfflineTrack(filename);
+                                                    if (context.mounted) {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                        const SnackBar(content: Text('Removed offline audio file')),
+                                                      );
+                                                    }
+                                                  } else {
+                                                    final ok = await _music.downloadTrackOffline(track);
+                                                    if (context.mounted) {
+                                                      ScaffoldMessenger.of(context).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text(ok
+                                                              ? 'Song cached for offline listening!'
+                                                              : 'Download failed'),
+                                                        ),
+                                                      );
+                                                    }
+                                                  }
+                                                },
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
