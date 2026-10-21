@@ -19,7 +19,7 @@ import { ChatPanel } from './components/ChatPanel'
 import { AssistantWorkspace } from './components/AssistantWorkspace'
 import { ResearchPanel } from './components/ResearchPanel'
 import { GraphView } from './components/GraphView'
-import { Toast } from './components/Toast'
+import { Toast, type ToastAction } from './components/Toast'
 import { SpecializedNotePanel } from './components/SpecializedNotePanel'
 import { RobotCompanion } from './components/RobotCompanion/RobotCompanion'
 import { RemotePairingModal } from './components/RemotePairingModal'
@@ -42,7 +42,18 @@ function MuseApp() {
   const [collections, setCollections] = useState(false)
   const [settings, setSettings] = useState(false)
   const [remoteModalOpen, setRemoteModalOpen] = useState(false)
-  const [toast, setToast] = useState('')
+  const [toastState, setToastState] = useState<{ message: string; action?: ToastAction } | null>(null)
+  const setToast = (msg: string | { message: string; action?: ToastAction } | null) => {
+    if (!msg) setToastState(null)
+    else if (typeof msg === 'string') setToastState({ message: msg })
+    else setToastState(msg)
+  }
+
+  useEffect(() => {
+    if (!toastState) return
+    const timer = setTimeout(() => setToastState(null), toastState.action ? 6000 : 4000)
+    return () => clearTimeout(timer)
+  }, [toastState])
   const [apiKeyState, setApiKeyState] = useState<SettingsResponse | null>(null)
   const [usage, setUsage] = useState<AiUsage | null>(null)
   const [usageError, setUsageError] = useState('')
@@ -75,8 +86,14 @@ function MuseApp() {
   const trashQuery = useQuery({ queryKey: ['notes', 'trash'], queryFn: () => api.listNotes('trash') })
 
   const create = useMutation({
-    mutationFn: (input?: { title?: string; content?: string } | void) =>
-      api.createNote({ title: input?.title || '', content: input?.content || '' }),
+    mutationFn: (input?: NoteInput | void) =>
+      api.createNote({
+        title: input?.title || '',
+        content: input?.content || '',
+        tags: input?.tags || [],
+        favorite: input?.favorite ?? false,
+        ...input
+      }),
     onSuccess: note => {
       setScope('all')
       queryClient.invalidateQueries({ queryKey: ['notes'] })
@@ -119,7 +136,18 @@ function MuseApp() {
 
   const trashSelected = useMutation({
     mutationFn: (ids: string[]) => api.trashNotes(ids),
-    onSuccess: (_value, ids) => { queryClient.invalidateQueries({ queryKey: ['notes'] }); setToast(`${ids.length} note${ids.length === 1 ? '' : 's'} moved to trash.`) },
+    onSuccess: (_value, ids) => {
+      queryClient.invalidateQueries({ queryKey: ['notes'] })
+      setToast({
+        message: `${ids.length} note${ids.length === 1 ? '' : 's'} moved to trash.`,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            restoreSelected.mutate(ids)
+          }
+        }
+      })
+    },
     onError: () => setToast('Could not move selected notes to trash.')
   })
 
@@ -257,7 +285,7 @@ function MuseApp() {
     setScope={setScope}
     query={query}
     setQuery={setQuery}
-    create={() => create.mutate()}
+    create={input => create.mutate(input)}
     open={note => navigate(`/note/${note.id}`)}
     toggleFavorite={(id, current) => toggleFavorite.mutate({ id, favorite: !current })}
     dark={dark}
@@ -299,7 +327,7 @@ function MuseApp() {
     <CommandPalette open={command} close={() => setCommand(false)} create={() => create.mutate()} ask={() => navigate('/assistant')} theme={() => setDark(!dark)}/>
     {ask && <ChatPanel mode="search" onClose={() => setAsk(false)} onCreateNote={input => create.mutate(input)}/>}
     {research && <ResearchPanel onClose={() => setResearch(false)} onDone={id => { setResearch(false); if (id) { queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate(`/note/${id}`) } }}/>}
-    <Toast message={toast} onClose={() => setToast('')}/>
+    <Toast message={toastState?.message || ''} action={toastState?.action} onClose={() => setToastState(null)}/>
     {specialized && (
       <SpecializedNotePanel
         onClose={() => setSpecialized(false)}
@@ -698,7 +726,7 @@ function UsageBar({
   )
 }
 
-function NoteRoute({ toast }: { toast: (message: string) => void }) {
+function NoteRoute({ toast }: { toast: (message: string | { message: string; action?: ToastAction }) => void }) {
   const { id } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -709,7 +737,23 @@ function NoteRoute({ toast }: { toast: (message: string) => void }) {
     onError: () => toast('Unable to save changes.')
   })
   async function refresh(): Promise<Note> { const note = await api.getNote(id!); queryClient.setQueryData(['note', id], note); queryClient.invalidateQueries({ queryKey: ['notes'] }); return note }
-  async function trash() { await api.deleteNote(id!); queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate('/') }
+  async function trash() {
+    await api.deleteNote(id!)
+    queryClient.invalidateQueries({ queryKey: ['notes'] })
+    navigate('/')
+    toast({
+      message: '1 note moved to trash.',
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          api.restoreNote(id!).then(() => {
+            queryClient.invalidateQueries({ queryKey: ['notes'] })
+            toast('Note restored.')
+          })
+        }
+      }
+    })
+  }
   async function restore() { await api.restoreNote(id!); queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate('/') }
   async function removePermanently() { await api.permanentlyDeleteNote(id!); queryClient.removeQueries({ queryKey: ['note', id] }); queryClient.invalidateQueries({ queryKey: ['notes'] }); navigate('/') }
   if (noteQuery.isLoading) return <div className="app-loading"><div className="loader"/>Opening note</div>
