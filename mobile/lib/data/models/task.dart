@@ -45,6 +45,8 @@ class TodoTask {
     return DateTime(day.year, day.month, day.day, match != null ? int.parse(match[1]!) : 9, match != null ? int.parse(match[2]!) : 0);
   }
 
+  bool get isLocal => id.startsWith('local-');
+
   Map<String, dynamic> toJson() {
     return {
       'text': title,
@@ -55,6 +57,18 @@ class TodoTask {
       if (noteId != null) 'note_id': noteId,
     };
   }
+
+  Map<String, dynamic> toCacheJson() => {
+    'id': id,
+    'text': title,
+    'completed': completed,
+    if (dueDate != null) 'due_date': dueDate,
+    if (dueTime != null) 'due_time': dueTime,
+    'priority': priority,
+    if (noteId != null) 'note_id': noteId,
+    if (reminderAt != null) 'reminder_at': reminderAt!.toIso8601String(),
+    if (reminderMinutesBefore != null) 'reminder_minutes_before': reminderMinutesBefore,
+  };
 
   TodoTask copyWith({
     String? id,

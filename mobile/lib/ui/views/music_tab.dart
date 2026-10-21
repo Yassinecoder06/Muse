@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
@@ -75,6 +76,18 @@ class _MusicTabState extends State<MusicTab> {
 
   Future<void> _loadSongs({bool silent = false}) async {
     if (!silent) setState(() => _loadingSongs = true);
+
+    // Show cached songs right away so offline opening has instant content
+    try {
+      final cached = await _music.loadSongsCache();
+      if (cached != null && cached.isNotEmpty && mounted) {
+        setState(() {
+          _songs = cached;
+          _loadingSongs = false;
+        });
+      }
+    } catch (_) {}
+
     try {
       final list = await _api.fetchMusicSongs();
       if (mounted) {
@@ -82,8 +95,19 @@ class _MusicTabState extends State<MusicTab> {
           _songs = list;
           _loadingSongs = false;
         });
+        await _music.saveSongsCache(list);
       }
     } catch (_) {
+      // Offline fallback: load cache if not already loaded
+      if (_songs.isEmpty) {
+        final cached = await _music.loadSongsCache();
+        if (cached != null && mounted) {
+          setState(() {
+            _songs = cached;
+            _loadingSongs = false;
+          });
+        }
+      }
       if (mounted && !silent) setState(() => _loadingSongs = false);
     }
   }
@@ -959,35 +983,68 @@ class _MusicTabState extends State<MusicTab> {
       ),
     );
 
-    return FutureBuilder<String>(
-      future: _api.resolveUrl('/api/music/cover/${Uri.encodeComponent(filename)}'),
-      builder: (ctx, snap) {
-        if (!snap.hasData || snap.data!.isEmpty) return defaultBox;
-
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(size > 60 ? 18 : 10),
-          child: Stack(
-            children: [
-              Image.network(
-                snap.data!,
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => defaultBox,
-              ),
-              if (isCurrentSong)
-                Container(
+    return FutureBuilder<File?>(
+      future: _music.getOfflineCoverFile(filename),
+      builder: (ctx, fileSnap) {
+        if (fileSnap.hasData && fileSnap.data != null) {
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(size > 60 ? 18 : 10),
+            child: Stack(
+              children: [
+                Image.file(
+                  fileSnap.data!,
                   width: size,
                   height: size,
-                  color: Colors.black38,
-                  child: Icon(
-                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                    color: Colors.white,
-                    size: size * 0.45,
-                  ),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => defaultBox,
                 ),
-            ],
-          ),
+                if (isCurrentSong)
+                  Container(
+                    width: size,
+                    height: size,
+                    color: Colors.black38,
+                    child: Icon(
+                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: size * 0.45,
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }
+
+        return FutureBuilder<String>(
+          future: _api.resolveUrl('/api/music/cover/${Uri.encodeComponent(filename)}'),
+          builder: (ctx, snap) {
+            if (!snap.hasData || snap.data!.isEmpty) return defaultBox;
+
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(size > 60 ? 18 : 10),
+              child: Stack(
+                children: [
+                  Image.network(
+                    snap.data!,
+                    width: size,
+                    height: size,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => defaultBox,
+                  ),
+                  if (isCurrentSong)
+                    Container(
+                      width: size,
+                      height: size,
+                      color: Colors.black38,
+                      child: Icon(
+                        isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: size * 0.45,
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -1958,14 +2015,73 @@ class _MusicTabState extends State<MusicTab> {
                     ],
                   ),
                 ),
-                TextButton.icon(
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  ),
-                  onPressed: () => setState(() => _currentSection = 2),
-                  icon: const Icon(Icons.add_circle_outline_rounded, size: 16),
-                  label: const Text('Add / Download', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ValueListenableBuilder<({int current, int total, bool active})>(
+                      valueListenable: _music.batchDownloadStatus,
+                      builder: (ctx, batch, _) {
+                        if (batch.active) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            margin: const EdgeInsets.only(right: 6),
+                            decoration: BoxDecoration(
+                              color: AppTheme.accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.accent),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${batch.current}/${batch.total}',
+                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.accent),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        final hasOnlineTracks = _songs.any((s) {
+                          final f = s['filename'] as String? ?? '';
+                          return f.isNotEmpty && !_music.isTrackOffline(f);
+                        });
+
+                        if (!hasOnlineTracks || _songs.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return TextButton.icon(
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          ),
+                          onPressed: () async {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Downloading songs to your phone for offline playback…')),
+                            );
+                            await _music.downloadAllOffline(_songs);
+                          },
+                          icon: const Icon(Icons.download_for_offline_outlined, size: 16),
+                          label: const Text('Download All', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        );
+                      },
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      ),
+                      onPressed: () => setState(() => _currentSection = 2),
+                      icon: const Icon(Icons.add_circle_outline_rounded, size: 16),
+                      label: const Text('Add / Download', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
                 ),
               ],
             ),

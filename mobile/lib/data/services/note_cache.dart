@@ -66,6 +66,15 @@ class NoteCache {
     await _save();
   }
 
+  static Future<void> remove(String id) async {
+    final data = await _load();
+    _notes(data).remove(id);
+    for (final list in (data['lists'] as Map).values) {
+      (list as List).remove(id);
+    }
+    await _save();
+  }
+
   /// A phone-created note got its real server id: swap it everywhere, and
   /// remember the mapping so an editor still holding the old id keeps working.
   static Future<void> replaceId(String localId, Note created) async {

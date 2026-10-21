@@ -32,6 +32,8 @@ class CalendarEvent {
     );
   }
 
+  bool get isLocal => id.startsWith('local-');
+
   Map<String, dynamic> toJson() {
     return {
       'title': title,
@@ -43,4 +45,35 @@ class CalendarEvent {
       if (noteId != null) 'note_id': noteId,
     };
   }
+
+  Map<String, dynamic> toCacheJson() => {
+    'id': id,
+    'title': title,
+    'description': description,
+    'start_time': startTime.toIso8601String(),
+    if (endTime != null) 'end_time': endTime!.toIso8601String(),
+    'all_day': allDay,
+    'location': location,
+    if (noteId != null) 'note_id': noteId,
+  };
+
+  CalendarEvent copyWith({
+    String? id,
+    String? title,
+    String? description,
+    DateTime? startTime,
+    DateTime? endTime,
+    bool? allDay,
+    String? location,
+    String? noteId,
+  }) => CalendarEvent(
+    id: id ?? this.id,
+    title: title ?? this.title,
+    description: description ?? this.description,
+    startTime: startTime ?? this.startTime,
+    endTime: endTime ?? this.endTime,
+    allDay: allDay ?? this.allDay,
+    location: location ?? this.location,
+    noteId: noteId ?? this.noteId,
+  );
 }

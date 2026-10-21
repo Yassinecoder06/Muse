@@ -188,7 +188,7 @@ class _NotesTabState extends State<NotesTab> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       for (final id in ids) {
-        await _api.deleteNote(id);
+        await OfflineQueue.deleteNote(_api, id);
       }
       messenger.showSnackBar(
         SnackBar(
@@ -316,7 +316,7 @@ class _NotesTabState extends State<NotesTab> {
     setState(() => _allNotes.removeWhere((n) => n.id == note.id));
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await _api.deleteNote(note.id);
+      await OfflineQueue.deleteNote(_api, note.id);
     } catch (e) {
       if (!mounted) return;
       setState(() => _allNotes.insert(index.clamp(0, _allNotes.length), note));

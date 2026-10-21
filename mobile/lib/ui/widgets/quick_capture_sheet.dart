@@ -116,7 +116,8 @@ class _QuickCaptureSheetState extends State<_QuickCaptureSheet> {
     try {
       bool savedNow;
       if (_asTask) {
-        savedNow = await OfflineQueue.createTask(_api, title: typedTitle.isNotEmpty ? typedTitle : _derivedTitle(content));
+        final task = await OfflineQueue.createTask(_api, title: typedTitle.isNotEmpty ? typedTitle : _derivedTitle(content));
+        savedNow = !task.isLocal;
       } else {
         var body = content;
         if (widget.imagePath != null) {

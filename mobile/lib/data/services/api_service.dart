@@ -359,6 +359,36 @@ class ApiService {
     }
   }
 
+  Future<TodoTask> updateTask(
+    String taskId, {
+    String? title,
+    bool? completed,
+    String? dueDate,
+    String? dueTime,
+    String? priority,
+    int? reminderMinutesBefore,
+    DateTime? reminderAt,
+    bool clearReminder = false,
+  }) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final payload = <String, dynamic>{
+      'text': ?title,
+      'completed': ?completed,
+      'due_date': ?dueDate,
+      'due_time': ?dueTime,
+      if (priority != null) 'priority': priority.toLowerCase(),
+      if (clearReminder) ...{'reminder_minutes_before': null, 'reminder_at': null},
+      if (!clearReminder && reminderMinutesBefore != null) 'reminder_minutes_before': reminderMinutesBefore,
+      if (!clearReminder && reminderAt != null) 'reminder_at': reminderAt.toUtc().toIso8601String(),
+    };
+    final response = await _http
+        .patch(Uri.parse('$base/api/tasks/$taskId'), headers: headers, body: jsonEncode(payload))
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode == 200) return TodoTask.fromJson(jsonDecode(response.body) as Map<String, dynamic>);
+    throw Exception('Failed to update task (${response.statusCode})');
+  }
+
   Future<void> deleteTask(String taskId) async {
     final base = await _getBaseUrl();
     final headers = await _getHeaders();
@@ -454,6 +484,37 @@ class ApiService {
     if (response.statusCode != 204 && response.statusCode != 200) {
       throw Exception('Failed to delete event (${response.statusCode})');
     }
+  }
+
+  Future<CalendarEvent> updateEvent(
+    String eventId, {
+    String? title,
+    String? description,
+    DateTime? startTime,
+    DateTime? endTime,
+    bool? allDay,
+    String? location,
+    String? noteId,
+  }) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$base/api/calendar/events/$eventId');
+    final payload = <String, dynamic>{
+      'title': ?title,
+      'description': ?description,
+      if (startTime != null) 'start_time': startTime.toUtc().toIso8601String(),
+      if (endTime != null) 'end_time': endTime.toUtc().toIso8601String(),
+      'all_day': ?allDay,
+      'location': ?location,
+      'note_id': ?noteId,
+    };
+    final response = await _http
+        .put(uri, headers: headers, body: jsonEncode(payload))
+        .timeout(const Duration(seconds: 10));
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return CalendarEvent.fromJson(jsonDecode(response.body));
+    }
+    throw Exception('Failed to update event (${response.statusCode})');
   }
 
   // --- Bip AI Chat & Sessions ---
