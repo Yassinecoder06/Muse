@@ -5775,7 +5775,51 @@
   align-items: center;
   gap: 12px;
   flex: 1;
-  max-width: 500px;
+  max-width: 540px;
+}
+
+.player-buttons-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.player-step-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-primary, #272630);
+  border: 1px solid transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s ease;
+}
+
+.player-step-btn:hover:not(:disabled) {
+  background: rgba(124, 58, 237, 0.12);
+  color: #7c3aed;
+  transform: scale(1.08);
+}
+
+.player-step-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.player-step-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+[data-theme=dark] .player-step-btn {
+  color: #dcd8e6;
+}
+
+[data-theme=dark] .player-step-btn:hover:not(:disabled) {
+  background: rgba(167, 139, 250, 0.16);
+  color: #c4b5fd;
 }
 
 .player-play-btn {

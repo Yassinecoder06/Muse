@@ -109,10 +109,20 @@ class MusicService {
     }
   }
 
-  /// Play a single song directly (adds to a 1-item queue)
-  Future<void> playSong(Map<String, dynamic> song) async {
-    queue.value = [song];
-    queueIndex.value = 0;
+  /// Play a single song directly (or within a contextQueue if available)
+  Future<void> playSong(
+    Map<String, dynamic> song, {
+    List<Map<String, dynamic>>? contextQueue,
+  }) async {
+    if (contextQueue != null && contextQueue.isNotEmpty) {
+      queue.value = contextQueue;
+      final currentFile = song['filename'] as String? ?? '';
+      final idx = contextQueue.indexWhere((t) => t['filename'] == currentFile);
+      queueIndex.value = idx != -1 ? idx : 0;
+    } else {
+      queue.value = [song];
+      queueIndex.value = 0;
+    }
     activePlaylistId.value = null;
     activePlaylistName.value = null;
     await _startPlay(song);
@@ -196,10 +206,14 @@ class MusicService {
   }
 
   Future<void> next() async {
-    final idx = queueIndex.value;
     final list = queue.value;
+    if (list.isEmpty) return;
+    final idx = queueIndex.value;
     if (idx >= 0 && idx + 1 < list.length) {
       await playTrackAt(idx + 1);
+    } else {
+      // Loop back to beginning of queue
+      await playTrackAt(0);
     }
   }
 
@@ -208,11 +222,14 @@ class MusicService {
       await seek(Duration.zero);
       return;
     }
+    final list = queue.value;
+    if (list.isEmpty) return;
     final idx = queueIndex.value;
     if (idx > 0) {
       await playTrackAt(idx - 1);
     } else {
-      await seek(Duration.zero);
+      // Loop back to end of queue
+      await playTrackAt(list.length - 1);
     }
   }
 

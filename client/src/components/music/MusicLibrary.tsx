@@ -18,7 +18,9 @@ import {
   CheckSquare,
   Plus,
   ArrowUpCircle,
-  PlayCircle
+  PlayCircle,
+  SkipBack,
+  SkipForward
 } from 'lucide-react'
 import { api } from '../../services/api'
 import { robotMusic, type MusicPlayerState } from '../../services/robot-music.service'
@@ -105,11 +107,41 @@ export function MusicLibrary({
     return () => unsubscribe()
   }, [])
 
+  // Keyboard controls for switching tracks back and forth
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return
+      }
+
+      if (e.key === ' ' && playerState.currentTrack) {
+        e.preventDefault()
+        robotMusic.togglePlay()
+      } else if ((e.shiftKey || e.altKey) && e.key === 'ArrowRight') {
+        e.preventDefault()
+        void robotMusic.nextTrack()
+      } else if ((e.shiftKey || e.altKey) && e.key === 'ArrowLeft') {
+        e.preventDefault()
+        void robotMusic.prevTrack()
+      } else if (e.key === ']' && playerState.currentTrack) {
+        e.preventDefault()
+        void robotMusic.nextTrack()
+      } else if (e.key === '[' && playerState.currentTrack) {
+        e.preventDefault()
+        void robotMusic.prevTrack()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [playerState.currentTrack])
+
   const handlePlayToggle = (song: MusicTrackItem) => {
     if (playerState.currentTrack?.filename === song.filename) {
       robotMusic.togglePlay()
     } else {
-      robotMusic.playTrack(song)
+      robotMusic.playTrack(song, songs)
     }
   }
 
@@ -298,17 +330,38 @@ export function MusicLibrary({
             </div>
 
             <div className="player-controls">
-              <button
-                className="player-play-btn"
-                onClick={() => robotMusic.togglePlay()}
-                title={playerState.isPlaying ? 'Pause' : 'Play'}
-              >
-                {playerState.isPlaying ? (
-                  <Pause size={18} />
-                ) : (
-                  <Play size={18} fill="currentColor" />
-                )}
-              </button>
+              <div className="player-buttons-group">
+                <button
+                  type="button"
+                  className="player-step-btn"
+                  onClick={() => robotMusic.prevTrack()}
+                  title="Previous song (Go back) [Shift + Left or []"
+                  disabled={!playerState.currentTrack}
+                >
+                  <SkipBack size={17} />
+                </button>
+                <button
+                  type="button"
+                  className="player-play-btn"
+                  onClick={() => robotMusic.togglePlay()}
+                  title={playerState.isPlaying ? 'Pause song (Space)' : 'Play song (Space)'}
+                >
+                  {playerState.isPlaying ? (
+                    <Pause size={18} />
+                  ) : (
+                    <Play size={18} fill="currentColor" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="player-step-btn"
+                  onClick={() => robotMusic.nextTrack()}
+                  title="Next song (Go forward) [Shift + Right or ]]"
+                  disabled={!playerState.currentTrack}
+                >
+                  <SkipForward size={17} />
+                </button>
+              </div>
               <span className="player-time-text">
                 {formatTime(playerState.currentTime)} / {formatTime(playerState.duration)}
               </span>

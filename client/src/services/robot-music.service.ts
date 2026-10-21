@@ -131,7 +131,10 @@ class RobotMusicService {
     }
   }
 
-  public async playSong(track: { filename?: string; title?: string; url?: string }): Promise<void> {
+  public async playSong(
+    track: { filename?: string; title?: string; url?: string; artist?: string },
+    contextQueue?: MusicTrack[]
+  ): Promise<void> {
     this.initAudio()
     if (!this.audio) return
 
@@ -162,12 +165,25 @@ class RobotMusicService {
       filename: finalFilename,
       title: finalTitle,
       size: 0,
-      url: finalUrl
+      url: finalUrl,
+      artist: track.artist
     }
 
-    if (this.playlistQueue.length === 0) {
+    if (contextQueue && contextQueue.length > 0) {
+      this.playlistQueue = [...contextQueue]
+      const idx = contextQueue.findIndex(t => t.filename === finalFilename)
+      this.playlistIndex = idx !== -1 ? idx : 0
+    } else if (this.playlistQueue.length === 0) {
       this.playlistQueue = [currentTrackObj]
       this.playlistIndex = 0
+    } else {
+      const idx = this.playlistQueue.findIndex(t => t.filename === finalFilename)
+      if (idx !== -1) {
+        this.playlistIndex = idx
+      } else {
+        this.playlistQueue.splice(this.playlistIndex + 1, 0, currentTrackObj)
+        this.playlistIndex += 1
+      }
     }
 
     this.updateState({
@@ -177,6 +193,8 @@ class RobotMusicService {
       playlistIndex: this.playlistIndex,
       playlistTotal: this.playlistQueue.length
     })
+
+    this.updateMediaSession(currentTrackObj)
 
     try {
       // If same song is currently paused, just resume
@@ -222,8 +240,11 @@ class RobotMusicService {
     this.togglePlayPause()
   }
 
-  public playTrack(track: { filename?: string; title?: string; url?: string }): Promise<void> {
-    return this.playSong(track)
+  public playTrack(
+    track: { filename?: string; title?: string; url?: string; artist?: string },
+    contextQueue?: MusicTrack[]
+  ): Promise<void> {
+    return this.playSong(track, contextQueue)
   }
 
   public seek(time: number): void {
@@ -381,25 +402,71 @@ class RobotMusicService {
   }
 
   public async nextTrack(): Promise<void> {
-    if (this.playlistQueue.length === 0) return
+    if (this.playlistQueue.length === 0) {
+      const songs = await this.fetchAvailableSongs()
+      if (songs.length > 0) {
+        this.playlistQueue = songs
+        this.playlistIndex = 0
+        await this.playSong(songs[0])
+      }
+      return
+    }
     if (this.playlistIndex < this.playlistQueue.length - 1) {
       this.playlistIndex += 1
-      this.updateState({ playlistIndex: this.playlistIndex })
-      await this.playSong(this.playlistQueue[this.playlistIndex])
+    } else {
+      // Loop back to the beginning of the queue
+      this.playlistIndex = 0
     }
+    this.updateState({ playlistIndex: this.playlistIndex })
+    await this.playSong(this.playlistQueue[this.playlistIndex])
   }
 
   public async prevTrack(): Promise<void> {
-    if (this.playlistQueue.length === 0) return
+    if (this.playlistQueue.length === 0) {
+      const songs = await this.fetchAvailableSongs()
+      if (songs.length > 0) {
+        this.playlistQueue = songs
+        this.playlistIndex = songs.length - 1
+        await this.playSong(songs[this.playlistIndex])
+      }
+      return
+    }
+    // If track has been playing for more than 3s, rewind to start (industry standard)
+    if (this.audio && this.audio.currentTime > 3) {
+      this.audio.currentTime = 0
+      this.updateState({ currentTime: 0 })
+      return
+    }
     if (this.playlistIndex > 0) {
       this.playlistIndex -= 1
-      this.updateState({ playlistIndex: this.playlistIndex })
-      await this.playSong(this.playlistQueue[this.playlistIndex])
+    } else {
+      // Loop back to the end of the queue
+      this.playlistIndex = this.playlistQueue.length - 1
     }
+    this.updateState({ playlistIndex: this.playlistIndex })
+    await this.playSong(this.playlistQueue[this.playlistIndex])
+  }
+
+  private updateMediaSession(track: MusicTrack): void {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.title,
+        artist: track.artist || this.playlistTitle || 'Bip Singing Companion',
+        album: this.playlistTitle || 'Muse Music'
+      })
+      navigator.mediaSession.setActionHandler('play', () => this.resume())
+      navigator.mediaSession.setActionHandler('pause', () => this.pause())
+      navigator.mediaSession.setActionHandler('previoustrack', () => void this.prevTrack())
+      navigator.mediaSession.setActionHandler('nexttrack', () => void this.nextTrack())
+      navigator.mediaSession.setActionHandler('seekto', details => {
+        if (typeof details.seekTime === 'number') this.seek(details.seekTime)
+      })
+    } catch {}
   }
 
   private handleTrackEnded(): void {
-    if (this.playlistQueue.length > 0 && this.playlistIndex < this.playlistQueue.length - 1) {
+    if (this.playlistQueue.length > 0) {
       void this.nextTrack()
     }
   }
