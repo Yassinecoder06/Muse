@@ -8,6 +8,8 @@
     <!-- Task and event reminders, kept across reboots. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- Background music playback: keeps audio playing when phone is locked. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Bip alarms: ring at the exact minute and show over the lock screen. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>

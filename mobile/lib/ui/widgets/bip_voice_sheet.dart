@@ -84,10 +84,10 @@ class _BipVoiceSheetState extends State<BipVoiceSheet> with SingleTickerProvider
       onText: (text) {
         if (!mounted) return;
         setState(() => _spokenText = text);
-        // Automatically submit after 3.5 seconds of silence if text is non-empty
+        // Automatically submit after 8 seconds of continuous silence to allow natural pauses
         _silenceTimer?.cancel();
         if (text.trim().isNotEmpty) {
-          _silenceTimer = Timer(const Duration(milliseconds: 3500), () {
+          _silenceTimer = Timer(const Duration(seconds: 8), () {
             if (mounted && _state == BipVoiceState.listening && _spokenText.trim().isNotEmpty) {
               _submitPrompt(_spokenText);
             }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
+import '../../data/models/note.dart';
 import '../../data/services/api_service.dart';
 import '../../data/services/app_events.dart';
 import '../../data/services/offline_queue.dart';
@@ -9,6 +10,7 @@ import '../../data/services/reminder_service.dart';
 import '../../data/services/storage_service.dart';
 import 'bip_alarm_screen.dart';
 import 'bip_chat_tab.dart';
+import 'note_detail_view.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bip_companion_button.dart';
 import '../widgets/quick_capture_sheet.dart';
@@ -82,6 +84,45 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
     _alarmScreenFor = taskId;
     await Navigator.of(context).push(MaterialPageRoute(builder: (_) => BipAlarmScreen(taskId: taskId, title: title, due: due)));
     _alarmScreenFor = null;
+  }
+
+  Future<void> _createAndOpenNote() async {
+    Navigator.pop(context);
+    try {
+      Note created;
+      try {
+        created = await _api.createNote(
+          title: '',
+          content: '',
+          tags: ['mobile'],
+        );
+      } catch (e) {
+        if (!OfflineQueue.isNetworkError(e)) rethrow;
+        created = await OfflineQueue.queueNote(
+          title: '',
+          content: '',
+          tags: ['mobile'],
+        );
+      }
+      if (!mounted) return;
+      setState(() => _currentIndex = 0);
+      AppEvents.notesScope.value = 'all';
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => NoteDetailView(
+            note: created,
+            initialEditMode: true,
+          ),
+        ),
+      );
+      AppEvents.notifyDataChanged();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to create note: $e'), backgroundColor: Colors.redAccent),
+      );
+    }
   }
 
   Future<void> _handleAlarmTap() async {
@@ -327,11 +368,7 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    setState(() => _currentIndex = 0);
-                    showQuickCapture(context);
-                  },
+                  onPressed: _createAndOpenNote,
                   icon: const Icon(Icons.add_rounded, size: 18),
                   label: const Text('New note', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 ),
@@ -345,43 +382,57 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 children: [
-                  // Scope items
-                  _buildDrawerNavItem(
-                    icon: Icons.description_outlined,
-                    label: 'All notes',
-                    isActive: _currentIndex == 0,
-                    onTap: () {
-                      Navigator.pop(context);
-                      setState(() => _currentIndex = 0);
-                    },
-                  ),
-                  _buildDrawerNavItem(
-                    icon: Icons.star_rounded,
-                    label: 'Favorites',
-                    iconColor: Colors.amber,
-                    isActive: false,
-                    onTap: () {
-                      Navigator.pop(context);
-                      setState(() => _currentIndex = 0);
-                    },
-                  ),
-                  _buildDrawerNavItem(
-                    icon: Icons.archive_outlined,
-                    label: 'Archive',
-                    isActive: false,
-                    onTap: () {
-                      Navigator.pop(context);
-                      setState(() => _currentIndex = 0);
-                    },
-                  ),
-                  _buildDrawerNavItem(
-                    icon: Icons.delete_outline_rounded,
-                    label: 'Trash',
-                    iconColor: Colors.redAccent,
-                    isActive: false,
-                    onTap: () {
-                      Navigator.pop(context);
-                      setState(() => _currentIndex = 0);
+                  // Scope items with active indicator
+                  ValueListenableBuilder<String>(
+                    valueListenable: AppEvents.notesScope,
+                    builder: (context, activeScope, _) {
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildDrawerNavItem(
+                            icon: Icons.description_outlined,
+                            label: 'All notes',
+                            isActive: _currentIndex == 0 && activeScope == 'all',
+                            onTap: () {
+                              Navigator.pop(context);
+                              AppEvents.notesScope.value = 'all';
+                              setState(() => _currentIndex = 0);
+                            },
+                          ),
+                          _buildDrawerNavItem(
+                            icon: Icons.star_rounded,
+                            label: 'Favorites',
+                            iconColor: Colors.amber,
+                            isActive: _currentIndex == 0 && activeScope == 'favorites',
+                            onTap: () {
+                              Navigator.pop(context);
+                              AppEvents.notesScope.value = 'favorites';
+                              setState(() => _currentIndex = 0);
+                            },
+                          ),
+                          _buildDrawerNavItem(
+                            icon: Icons.archive_outlined,
+                            label: 'Archive',
+                            isActive: _currentIndex == 0 && activeScope == 'archive',
+                            onTap: () {
+                              Navigator.pop(context);
+                              AppEvents.notesScope.value = 'archive';
+                              setState(() => _currentIndex = 0);
+                            },
+                          ),
+                          _buildDrawerNavItem(
+                            icon: Icons.delete_outline_rounded,
+                            label: 'Trash',
+                            iconColor: Colors.redAccent,
+                            isActive: _currentIndex == 0 && activeScope == 'trash',
+                            onTap: () {
+                              Navigator.pop(context);
+                              AppEvents.notesScope.value = 'trash';
+                              setState(() => _currentIndex = 0);
+                            },
+                          ),
+                        ],
+                      );
                     },
                   ),
 
@@ -653,45 +704,6 @@ class _MainScaffoldState extends State<MainScaffold> with WidgetsBindingObserver
           ),
         ],
       ),
-      bottomNavigationBar: isKeyboardOpen
-          ? null
-          : BottomNavigationBar(
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: AppTheme.getSurface(context),
-              selectedItemColor: AppTheme.primaryLight,
-              unselectedItemColor: AppTheme.getTextSecondary(context),
-              selectedFontSize: 11,
-              unselectedFontSize: 11,
-              currentIndex: _currentIndex,
-              onTap: (index) => setState(() => _currentIndex = index),
-              items: const [
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.edit_note_outlined),
-                  activeIcon: Icon(Icons.edit_note_rounded),
-                  label: 'Notes',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.event_note_outlined),
-                  activeIcon: Icon(Icons.event_note_rounded),
-                  label: 'Schedule',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.headphones_outlined),
-                  activeIcon: Icon(Icons.headphones_rounded),
-                  label: 'Music',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.insights_outlined),
-                  activeIcon: Icon(Icons.insights_rounded),
-                  label: 'Insights',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(Icons.tune_outlined),
-                  activeIcon: Icon(Icons.tune_rounded),
-                  label: 'Settings',
-                ),
-              ],
-            ),
     );
   }
 }
