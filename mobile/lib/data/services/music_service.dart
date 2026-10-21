@@ -1,8 +1,12 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:math';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 import 'api_service.dart';
 import 'app_events.dart';
 
@@ -31,6 +35,18 @@ class MusicService {
   final ValueNotifier<String?> activePlaylistId = ValueNotifier(null);
   final ValueNotifier<String?> activePlaylistName = ValueNotifier(null);
   final ValueNotifier<bool> loading = ValueNotifier(false);
+
+  // Advanced Music Features State
+  final ValueNotifier<bool> isShuffle = ValueNotifier(false);
+  final ValueNotifier<String> repeatMode = ValueNotifier('all'); // 'off', 'all', 'one'
+  final ValueNotifier<double> playbackRate = ValueNotifier(1.0);
+  final ValueNotifier<int?> sleepTimerRemaining = ValueNotifier(null);
+  final ValueNotifier<dynamic> sleepTimerDuration = ValueNotifier(null); // 15, 30, 45, 60, 'track', or null
+  final ValueNotifier<int> crossfadeSeconds = ValueNotifier(0);
+  final ValueNotifier<Set<String>> offlineTrackFilenames = ValueNotifier({});
+
+  List<Map<String, dynamic>> _originalQueue = [];
+  Timer? _sleepTimer;
 
   StreamSubscription? _stateSub;
   StreamSubscription? _posSub;
@@ -63,6 +79,13 @@ class MusicService {
 
     _posSub = _player.onPositionChanged.listen((pos) {
       position.value = pos;
+      final fadeSec = crossfadeSeconds.value;
+      final durSec = duration.value.inSeconds;
+      if (fadeSec > 0 && durSec > fadeSec && pos.inSeconds >= durSec - fadeSec) {
+        final remaining = max(0, durSec - pos.inSeconds);
+        final factor = remaining / fadeSec;
+        _player.setVolume(factor.clamp(0.0, 1.0));
+      }
     });
 
     _durSub = _player.onDurationChanged.listen((dur) {
@@ -74,6 +97,7 @@ class MusicService {
     });
 
     AppEvents.musicAction.addListener(_handleMusicAction);
+    refreshOfflineTracks();
   }
 
   void _handleMusicAction() {
@@ -97,15 +121,83 @@ class MusicService {
     }
   }
 
-  void _onTrackCompleted() {
+  Future<Directory> _getOfflineDir() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final dir = Directory('${appDir.path}/offline_music');
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    return dir;
+  }
+
+  Future<void> refreshOfflineTracks() async {
+    try {
+      final dir = await _getOfflineDir();
+      final files = dir.listSync().whereType<File>().map((f) => f.uri.pathSegments.last).toSet();
+      offlineTrackFilenames.value = files;
+    } catch (_) {}
+  }
+
+  bool isTrackOffline(String filename) {
+    return offlineTrackFilenames.value.contains(filename);
+  }
+
+  Future<bool> downloadTrackOffline(Map<String, dynamic> track) async {
+    final filename = track['filename'] as String? ?? '';
+    if (filename.isEmpty) return false;
+    try {
+      final dir = await _getOfflineDir();
+      final file = File('${dir.path}/$filename');
+      final streamPath = '/api/music/stream/${Uri.encodeComponent(filename)}';
+      final fullUrl = await _api.resolveUrl(streamPath);
+      final res = await http.get(Uri.parse(fullUrl));
+      if (res.statusCode == 200) {
+        await file.writeAsBytes(res.bodyBytes);
+        await refreshOfflineTracks();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('[MusicService] Failed to download offline track: $e');
+    }
+    return false;
+  }
+
+  Future<void> deleteOfflineTrack(String filename) async {
+    try {
+      final dir = await _getOfflineDir();
+      final file = File('${dir.path}/$filename');
+      if (file.existsSync()) {
+        file.deleteSync();
+      }
+      await refreshOfflineTracks();
+    } catch (_) {}
+  }
+
+  Future<void> _onTrackCompleted() async {
+    if (sleepTimerDuration.value == 'track') {
+      await stop();
+      setSleepTimer(null);
+      return;
+    }
+
+    if (repeatMode.value == 'one') {
+      await seek(Duration.zero);
+      await resume();
+      return;
+    }
+
     final idx = queueIndex.value;
     final list = queue.value;
     if (idx >= 0 && idx + 1 < list.length) {
-      playTrackAt(idx + 1);
+      await playTrackAt(idx + 1);
     } else {
-      playerState.value = PlayerState.stopped;
-      position.value = Duration.zero;
-      _cancelNotification();
+      if (repeatMode.value == 'all' && list.isNotEmpty) {
+        await playTrackAt(0);
+      } else {
+        playerState.value = PlayerState.stopped;
+        position.value = Duration.zero;
+        _cancelNotification();
+      }
     }
   }
 
@@ -115,12 +207,22 @@ class MusicService {
     List<Map<String, dynamic>>? contextQueue,
   }) async {
     if (contextQueue != null && contextQueue.isNotEmpty) {
-      queue.value = contextQueue;
-      final currentFile = song['filename'] as String? ?? '';
-      final idx = contextQueue.indexWhere((t) => t['filename'] == currentFile);
-      queueIndex.value = idx != -1 ? idx : 0;
+      _originalQueue = List.from(contextQueue);
+      if (isShuffle.value) {
+        final currentFile = song['filename'] as String? ?? '';
+        final others = contextQueue.where((t) => t['filename'] != currentFile).toList();
+        others.shuffle();
+        queue.value = [song, ...others];
+        queueIndex.value = 0;
+      } else {
+        queue.value = contextQueue;
+        final currentFile = song['filename'] as String? ?? '';
+        final idx = contextQueue.indexWhere((t) => t['filename'] == currentFile);
+        queueIndex.value = idx != -1 ? idx : 0;
+      }
     } else {
       queue.value = [song];
+      _originalQueue = [song];
       queueIndex.value = 0;
     }
     activePlaylistId.value = null;
@@ -137,13 +239,23 @@ class MusicService {
     final tracks = rawTracks.map((t) => Map<String, dynamic>.from(t as Map)).toList();
     if (tracks.isEmpty) return;
 
-    final targetIndex = (startIndex >= 0 && startIndex < tracks.length) ? startIndex : 0;
-    queue.value = tracks;
-    queueIndex.value = targetIndex;
+    _originalQueue = List.from(tracks);
     activePlaylistId.value = playlist['id'] as String?;
     activePlaylistName.value = playlist['name'] as String? ?? 'Playlist';
 
-    await _startPlay(tracks[targetIndex]);
+    if (isShuffle.value) {
+      final chosen = (startIndex >= 0 && startIndex < tracks.length) ? tracks[startIndex] : tracks[0];
+      final others = tracks.where((t) => t['filename'] != chosen['filename']).toList();
+      others.shuffle();
+      queue.value = [chosen, ...others];
+      queueIndex.value = 0;
+      await _startPlay(chosen);
+    } else {
+      final targetIndex = (startIndex >= 0 && startIndex < tracks.length) ? startIndex : 0;
+      queue.value = tracks;
+      queueIndex.value = targetIndex;
+      await _startPlay(tracks[targetIndex]);
+    }
   }
 
   /// Play track at a specific index in current queue
@@ -164,10 +276,21 @@ class MusicService {
     duration.value = Duration.zero;
 
     try {
-      final streamPath = '/api/music/stream/${Uri.encodeComponent(filename)}';
-      final fullUrl = await _api.resolveUrl(streamPath);
+      final offlineDir = await _getOfflineDir();
+      final localFile = File('${offlineDir.path}/$filename');
+
       await _player.stop();
-      await _player.play(UrlSource(fullUrl));
+      await _player.setVolume(1.0);
+
+      if (await localFile.exists()) {
+        await _player.play(DeviceFileSource(localFile.path));
+      } else {
+        final streamPath = '/api/music/stream/${Uri.encodeComponent(filename)}';
+        final fullUrl = await _api.resolveUrl(streamPath);
+        await _player.play(UrlSource(fullUrl));
+      }
+
+      await _player.setPlaybackRate(playbackRate.value);
       _updateNotification();
     } catch (e) {
       debugPrint('[MusicService] Failed to play track: $e');
@@ -175,6 +298,91 @@ class MusicService {
     } finally {
       loading.value = false;
     }
+  }
+
+  void toggleShuffle() {
+    isShuffle.value = !isShuffle.value;
+    if (isShuffle.value) {
+      if (queue.value.length > 1) {
+        _originalQueue = List.from(queue.value);
+        final current = queueIndex.value >= 0 && queueIndex.value < queue.value.length
+            ? queue.value[queueIndex.value]
+            : queue.value[0];
+        final others = queue.value.where((t) => t['filename'] != current['filename']).toList();
+        others.shuffle();
+        queue.value = [current, ...others];
+        queueIndex.value = 0;
+      }
+    } else {
+      if (_originalQueue.isNotEmpty) {
+        final current = currentTrack.value;
+        queue.value = List.from(_originalQueue);
+        if (current != null) {
+          final idx = queue.value.indexWhere((t) => t['filename'] == current['filename']);
+          queueIndex.value = idx != -1 ? idx : 0;
+        }
+      }
+    }
+  }
+
+  void toggleRepeatMode() {
+    switch (repeatMode.value) {
+      case 'off':
+        repeatMode.value = 'all';
+        break;
+      case 'all':
+        repeatMode.value = 'one';
+        break;
+      case 'one':
+      default:
+        repeatMode.value = 'off';
+        break;
+    }
+  }
+
+  Future<void> setPlaybackRate(double rate) async {
+    playbackRate.value = rate;
+    try {
+      await _player.setPlaybackRate(rate);
+    } catch (_) {}
+  }
+
+  void setSleepTimer(dynamic duration) {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+
+    if (duration == null) {
+      sleepTimerDuration.value = null;
+      sleepTimerRemaining.value = null;
+      return;
+    }
+
+    if (duration == 'track') {
+      sleepTimerDuration.value = 'track';
+      sleepTimerRemaining.value = null;
+      return;
+    }
+
+    if (duration is int) {
+      sleepTimerDuration.value = duration;
+      sleepTimerRemaining.value = duration * 60;
+      _sleepTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (sleepTimerRemaining.value != null && sleepTimerRemaining.value! > 0) {
+          sleepTimerRemaining.value = sleepTimerRemaining.value! - 1;
+          if (sleepTimerRemaining.value! <= 0) {
+            timer.cancel();
+            _sleepTimer = null;
+            pause();
+            sleepTimerDuration.value = null;
+            sleepTimerRemaining.value = null;
+          }
+        }
+      });
+    }
+  }
+
+  void setCrossfade(int seconds) {
+    crossfadeSeconds.value = seconds.clamp(0, 12);
   }
 
   Future<void> togglePlayPause() async {
@@ -212,8 +420,12 @@ class MusicService {
     if (idx >= 0 && idx + 1 < list.length) {
       await playTrackAt(idx + 1);
     } else {
-      // Loop back to beginning of queue
-      await playTrackAt(0);
+      if (repeatMode.value == 'off') {
+        await pause();
+        await seek(Duration.zero);
+      } else {
+        await playTrackAt(0);
+      }
     }
   }
 
@@ -228,7 +440,6 @@ class MusicService {
     if (idx > 0) {
       await playTrackAt(idx - 1);
     } else {
-      // Loop back to end of queue
       await playTrackAt(list.length - 1);
     }
   }
@@ -309,6 +520,7 @@ class MusicService {
   }
 
   void dispose() {
+    _sleepTimer?.cancel();
     _stateSub?.cancel();
     _posSub?.cancel();
     _durSub?.cancel();

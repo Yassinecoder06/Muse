@@ -526,7 +526,16 @@ export const api = {
   deleteTemplate: (id: string) => request<void>(`/templates/${id}`, { method: 'DELETE' }),
 
   // Music & Downloader
-  listMusicSongs: () => request<{ songs: Array<{ filename: string; title: string; artist?: string; size: number; mtime: number; url: string }> }>('/music/songs'),
+  listMusicSongs: () => request<{ songs: Array<{ filename: string; title: string; artist?: string; size: number; mtime: number; url: string; coverUrl?: string }> }>('/music/songs'),
+  searchMusicCovers: (query: string) =>
+    request<{ candidates: Array<{ trackId: number; title: string; artist: string; album: string; coverUrl: string; thumbnailUrl: string; releaseDate?: string }> }>(
+      `/music/cover/search?query=${encodeURIComponent(query)}`
+    ),
+  saveMusicCover: (filename: string, coverUrl: string) =>
+    request<{ success: boolean; message: string; coverUrl: string }>(
+      `/music/cover/${encodeURIComponent(filename)}`,
+      { method: 'POST', body: JSON.stringify({ coverUrl }) }
+    ),
   downloadMusicBatch: (items: Array<{ query: string; artist?: string; title?: string; filename?: string }>) =>
     request<{ tasks: any[] }>('/music/download', { method: 'POST', body: JSON.stringify({ items }) }),
   getMusicTasks: () => request<{ tasks: any[] }>('/music/tasks'),

@@ -4,6 +4,7 @@ export interface MusicTrack {
   size?: number
   url: string
   artist?: string
+  coverUrl?: string
 }
 
 export interface MusicPlayerState {
@@ -17,6 +18,12 @@ export interface MusicPlayerState {
   playlistIndex?: number
   playlistTotal?: number
   queue?: MusicTrack[]
+  shuffle: boolean
+  repeatMode: 'off' | 'all' | 'one'
+  playbackRate: number
+  sleepTimerRemaining: number | null
+  sleepTimerDuration: number | 'track' | null
+  crossfadeSeconds: number
 }
 
 type MusicListener = (state: MusicPlayerState) => void
@@ -25,8 +32,13 @@ class RobotMusicService {
   private audio: HTMLAudioElement | null = null
   private listeners = new Set<MusicListener>()
   private playlistQueue: MusicTrack[] = []
+  private originalQueue: MusicTrack[] = []
   private playlistTitle: string | null = null
   private playlistIndex: number = 0
+  private sleepTimerInterval: any = null
+  private sleepTimerRemaining: number | null = null
+  private sleepTimerDuration: number | 'track' | null = null
+  private crossfadeSeconds: number = 0
   private state: MusicPlayerState = {
     currentTrack: null,
     isPlaying: false,
@@ -37,7 +49,13 @@ class RobotMusicService {
     playlistName: null,
     playlistIndex: 0,
     playlistTotal: 0,
-    queue: []
+    queue: [],
+    shuffle: false,
+    repeatMode: 'all',
+    playbackRate: 1,
+    sleepTimerRemaining: null,
+    sleepTimerDuration: null,
+    crossfadeSeconds: 0
   }
 
   constructor() {
@@ -53,6 +71,10 @@ class RobotMusicService {
     this.audio.volume = this.state.volume
 
     this.audio.addEventListener('play', () => {
+      if (this.audio) {
+        this.audio.playbackRate = this.state.playbackRate
+        this.audio.volume = this.state.volume
+      }
       this.updateState({ isPlaying: true, error: null })
     })
 
@@ -62,9 +84,19 @@ class RobotMusicService {
 
     this.audio.addEventListener('timeupdate', () => {
       if (this.audio) {
+        const cur = this.audio.currentTime || 0
+        const dur = this.audio.duration || 0
+        
+        // Handle crossfade volume ramp-down if near the end
+        if (this.crossfadeSeconds > 0 && dur > this.crossfadeSeconds && cur >= dur - this.crossfadeSeconds) {
+          const remaining = Math.max(0, dur - cur)
+          const factor = remaining / this.crossfadeSeconds
+          this.audio.volume = Math.max(0, Math.min(1, this.state.volume * factor))
+        }
+
         this.updateState({
-          currentTime: this.audio.currentTime || 0,
-          duration: this.audio.duration || 0
+          currentTime: cur,
+          duration: dur
         })
       }
     })
@@ -132,7 +164,7 @@ class RobotMusicService {
   }
 
   public async playSong(
-    track: { filename?: string; title?: string; url?: string; artist?: string },
+    track: { filename?: string; title?: string; url?: string; artist?: string; coverUrl?: string },
     contextQueue?: MusicTrack[]
   ): Promise<void> {
     this.initAudio()
@@ -161,12 +193,17 @@ class RobotMusicService {
       finalFilename = chosen.filename
     }
 
+    const coverUrl =
+      track.coverUrl ||
+      (finalFilename ? `/api/music/cover/${encodeURIComponent(finalFilename)}` : undefined)
+
     const currentTrackObj: MusicTrack = {
       filename: finalFilename,
       title: finalTitle,
       size: 0,
       url: finalUrl,
-      artist: track.artist
+      artist: track.artist,
+      coverUrl
     }
 
     if (contextQueue && contextQueue.length > 0) {
@@ -199,11 +236,15 @@ class RobotMusicService {
     try {
       // If same song is currently paused, just resume
       if (this.audio.src.endsWith(finalUrl) && this.audio.paused && this.audio.currentTime > 0) {
+        this.audio.playbackRate = this.state.playbackRate
+        this.audio.volume = this.state.volume
         await this.audio.play()
         return
       }
 
       this.audio.src = finalUrl
+      this.audio.playbackRate = this.state.playbackRate
+      this.audio.volume = this.state.volume
       this.audio.currentTime = 0
       await this.audio.play()
     } catch (err: any) {
@@ -241,7 +282,7 @@ class RobotMusicService {
   }
 
   public playTrack(
-    track: { filename?: string; title?: string; url?: string; artist?: string },
+    track: { filename?: string; title?: string; url?: string; artist?: string; coverUrl?: string },
     contextQueue?: MusicTrack[]
   ): Promise<void> {
     return this.playSong(track, contextQueue)
@@ -386,19 +427,129 @@ class RobotMusicService {
 
   public async playPlaylist(name: string, tracks: MusicTrack[], startIndex = 0): Promise<void> {
     if (!tracks || tracks.length === 0) return
-    this.playlistQueue = [...tracks]
+    this.originalQueue = [...tracks]
     this.playlistTitle = name
-    this.playlistIndex = Math.max(0, Math.min(tracks.length - 1, startIndex))
+
+    if (this.state.shuffle) {
+      const chosen = tracks[startIndex] || tracks[0]
+      const others = tracks.filter(t => t.filename !== chosen.filename)
+      for (let i = others.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[others[i], others[j]] = [others[j], others[i]]
+      }
+      this.playlistQueue = [chosen, ...others]
+      this.playlistIndex = 0
+    } else {
+      this.playlistQueue = [...tracks]
+      this.playlistIndex = Math.max(0, Math.min(tracks.length - 1, startIndex))
+    }
 
     this.updateState({
       playlistName: name,
       playlistIndex: this.playlistIndex,
-      playlistTotal: tracks.length,
+      playlistTotal: this.playlistQueue.length,
       queue: this.getQueue()
     })
 
     const track = this.playlistQueue[this.playlistIndex]
     await this.playSong(track)
+  }
+
+  public toggleShuffle(): void {
+    const nextShuffle = !this.state.shuffle
+    if (nextShuffle) {
+      if (this.playlistQueue.length > 1) {
+        this.originalQueue = [...this.playlistQueue]
+        const current = this.playlistQueue[this.playlistIndex]
+        const others = this.playlistQueue.filter((_, i) => i !== this.playlistIndex)
+        for (let i = others.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1))
+          ;[others[i], others[j]] = [others[j], others[i]]
+        }
+        this.playlistQueue = [current, ...others]
+        this.playlistIndex = 0
+      }
+    } else {
+      if (this.originalQueue.length > 0) {
+        const current = this.playlistQueue[this.playlistIndex]
+        this.playlistQueue = [...this.originalQueue]
+        const newIdx = this.playlistQueue.findIndex(t => t.filename === current?.filename)
+        this.playlistIndex = newIdx !== -1 ? newIdx : 0
+      }
+    }
+
+    this.updateState({
+      shuffle: nextShuffle,
+      queue: this.getQueue(),
+      playlistIndex: this.playlistIndex,
+      playlistTotal: this.playlistQueue.length
+    })
+  }
+
+  public toggleRepeatMode(): void {
+    const modes: ('off' | 'all' | 'one')[] = ['off', 'all', 'one']
+    const nextIdx = (modes.indexOf(this.state.repeatMode) + 1) % modes.length
+    const nextMode = modes[nextIdx]
+    this.updateState({ repeatMode: nextMode })
+  }
+
+  public setPlaybackRate(rate: number): void {
+    const clamped = Math.max(0.5, Math.min(2.5, rate))
+    if (this.audio) {
+      this.audio.playbackRate = clamped
+    }
+    this.updateState({ playbackRate: clamped })
+  }
+
+  public setSleepTimer(duration: number | 'track' | null): void {
+    if (this.sleepTimerInterval) {
+      clearInterval(this.sleepTimerInterval)
+      this.sleepTimerInterval = null
+    }
+
+    if (duration === null) {
+      this.sleepTimerDuration = null
+      this.sleepTimerRemaining = null
+      this.updateState({ sleepTimerDuration: null, sleepTimerRemaining: null })
+      return
+    }
+
+    if (duration === 'track') {
+      this.sleepTimerDuration = 'track'
+      this.sleepTimerRemaining = null
+      this.updateState({ sleepTimerDuration: 'track', sleepTimerRemaining: null })
+      return
+    }
+
+    this.sleepTimerDuration = duration
+    this.sleepTimerRemaining = Math.round(duration * 60)
+    this.updateState({
+      sleepTimerDuration: this.sleepTimerDuration,
+      sleepTimerRemaining: this.sleepTimerRemaining
+    })
+
+    this.sleepTimerInterval = setInterval(() => {
+      if (this.sleepTimerRemaining !== null && this.sleepTimerRemaining > 0) {
+        this.sleepTimerRemaining -= 1
+        this.updateState({ sleepTimerRemaining: this.sleepTimerRemaining })
+        if (this.sleepTimerRemaining <= 0) {
+          if (this.sleepTimerInterval) {
+            clearInterval(this.sleepTimerInterval)
+            this.sleepTimerInterval = null
+          }
+          this.pause()
+          this.sleepTimerDuration = null
+          this.sleepTimerRemaining = null
+          this.updateState({ sleepTimerDuration: null, sleepTimerRemaining: null })
+        }
+      }
+    }, 1000)
+  }
+
+  public setCrossfade(seconds: number): void {
+    const clamped = Math.max(0, Math.min(12, seconds))
+    this.crossfadeSeconds = clamped
+    this.updateState({ crossfadeSeconds: clamped })
   }
 
   public async nextTrack(): Promise<void> {
@@ -413,12 +564,19 @@ class RobotMusicService {
     }
     if (this.playlistIndex < this.playlistQueue.length - 1) {
       this.playlistIndex += 1
+      this.updateState({ playlistIndex: this.playlistIndex })
+      await this.playSong(this.playlistQueue[this.playlistIndex])
     } else {
-      // Loop back to the beginning of the queue
-      this.playlistIndex = 0
+      if (this.state.repeatMode === 'off') {
+        this.pause()
+        this.seek(0)
+      } else {
+        // Loop back to the beginning of the queue
+        this.playlistIndex = 0
+        this.updateState({ playlistIndex: this.playlistIndex })
+        await this.playSong(this.playlistQueue[0])
+      }
     }
-    this.updateState({ playlistIndex: this.playlistIndex })
-    await this.playSong(this.playlistQueue[this.playlistIndex])
   }
 
   public async prevTrack(): Promise<void> {
@@ -450,10 +608,19 @@ class RobotMusicService {
   private updateMediaSession(track: MusicTrack): void {
     if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
     try {
+      const artwork = track.coverUrl
+        ? [
+            { src: track.coverUrl, sizes: '96x96', type: 'image/jpeg' },
+            { src: track.coverUrl, sizes: '256x256', type: 'image/jpeg' },
+            { src: track.coverUrl, sizes: '512x512', type: 'image/jpeg' }
+          ]
+        : []
+
       navigator.mediaSession.metadata = new MediaMetadata({
         title: track.title,
         artist: track.artist || this.playlistTitle || 'Bip Singing Companion',
-        album: this.playlistTitle || 'Muse Music'
+        album: this.playlistTitle || 'Muse Music',
+        artwork
       })
       navigator.mediaSession.setActionHandler('play', () => this.resume())
       navigator.mediaSession.setActionHandler('pause', () => this.pause())
@@ -466,6 +633,21 @@ class RobotMusicService {
   }
 
   private handleTrackEnded(): void {
+    if (this.sleepTimerDuration === 'track') {
+      this.pause()
+      this.seek(0)
+      this.setSleepTimer(null)
+      return
+    }
+
+    if (this.state.repeatMode === 'one') {
+      if (this.audio) {
+        this.audio.currentTime = 0
+        void this.audio.play()
+      }
+      return
+    }
+
     if (this.playlistQueue.length > 0) {
       void this.nextTrack()
     }
