@@ -1345,355 +1345,367 @@ class _MusicTabState extends State<MusicTab> {
                     return ValueListenableBuilder<Duration>(
                       valueListenable: _music.duration,
                       builder: (context, dur, _) {
-                        return Container(
-                          padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-                          decoration: BoxDecoration(
-                            color: AppTheme.isDark ? const Color(0xFF14121F) : Colors.white,
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-                            boxShadow: const [
-                              BoxShadow(color: Colors.black45, blurRadius: 24, offset: Offset(0, -6)),
-                            ],
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Handle
-                              Center(
-                                child: Container(
-                                  width: 44,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.withValues(alpha: 0.4),
-                                    borderRadius: BorderRadius.circular(2),
+                        return SafeArea(
+                          top: false,
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+                            decoration: BoxDecoration(
+                              color: AppTheme.isDark ? const Color(0xFF14121F) : Colors.white,
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                              boxShadow: const [
+                                BoxShadow(color: Colors.black45, blurRadius: 24, offset: Offset(0, -6)),
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Handle
+                                Center(
+                                  child: Container(
+                                    width: 44,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey.withValues(alpha: 0.4),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 12),
+                                const SizedBox(height: 12),
 
-                              // Header
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'PLAYING FROM',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w800,
-                                          letterSpacing: 0.8,
-                                          color: AppTheme.getTextSecondary(context),
-                                        ),
-                                      ),
-                                      ValueListenableBuilder<String?>(
-                                        valueListenable: _music.activePlaylistName,
-                                        builder: (ctx, plName, _) => Text(
-                                          plName ?? 'Music Library',
+                                // Header
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'PLAYING FROM',
                                           style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                            color: AppTheme.getTextPrimary(context),
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.8,
+                                            color: AppTheme.getTextSecondary(context),
                                           ),
                                         ),
+                                        ValueListenableBuilder<String?>(
+                                          valueListenable: _music.activePlaylistName,
+                                          builder: (ctx, plName, _) => Text(
+                                            plName ?? 'Music Library',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: AppTheme.getTextPrimary(context),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
+                                      color: AppTheme.getTextPrimary(context),
+                                      onPressed: () => Navigator.pop(sheetContext),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Big Album Artwork with Change Cover badge
+                                Stack(
+                                  alignment: Alignment.bottomRight,
+                                  children: [
+                                    Container(
+                                      width: 240,
+                                      height: 240,
+                                      decoration: BoxDecoration(
+                                        borderRadius: BorderRadius.circular(20),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: const Color(0xFF7C3AED).withValues(alpha: 0.35),
+                                            blurRadius: 24,
+                                            offset: const Offset(0, 10),
+                                          ),
+                                        ],
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: _buildCoverThumbnail(filename, size: 240, isCurrentSong: false),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.all(10),
+                                      child: ElevatedButton.icon(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.black.withValues(alpha: 0.65),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                        ),
+                                        onPressed: () {
+                                          Navigator.pop(sheetContext);
+                                          _showCoverArtSheet(track);
+                                        },
+                                        icon: const Icon(Icons.image_search_rounded, size: 14),
+                                        label: const Text('Cover'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+
+                                // Visualizer Animation
+                                _SoundWaveVisualizer(isPlaying: isPlaying),
+                                const SizedBox(height: 12),
+
+                                // Track Title & Artist
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.getTextPrimary(context),
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  artist.isNotEmpty ? artist : 'Bip Singing Companion',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF8B5CF6),
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+
+                                // Timeline slider
+                                SliderTheme(
+                                  data: SliderTheme.of(context).copyWith(
+                                    trackHeight: 4,
+                                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                    activeTrackColor: const Color(0xFF8B5CF6),
+                                    inactiveTrackColor: AppTheme.isDark ? Colors.white12 : Colors.black12,
+                                    thumbColor: const Color(0xFF8B5CF6),
+                                  ),
+                                  child: Slider(
+                                    value: dur.inMilliseconds > 0
+                                        ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
+                                        : 0.0,
+                                    onChanged: (val) {
+                                      final targetMs = (val * dur.inMilliseconds).toInt();
+                                      _music.seek(Duration(milliseconds: targetMs));
+                                    },
+                                  ),
+                                ),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(_formatDuration(pos),
+                                          style: TextStyle(fontSize: 11, color: AppTheme.getTextSecondary(context))),
+                                      Text(
+                                        dur.inSeconds > 0 ? '-${_formatDuration(dur - pos)}' : '0:00',
+                                        style: TextStyle(fontSize: 11, color: AppTheme.getTextSecondary(context)),
                                       ),
                                     ],
                                   ),
-                                  IconButton(
-                                    icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
-                                    color: AppTheme.getTextPrimary(context),
-                                    onPressed: () => Navigator.pop(sheetContext),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Big Album Artwork with Change Cover badge
-                              Stack(
-                                alignment: Alignment.bottomRight,
-                                children: [
-                                  Container(
-                                    width: 240,
-                                    height: 240,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(20),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: const Color(0xFF7C3AED).withValues(alpha: 0.35),
-                                          blurRadius: 24,
-                                          offset: const Offset(0, 10),
-                                        ),
-                                      ],
-                                    ),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(20),
-                                      child: _buildCoverThumbnail(filename, size: 240, isCurrentSong: false),
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.all(10),
-                                    child: ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.black.withValues(alpha: 0.65),
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                      ),
-                                      onPressed: () {
-                                        Navigator.pop(sheetContext);
-                                        _showCoverArtSheet(track);
-                                      },
-                                      icon: const Icon(Icons.image_search_rounded, size: 14),
-                                      label: const Text('Cover'),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 14),
-
-                              // Visualizer Animation
-                              _SoundWaveVisualizer(isPlaying: isPlaying),
-                              const SizedBox(height: 12),
-
-                              // Track Title & Artist
-                              Text(
-                                title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppTheme.getTextPrimary(context),
                                 ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                artist.isNotEmpty ? artist : 'Bip Singing Companion',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF8B5CF6),
-                                ),
-                              ),
-                              const SizedBox(height: 14),
+                                const SizedBox(height: 12),
 
-                              // Timeline slider
-                              SliderTheme(
-                                data: SliderTheme.of(context).copyWith(
-                                  trackHeight: 4,
-                                  thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                                  activeTrackColor: const Color(0xFF8B5CF6),
-                                  inactiveTrackColor: AppTheme.isDark ? Colors.white12 : Colors.black12,
-                                  thumbColor: const Color(0xFF8B5CF6),
-                                ),
-                                child: Slider(
-                                  value: dur.inMilliseconds > 0
-                                      ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
-                                      : 0.0,
-                                  onChanged: (val) {
-                                    final targetMs = (val * dur.inMilliseconds).toInt();
-                                    _music.seek(Duration(milliseconds: targetMs));
-                                  },
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                // Playback Controls Row (Bigger, comfortable hit targets)
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                                   children: [
-                                    Text(_formatDuration(pos),
-                                        style: TextStyle(fontSize: 11, color: AppTheme.getTextSecondary(context))),
-                                    Text(
-                                      dur.inSeconds > 0 ? '-${_formatDuration(dur - pos)}' : '0:00',
-                                      style: TextStyle(fontSize: 11, color: AppTheme.getTextSecondary(context)),
+                                    // Shuffle
+                                    ValueListenableBuilder<bool>(
+                                      valueListenable: _music.isShuffle,
+                                      builder: (ctx, isShuf, _) => IconButton(
+                                        icon: Icon(
+                                          Icons.shuffle_rounded,
+                                          color: isShuf
+                                              ? const Color(0xFF8B5CF6)
+                                              : AppTheme.getTextSecondary(context),
+                                          size: 26,
+                                        ),
+                                        padding: const EdgeInsets.all(8),
+                                        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                        onPressed: _music.toggleShuffle,
+                                      ),
+                                    ),
+
+                                    // Prev
+                                    IconButton(
+                                      icon: Icon(Icons.skip_previous_rounded,
+                                          size: 38, color: AppTheme.getTextPrimary(context)),
+                                      padding: const EdgeInsets.all(8),
+                                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                                      onPressed: _music.previous,
+                                    ),
+
+                                    // Big Play / Pause
+                                    Container(
+                                      width: 66,
+                                      height: 66,
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                          colors: [Color(0xFF7C3AED), Color(0xFFEC4899)],
+                                        ),
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: const Color(0xFF7C3AED).withValues(alpha: 0.4),
+                                            blurRadius: 18,
+                                            offset: const Offset(0, 6),
+                                          ),
+                                        ],
+                                      ),
+                                      child: IconButton(
+                                        icon: Icon(
+                                          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                          size: 38,
+                                          color: Colors.white,
+                                        ),
+                                        onPressed: _music.togglePlayPause,
+                                      ),
+                                    ),
+
+                                    // Next
+                                    IconButton(
+                                      icon: Icon(Icons.skip_next_rounded,
+                                          size: 38, color: AppTheme.getTextPrimary(context)),
+                                      padding: const EdgeInsets.all(8),
+                                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                                      onPressed: _music.next,
+                                    ),
+
+                                    // Repeat
+                                    ValueListenableBuilder<String>(
+                                      valueListenable: _music.repeatMode,
+                                      builder: (ctx, mode, _) => IconButton(
+                                        icon: Icon(
+                                          mode == 'one' ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+                                          color: mode != 'off'
+                                              ? const Color(0xFF8B5CF6)
+                                              : AppTheme.getTextSecondary(context),
+                                          size: 26,
+                                        ),
+                                        padding: const EdgeInsets.all(8),
+                                        constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                        onPressed: _music.toggleRepeatMode,
+                                      ),
                                     ),
                                   ],
                                 ),
-                              ),
-                              const SizedBox(height: 12),
+                                const SizedBox(height: 16),
 
-                              // Playback Controls Row
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  // Shuffle
-                                  ValueListenableBuilder<bool>(
-                                    valueListenable: _music.isShuffle,
-                                    builder: (ctx, isShuf, _) => IconButton(
-                                      icon: Icon(
-                                        Icons.shuffle_rounded,
-                                        color: isShuf
-                                            ? const Color(0xFF8B5CF6)
-                                            : AppTheme.getTextSecondary(context),
-                                        size: 22,
-                                      ),
-                                      onPressed: _music.toggleShuffle,
-                                    ),
-                                  ),
-
-                                  // Prev
-                                  IconButton(
-                                    icon: Icon(Icons.skip_previous_rounded,
-                                        size: 34, color: AppTheme.getTextPrimary(context)),
-                                    onPressed: _music.previous,
-                                  ),
-
-                                  // Big Play / Pause
-                                  Container(
-                                    width: 58,
-                                    height: 58,
-                                    decoration: BoxDecoration(
-                                      gradient: const LinearGradient(
-                                        colors: [Color(0xFF7C3AED), Color(0xFFEC4899)],
-                                      ),
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: const Color(0xFF7C3AED).withValues(alpha: 0.4),
-                                          blurRadius: 16,
-                                          offset: const Offset(0, 6),
-                                        ),
-                                      ],
-                                    ),
-                                    child: IconButton(
-                                      icon: Icon(
-                                        isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                        size: 34,
-                                        color: Colors.white,
-                                      ),
-                                      onPressed: _music.togglePlayPause,
-                                    ),
-                                  ),
-
-                                  // Next
-                                  IconButton(
-                                    icon: Icon(Icons.skip_next_rounded,
-                                        size: 34, color: AppTheme.getTextPrimary(context)),
-                                    onPressed: _music.next,
-                                  ),
-
-                                  // Repeat
-                                  ValueListenableBuilder<String>(
-                                    valueListenable: _music.repeatMode,
-                                    builder: (ctx, mode, _) => IconButton(
-                                      icon: Icon(
-                                        mode == 'one' ? Icons.repeat_one_rounded : Icons.repeat_rounded,
-                                        color: mode != 'off'
-                                            ? const Color(0xFF8B5CF6)
-                                            : AppTheme.getTextSecondary(context),
-                                        size: 22,
-                                      ),
-                                      onPressed: _music.toggleRepeatMode,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Secondary toolbar: Speed, Sleep, Crossfade, Offline
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    // Speed chip
-                                    ValueListenableBuilder<double>(
-                                      valueListenable: _music.playbackRate,
-                                      builder: (ctx, rate, _) => ActionChip(
-                                        label: Text('${rate}x Speed',
-                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                        avatar: const Icon(Icons.speed_rounded, size: 14),
-                                        onPressed: () {
-                                          const rates = [1.0, 1.25, 1.5, 2.0, 0.75];
-                                          final next = rates[(rates.indexOf(rate) + 1) % rates.length];
-                                          _music.setPlaybackRate(next);
-                                        },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-
-                                    // Sleep timer chip
-                                    ValueListenableBuilder<int?>(
-                                      valueListenable: _music.sleepTimerRemaining,
-                                      builder: (ctx, rem, _) => ActionChip(
-                                        label: Text(
-                                          rem != null ? '${(rem / 60).ceil()}m Sleep' : 'Sleep Timer',
-                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                                        ),
-                                        avatar: Icon(Icons.bedtime_outlined,
-                                            size: 14, color: rem != null ? Colors.amber : null),
-                                        onPressed: () => _showSleepTimerDialog(context),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-
-                                    // Crossfade chip
-                                    ValueListenableBuilder<int>(
-                                      valueListenable: _music.crossfadeSeconds,
-                                      builder: (ctx, fade, _) => ActionChip(
-                                        label: Text(
-                                          fade > 0 ? '${fade}s Fade' : 'Crossfade Off',
-                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                                        ),
-                                        avatar: const Icon(Icons.tune_rounded, size: 14),
-                                        onPressed: () {
-                                          const fades = [0, 3, 5, 8, 12];
-                                          final next = fades[(fades.indexOf(fade) + 1) % fades.length];
-                                          _music.setCrossfade(next);
-                                        },
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-
-                                    // Offline download chip
-                                    ValueListenableBuilder<Set<String>>(
-                                      valueListenable: _music.offlineTrackFilenames,
-                                      builder: (ctx, offlineSet, _) {
-                                        final isOffline = offlineSet.contains(filename);
-                                        return ActionChip(
-                                          label: Text(
-                                            isOffline ? 'Saved Offline' : 'Save Offline',
-                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                                          ),
-                                          avatar: Icon(
-                                            isOffline ? Icons.offline_pin_rounded : Icons.download_rounded,
-                                            size: 14,
-                                            color: isOffline ? Colors.green : null,
-                                          ),
-                                          onPressed: () async {
-                                            if (isOffline) {
-                                              await _music.deleteOfflineTrack(filename);
-                                              if (context.mounted) {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  const SnackBar(
-                                                      content: Text('Removed offline audio file')),
-                                                );
-                                              }
-                                            } else {
-                                              final ok = await _music.downloadTrackOffline(track);
-                                              if (context.mounted) {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(
-                                                    content: Text(ok
-                                                        ? 'Song cached for offline listening!'
-                                                        : 'Download failed'),
-                                                  ),
-                                                );
-                                              }
-                                            }
+                                // Secondary toolbar: Speed, Sleep, Crossfade, Offline
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      // Speed chip
+                                      ValueListenableBuilder<double>(
+                                        valueListenable: _music.playbackRate,
+                                        builder: (ctx, rate, _) => ActionChip(
+                                          label: Text('${rate}x Speed',
+                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                          avatar: const Icon(Icons.speed_rounded, size: 16),
+                                          onPressed: () {
+                                            const rates = [1.0, 1.25, 1.5, 2.0, 0.75];
+                                            final next = rates[(rates.indexOf(rate) + 1) % rates.length];
+                                            _music.setPlaybackRate(next);
                                           },
-                                        );
-                                      },
-                                    ),
-                                  ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+
+                                      // Sleep timer chip
+                                      ValueListenableBuilder<int?>(
+                                        valueListenable: _music.sleepTimerRemaining,
+                                        builder: (ctx, rem, _) => ActionChip(
+                                          label: Text(
+                                            rem != null ? '${(rem / 60).ceil()}m Sleep' : 'Sleep Timer',
+                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                          ),
+                                          avatar: Icon(Icons.bedtime_outlined,
+                                              size: 16, color: rem != null ? Colors.amber : null),
+                                          onPressed: () => _showSleepTimerDialog(context),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+
+                                      // Crossfade chip
+                                      ValueListenableBuilder<int>(
+                                        valueListenable: _music.crossfadeSeconds,
+                                        builder: (ctx, fade, _) => ActionChip(
+                                          label: Text(
+                                            fade > 0 ? '${fade}s Fade' : 'Crossfade Off',
+                                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                          ),
+                                          avatar: const Icon(Icons.tune_rounded, size: 16),
+                                          onPressed: () {
+                                            const fades = [0, 3, 5, 8, 12];
+                                            final next = fades[(fades.indexOf(fade) + 1) % fades.length];
+                                            _music.setCrossfade(next);
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+
+                                      // Offline download chip
+                                      ValueListenableBuilder<Set<String>>(
+                                        valueListenable: _music.offlineTrackFilenames,
+                                        builder: (ctx, offlineSet, _) {
+                                          final isOffline = offlineSet.contains(filename);
+                                          return ActionChip(
+                                            label: Text(
+                                              isOffline ? 'Saved Offline' : 'Save Offline',
+                                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                            ),
+                                            avatar: Icon(
+                                              isOffline ? Icons.offline_pin_rounded : Icons.download_rounded,
+                                              size: 16,
+                                              color: isOffline ? Colors.green : null,
+                                            ),
+                                            onPressed: () async {
+                                              if (isOffline) {
+                                                await _music.deleteOfflineTrack(filename);
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(
+                                                        content: Text('Removed offline audio file')),
+                                                  );
+                                                }
+                                              } else {
+                                                final ok = await _music.downloadTrackOffline(track);
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(ok
+                                                          ? 'Song cached for offline listening!'
+                                                          : 'Download failed'),
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 10),
+                              ],
+                            ),
                           ),
                         );
                       },
@@ -1732,216 +1744,291 @@ class _MusicTabState extends State<MusicTab> {
                     final posStr = _formatDuration(pos);
                     final durStr = _formatDuration(dur);
 
-                    return Container(
-                      padding: const EdgeInsets.fromLTRB(14, 4, 14, 8),
-                      decoration: BoxDecoration(
-                        color: AppTheme.isDark ? const Color(0xFF161522) : const Color(0xFFFFFFFF),
-                        border: Border(
-                          top: BorderSide(
-                            color: AppTheme.isDark ? const Color(0xFF2C2840) : const Color(0xFFE2E8F0),
-                            width: 1.5,
+                    return SafeArea(
+                      top: false,
+                      child: Container(
+                        padding: const EdgeInsets.fromLTRB(14, 6, 14, 10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.isDark ? const Color(0xFF161522) : const Color(0xFFFFFFFF),
+                          border: Border(
+                            top: BorderSide(
+                              color: AppTheme.isDark ? const Color(0xFF2C2840) : const Color(0xFFE2E8F0),
+                              width: 1.5,
+                            ),
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: AppTheme.isDark ? 0.5 : 0.08),
+                              blurRadius: 18,
+                              offset: const Offset(0, -4),
+                            ),
+                          ],
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: AppTheme.isDark ? 0.5 : 0.08),
-                            blurRadius: 16,
-                            offset: const Offset(0, -4),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Progress Slider
-                          Row(
-                            children: [
-                              Text(posStr, style: TextStyle(fontSize: 10, color: AppTheme.getTextSecondary(context))),
-                              Expanded(
-                                child: SliderTheme(
-                                  data: SliderTheme.of(context).copyWith(
-                                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
-                                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 8),
-                                    trackHeight: 3,
-                                    activeTrackColor: AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary,
-                                    inactiveTrackColor: AppTheme.isDark ? Colors.white12 : Colors.black12,
-                                    thumbColor: AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary,
-                                  ),
-                                  child: Slider(
-                                    value: dur.inMilliseconds > 0
-                                        ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
-                                        : 0.0,
-                                    onChanged: (val) {
-                                      final targetMs = (val * dur.inMilliseconds).toInt();
-                                      _music.seek(Duration(milliseconds: targetMs));
-                                    },
-                                  ),
-                                ),
-                              ),
-                              Text(durStr, style: TextStyle(fontSize: 10, color: AppTheme.getTextSecondary(context))),
-                            ],
-                          ),
-
-                          Row(
-                            children: [
-                              // Cover Art Thumbnail (Clickable to open Now Playing)
-                              GestureDetector(
-                                onTap: () => _showNowPlayingSheet(context),
-                                child: _buildCoverThumbnail(
-                                  filename,
-                                  size: 38,
-                                  isCurrentSong: true,
-                                  isPlaying: isPlaying,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-
-                              // Track Title & Artist (Tap to expand)
-                              Expanded(
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () => _showNowPlayingSheet(context),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        title,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppTheme.getTextPrimary(context),
-                                        ),
-                                      ),
-                                      ValueListenableBuilder<String?>(
-                                        valueListenable: _music.activePlaylistName,
-                                        builder: (context, plName, _) {
-                                          final sub = artist.isNotEmpty
-                                              ? (plName != null ? '$artist • $plName' : artist)
-                                              : (plName ?? '');
-                                          if (sub.isEmpty) return const SizedBox.shrink();
-                                          return Text(
-                                            sub,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(fontSize: 11, color: AppTheme.getTextSecondary(context)),
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-
-                              // Shuffle
-                              ValueListenableBuilder<bool>(
-                                valueListenable: _music.isShuffle,
-                                builder: (ctx, isShuf, _) => IconButton(
-                                  icon: Icon(
-                                    Icons.shuffle_rounded,
-                                    size: 18,
-                                    color: isShuf
-                                        ? (AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary)
-                                        : AppTheme.getTextSecondary(context),
-                                  ),
-                                  visualDensity: VisualDensity.compact,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                                  onPressed: _music.toggleShuffle,
-                                ),
-                              ),
-
-                              // Previous
-                              IconButton(
-                                icon: const Icon(Icons.skip_previous_rounded, size: 22),
-                                color: AppTheme.getTextPrimary(context),
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                                onPressed: _music.previous,
-                              ),
-
-                              // Play / Pause
-                              ValueListenableBuilder<bool>(
-                                valueListenable: _music.loading,
-                                builder: (context, isLoading, _) {
-                                  if (isLoading) {
-                                    return const SizedBox(
-                                      width: 32,
-                                      height: 32,
-                                      child: Center(
-                                        child: SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                  return IconButton(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Progress Slider with Shuffle & Repeat
+                            Row(
+                              children: [
+                                ValueListenableBuilder<bool>(
+                                  valueListenable: _music.isShuffle,
+                                  builder: (ctx, isShuf, _) => IconButton(
                                     icon: Icon(
-                                      isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_filled_rounded,
-                                      color: AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary,
-                                      size: 32,
+                                      Icons.shuffle_rounded,
+                                      size: 19,
+                                      color: isShuf
+                                          ? (AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary)
+                                          : AppTheme.getTextSecondary(context),
                                     ),
                                     visualDensity: VisualDensity.compact,
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                    onPressed: _music.togglePlayPause,
-                                  );
-                                },
-                              ),
-
-                              // Next
-                              IconButton(
-                                icon: const Icon(Icons.skip_next_rounded, size: 22),
-                                color: AppTheme.getTextPrimary(context),
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                                onPressed: _music.next,
-                              ),
-
-                              // Repeat
-                              ValueListenableBuilder<String>(
-                                valueListenable: _music.repeatMode,
-                                builder: (ctx, mode, _) => IconButton(
-                                  icon: Icon(
-                                    mode == 'one' ? Icons.repeat_one_rounded : Icons.repeat_rounded,
-                                    size: 18,
-                                    color: mode != 'off'
-                                        ? (AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary)
-                                        : AppTheme.getTextSecondary(context),
+                                    tooltip: isShuf ? 'Shuffle On' : 'Shuffle Off',
+                                    onPressed: _music.toggleShuffle,
                                   ),
-                                  visualDensity: VisualDensity.compact,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-                                  onPressed: _music.toggleRepeatMode,
                                 ),
-                              ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  posStr,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.getTextSecondary(context),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                                      trackHeight: 3.5,
+                                      activeTrackColor: AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary,
+                                      inactiveTrackColor: AppTheme.isDark ? Colors.white12 : Colors.black12,
+                                      thumbColor: AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary,
+                                    ),
+                                    child: Slider(
+                                      value: dur.inMilliseconds > 0
+                                          ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
+                                          : 0.0,
+                                      onChanged: (val) {
+                                        final targetMs = (val * dur.inMilliseconds).toInt();
+                                        _music.seek(Duration(milliseconds: targetMs));
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  durStr,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.getTextSecondary(context),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                ValueListenableBuilder<String>(
+                                  valueListenable: _music.repeatMode,
+                                  builder: (ctx, mode, _) => IconButton(
+                                    icon: Icon(
+                                      mode == 'one' ? Icons.repeat_one_rounded : Icons.repeat_rounded,
+                                      size: 19,
+                                      color: mode != 'off'
+                                          ? (AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary)
+                                          : AppTheme.getTextSecondary(context),
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    tooltip: mode == 'one' ? 'Repeat One' : (mode == 'all' ? 'Repeat All' : 'Repeat Off'),
+                                    onPressed: _music.toggleRepeatMode,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
 
-                              // Expand Now Playing
-                              IconButton(
-                                icon: Icon(Icons.open_in_full_rounded, size: 16, color: AppTheme.getTextSecondary(context)),
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                onPressed: () => _showNowPlayingSheet(context),
-                              ),
+                            // Main Controls Row
+                            Row(
+                              children: [
+                                // Cover Art Thumbnail (Clickable to open Now Playing)
+                                GestureDetector(
+                                  onTap: () => _showNowPlayingSheet(context),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(10),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: (AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary)
+                                              .withValues(alpha: 0.25),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: _buildCoverThumbnail(
+                                        filename,
+                                        size: 52,
+                                        isCurrentSong: true,
+                                        isPlaying: isPlaying,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
 
-                              // Stop / Close
-                              IconButton(
-                                icon: Icon(Icons.close_rounded, size: 18, color: AppTheme.getTextSecondary(context)),
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                                onPressed: _music.stop,
-                              ),
-                            ],
-                          ),
-                        ],
+                                // Track Title & Artist (Tap to expand)
+                                Expanded(
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () => _showNowPlayingSheet(context),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppTheme.getTextPrimary(context),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        ValueListenableBuilder<String?>(
+                                          valueListenable: _music.activePlaylistName,
+                                          builder: (context, plName, _) {
+                                            final sub = artist.isNotEmpty
+                                                ? (plName != null ? '$artist • $plName' : artist)
+                                                : (plName ?? 'Muse Music');
+                                            return Text(
+                                              sub,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.w500,
+                                                color: AppTheme.getTextSecondary(context),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+
+                                // Previous Track
+                                IconButton(
+                                  icon: const Icon(Icons.skip_previous_rounded, size: 28),
+                                  color: AppTheme.getTextPrimary(context),
+                                  tooltip: 'Previous',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                                  onPressed: _music.previous,
+                                ),
+
+                                const SizedBox(width: 4),
+
+                                // Prominent Big Play / Pause Button
+                                ValueListenableBuilder<bool>(
+                                  valueListenable: _music.loading,
+                                  builder: (context, isLoading, _) {
+                                    if (isLoading) {
+                                      return Container(
+                                        width: 44,
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: (AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary)
+                                              .withValues(alpha: 0.15),
+                                        ),
+                                        child: Center(
+                                          child: SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2.5,
+                                              color: AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return Container(
+                                      width: 44,
+                                      height: 44,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient: LinearGradient(
+                                          colors: AppTheme.isDark
+                                              ? const [Color(0xFF00E5FF), Color(0xFF7C3AED)]
+                                              : const [AppTheme.primary, AppTheme.primaryLight],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: (AppTheme.isDark ? const Color(0xFF00E5FF) : AppTheme.primary)
+                                                .withValues(alpha: 0.35),
+                                            blurRadius: 10,
+                                            offset: const Offset(0, 3),
+                                          ),
+                                        ],
+                                      ),
+                                      child: IconButton(
+                                        icon: Icon(
+                                          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                          color: Colors.white,
+                                          size: 28,
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                        tooltip: isPlaying ? 'Pause' : 'Play',
+                                        onPressed: _music.togglePlayPause,
+                                      ),
+                                    );
+                                  },
+                                ),
+
+                                const SizedBox(width: 4),
+
+                                // Next Track
+                                IconButton(
+                                  icon: const Icon(Icons.skip_next_rounded, size: 28),
+                                  color: AppTheme.getTextPrimary(context),
+                                  tooltip: 'Next',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                                  onPressed: _music.next,
+                                ),
+
+                                const SizedBox(width: 4),
+
+                                // Expand Now Playing
+                                IconButton(
+                                  icon: Icon(Icons.open_in_full_rounded, size: 20, color: AppTheme.getTextSecondary(context)),
+                                  tooltip: 'Expand',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                                  onPressed: () => _showNowPlayingSheet(context),
+                                ),
+
+                                // Stop / Close
+                                IconButton(
+                                  icon: Icon(Icons.close_rounded, size: 20, color: AppTheme.getTextSecondary(context)),
+                                  tooltip: 'Close',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+                                  onPressed: _music.stop,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },
