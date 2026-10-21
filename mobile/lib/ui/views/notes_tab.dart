@@ -49,6 +49,14 @@ class _NotesTabState extends State<NotesTab> {
     _loadUserName();
     _loadNotes();
     AppEvents.dataChanged.addListener(_onDataChanged);
+    AppEvents.notesScope.addListener(_onScopeChanged);
+  }
+
+  void _onScopeChanged() {
+    final s = AppEvents.notesScope.value;
+    if (mounted && _currentScope != s) {
+      _setScope(s);
+    }
   }
 
   Future<void> _loadUserName() async {
@@ -59,6 +67,7 @@ class _NotesTabState extends State<NotesTab> {
   @override
   void dispose() {
     AppEvents.dataChanged.removeListener(_onDataChanged);
+    AppEvents.notesScope.removeListener(_onScopeChanged);
     _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -131,6 +140,9 @@ class _NotesTabState extends State<NotesTab> {
 
   Future<void> _setScope(String scope) async {
     if (_currentScope == scope) return;
+    if (AppEvents.notesScope.value != scope) {
+      AppEvents.notesScope.value = scope;
+    }
     setState(() {
       _currentScope = scope;
       _selectedIds.clear();
@@ -448,131 +460,44 @@ class _NotesTabState extends State<NotesTab> {
     }
   }
 
-  void _showCreateNoteSheet() {
-    final titleController = TextEditingController();
-    final contentController = TextEditingController();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: AppTheme.getSurface(context),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SingleChildScrollView(
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            left: 20,
-            right: 20,
-            top: 20,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'New Note',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.getTextPrimary(ctx),
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close, color: AppTheme.getTextSecondary(ctx)),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: titleController,
-                autofocus: true,
-                style: TextStyle(color: AppTheme.getTextPrimary(ctx), fontWeight: FontWeight.w600),
-                decoration: InputDecoration(
-                  hintText: 'Note Title',
-                  hintStyle: TextStyle(color: AppTheme.getTextSecondary(ctx)),
-                  filled: true,
-                  fillColor: AppTheme.getBackground(ctx),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: contentController,
-                maxLines: 6,
-                style: TextStyle(color: AppTheme.getTextPrimary(ctx)),
-                decoration: InputDecoration(
-                  hintText: 'Type your thoughts or paste ideas…',
-                  hintStyle: TextStyle(color: AppTheme.getTextSecondary(ctx)),
-                  filled: true,
-                  fillColor: AppTheme.getBackground(ctx),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                ),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: () async {
-                  final title = titleController.text.trim();
-                  final content = contentController.text.trim();
-                  if (title.isEmpty && content.isEmpty) return;
-
-                  Navigator.pop(ctx);
-                  try {
-                    final Note created;
-                    try {
-                      created = await _api.createNote(
-                        title: title.isEmpty ? 'Untitled Note' : title,
-                        content: content,
-                        tags: ['mobile'],
-                      );
-                    } catch (e) {
-                      if (!OfflineQueue.isNetworkError(e)) rethrow;
-                      final local = await OfflineQueue.queueNote(
-                        title: title.isEmpty ? 'Untitled Note' : title,
-                        content: content,
-                        tags: ['mobile'],
-                      );
-                      await _loadNotes(silent: true);
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Saved locally. Will sync when Muse connects.')),
-                        );
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => NoteDetailView(note: local)))
-                            .then((_) => _loadNotes(silent: true));
-                      }
-                      return;
-                    }
-                    await _loadNotes();
-                    if (mounted) {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => NoteDetailView(note: created)))
-                          .then((_) => _loadNotes());
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to save note: $e'), backgroundColor: Colors.redAccent),
-                      );
-                    }
-                  }
-                },
-                child: const Text('Create Note', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-              ),
-            ],
+  Future<void> _createAndOpenNote(BuildContext ctx) async {
+    try {
+      Note created;
+      try {
+        created = await _api.createNote(
+          title: '',
+          content: '',
+          tags: ['mobile'],
+        );
+      } catch (e) {
+        if (!OfflineQueue.isNetworkError(e)) rethrow;
+        created = await OfflineQueue.queueNote(
+          title: '',
+          content: '',
+          tags: ['mobile'],
+        );
+      }
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => NoteDetailView(
+            note: created,
+            initialEditMode: true,
           ),
         ),
-      ),
-    );
+      );
+      _loadNotes(silent: true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to create note: $e'), backgroundColor: Colors.redAccent),
+      );
+    }
+  }
+
+  void _showCreateNoteSheet() {
+    _createAndOpenNote(context);
   }
 
   @override

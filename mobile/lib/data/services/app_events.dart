@@ -24,5 +24,12 @@ class AppEvents {
   /// JSON plus the action id ('done', 'snooze', or null for a plain tap).
   static final ValueNotifier<({String payload, String? action})?> alarmTapped = ValueNotifier(null);
 
+  /// Media playback action tapped from the phone's notification ('music_play',
+  /// 'music_pause', 'music_next', 'music_prev', etc.).
+  static final ValueNotifier<String?> musicAction = ValueNotifier<String?>(null);
+
+  /// Active notes filter scope ('all', 'favorites', 'archive', 'trash').
+  static final ValueNotifier<String> notesScope = ValueNotifier<String>('all');
+
   static void notifyDataChanged() => dataChanged.value++;
 }

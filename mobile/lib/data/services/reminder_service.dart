@@ -109,8 +109,18 @@ class ReminderService {
 
   static void _onResponse(NotificationResponse response) {
     final payload = response.payload;
-    if (payload == null || !payload.contains('"taskId"')) return;
-    AppEvents.alarmTapped.value = (payload: payload, action: response.actionId);
+    if (payload != null && payload.contains('"taskId"')) {
+      AppEvents.alarmTapped.value = (payload: payload, action: response.actionId);
+      return;
+    }
+    if (response.actionId != null && response.actionId!.startsWith('music_')) {
+      AppEvents.musicAction.value = response.actionId;
+      return;
+    }
+    if (payload == 'muse_music') {
+      AppEvents.musicAction.value = response.actionId ?? 'music_open';
+      return;
+    }
   }
 
   static Future<bool> isEnabled() async => (await SharedPreferences.getInstance()).getBool(_enabledKey) ?? false;

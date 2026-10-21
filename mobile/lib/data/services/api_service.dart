@@ -741,6 +741,31 @@ class ApiService {
     throw Exception('Failed to create playlist');
   }
 
+  Future<Map<String, dynamic>> updateMusicPlaylist(
+    String id, {
+    String? name,
+    String? description,
+    List<dynamic>? tracks,
+  }) async {
+    final base = await _getBaseUrl();
+    final headers = await _getHeaders();
+    final uri = Uri.parse('$base/api/music/playlists/$id');
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (description != null) body['description'] = description;
+    if (tracks != null) body['tracks'] = tracks;
+
+    final res = await _http.put(
+      uri,
+      headers: headers,
+      body: jsonEncode(body),
+    ).timeout(const Duration(seconds: 10));
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to update playlist: ${res.body}');
+  }
+
   Future<void> deleteMusicPlaylist(String id) async {
     final base = await _getBaseUrl();
     final headers = await _getHeaders();

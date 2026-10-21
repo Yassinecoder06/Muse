@@ -12,8 +12,13 @@ import '../theme/app_theme.dart';
 
 class NoteDetailView extends StatefulWidget {
   final Note note;
+  final bool initialEditMode;
 
-  const NoteDetailView({super.key, required this.note});
+  const NoteDetailView({
+    super.key,
+    required this.note,
+    this.initialEditMode = false,
+  });
 
   @override
   State<NoteDetailView> createState() => _NoteDetailViewState();
@@ -26,11 +31,13 @@ class _NoteDetailViewState extends State<NoteDetailView> {
 
   late TextEditingController _titleController;
   late TextEditingController _contentController;
+  late FocusNode _titleFocusNode;
+  late FocusNode _contentFocusNode;
   late bool _favorite;
   late List<String> _tags;
 
   // Mode: true = Reading (formatted document view), false = Editing (input mode)
-  bool _isReadingMode = true;
+  late bool _isReadingMode;
   bool _saving = false;
   bool _hasChanges = false;
   bool _isDictating = false;
@@ -54,6 +61,9 @@ class _NoteDetailViewState extends State<NoteDetailView> {
   @override
   void initState() {
     super.initState();
+    _isReadingMode = !widget.initialEditMode;
+    _titleFocusNode = FocusNode();
+    _contentFocusNode = FocusNode();
     _titleController = TextEditingController(text: widget.note.title);
     _contentController = TextEditingController(text: widget.note.markdownContent);
     _favorite = widget.note.favorite;
@@ -66,6 +76,20 @@ class _NoteDetailViewState extends State<NoteDetailView> {
     _titleController.addListener(_onTextChanged);
     _contentController.addListener(_onTextChanged);
     _prepareImages();
+
+    if (widget.initialEditMode) {
+      if (_titleController.text == 'Untitled Note') {
+        _titleController.text = '';
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_titleController.text.isEmpty) {
+          _titleFocusNode.requestFocus();
+        } else {
+          _contentFocusNode.requestFocus();
+        }
+      });
+    }
   }
 
   Future<void> _prepareImages() async {
@@ -130,8 +154,12 @@ class _NoteDetailViewState extends State<NoteDetailView> {
   void dispose() {
     _voice.cancel();
     _tts.stop();
+    _titleController.removeListener(_onTextChanged);
+    _contentController.removeListener(_onTextChanged);
     _titleController.dispose();
     _contentController.dispose();
+    _titleFocusNode.dispose();
+    _contentFocusNode.dispose();
     super.dispose();
   }
 
@@ -600,29 +628,30 @@ class _NoteDetailViewState extends State<NoteDetailView> {
               if (_isReadingMode)
                 Text(
                   _titleController.text.isEmpty ? 'Untitled note' : _titleController.text,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
+                    color: AppTheme.getTextPrimary(context),
                     height: 1.25,
                   ),
                 )
               else
                 TextField(
                   controller: _titleController,
-                  style: const TextStyle(
+                  focusNode: _titleFocusNode,
+                  style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: AppTheme.textPrimary,
+                    color: AppTheme.getTextPrimary(context),
                     height: 1.25,
                   ),
                   maxLines: null,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Note Title',
                     hintStyle: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      color: AppTheme.textSecondary,
+                      color: AppTheme.getTextSecondary(context),
                     ),
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.zero,
@@ -758,16 +787,17 @@ class _NoteDetailViewState extends State<NoteDetailView> {
                 // Editor Input
                 TextField(
                   controller: _contentController,
-                  style: const TextStyle(
+                  focusNode: _contentFocusNode,
+                  style: TextStyle(
                     fontSize: 15,
-                    color: AppTheme.textPrimary,
+                    color: AppTheme.getTextPrimary(context),
                     height: 1.6,
                   ),
                   maxLines: null,
                   keyboardType: TextInputType.multiline,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Start writing your note or thoughts here…',
-                    hintStyle: TextStyle(color: AppTheme.textSecondary, fontSize: 15),
+                    hintStyle: TextStyle(color: AppTheme.getTextSecondary(context), fontSize: 15),
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.zero,
                   ),

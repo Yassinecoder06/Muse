@@ -66,8 +66,21 @@ class VoiceService {
     return true;
   }
 
+  void _commitPartial() {
+    final trimmed = _partial.trim();
+    if (trimmed.isNotEmpty) {
+      if (_committed.isEmpty) {
+        _committed = trimmed;
+      } else {
+        _committed = '$_committed $trimmed';
+      }
+      _partial = '';
+    }
+  }
+
   Future<void> _listen() async {
     if (!_active) return;
+    _commitPartial();
     _sessionStartedAt = DateTime.now();
     try {
       await _speech.listen(
@@ -91,10 +104,17 @@ class VoiceService {
   void _handleResult(SpeechRecognitionResult result) {
     if (!_active) return;
     if (result.finalResult) {
-      _committed = [_committed, result.recognizedWords].where((part) => part.trim().isNotEmpty).join(' ');
+      final words = result.recognizedWords.trim();
+      if (words.isNotEmpty) {
+        if (_committed.isEmpty) {
+          _committed = words;
+        } else {
+          _committed = '$_committed $words';
+        }
+      }
       _partial = '';
     } else {
-      _partial = result.recognizedWords;
+      _partial = result.recognizedWords.trim();
     }
     _restartFailures = 0;
     _onText?.call(_fullText);
@@ -104,8 +124,8 @@ class VoiceService {
     debugPrint('[VoiceService] status: $status');
     if (!_active) return;
     if (status == 'done' || status == 'notListening') {
-      // The platform ended the session; start a new one shortly. The final
-      // result for this session may still be on its way.
+      // Platform ended a speech chunk; immediately preserve whatever was said.
+      _commitPartial();
       _scheduleRestart();
     }
   }
@@ -113,9 +133,11 @@ class VoiceService {
   void _handleError(SpeechRecognitionError error) {
     debugPrint('[VoiceService] error: ${error.errorMsg} (permanent: ${error.permanent})');
     if (!_active) return;
-    // Silence ("no match" / "speech timeout") is normal mid-dictation.
+    _commitPartial();
+    // Silence ("no match" / "speech timeout") is normal mid-dictation when pausing to think.
     const benign = {'error_no_match', 'error_speech_timeout', 'error_busy', 'error_client'};
     if (benign.contains(error.errorMsg)) {
+      _restartFailures = 0; // User pause is normal, not an unrecoverable failure
       _scheduleRestart();
       return;
     }
@@ -129,20 +151,16 @@ class VoiceService {
     // session that ended after a pause (even a silent one) does not.
     if (DateTime.now().difference(_sessionStartedAt) > const Duration(seconds: 2)) _restartFailures = 0;
     _restartFailures++;
-    if (_restartFailures > 8) {
+    if (_restartFailures > 12) {
       // The recognizer keeps failing (no network for online recognition,
       // mic taken by another app): stop instead of looping forever.
       _onError?.call('Speech recognition keeps stopping. Check your connection and microphone.');
       unawaited(stop());
       return;
     }
-    _restartTimer = Timer(Duration(milliseconds: 500 + 150 * _restartFailures), () {
+    _restartTimer = Timer(Duration(milliseconds: 400 + 100 * _restartFailures), () {
       if (!_active || _speech.isListening) return;
-      // No final result came for the last words: keep them as said.
-      if (_partial.trim().isNotEmpty) {
-        _committed = _fullText;
-        _partial = '';
-      }
+      _commitPartial();
       _listen();
     });
   }
@@ -150,6 +168,7 @@ class VoiceService {
   /// User pressed stop: keeps what was said and ends dictation.
   Future<void> stop() async {
     if (!_active) return;
+    _commitPartial();
     _active = false;
     _restartTimer?.cancel();
     if (_speech.isListening) await _speech.stop();
