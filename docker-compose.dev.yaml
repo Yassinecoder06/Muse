@@ -1,0 +1,39 @@
+name: muse
+
+services:
+  meta:
+    image: supabase/postgres-meta:v0.84.2
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+
+  studio:
+    image: supabase/studio:20240729-ce42139
+    restart: unless-stopped
+    depends_on:
+      meta:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${STUDIO_PORT:-54323}:3000"
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DEFAULT_ORGANIZATION_NAME: Muse
+      DEFAULT_PROJECT_NAME: Muse Local
+      SUPABASE_URL: http://nginx:80
+      SUPABASE_PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://$(hostname -i):3000/api/profile').then(r => { if (r.status !== 200) throw new Error(r.status) }).catch(() => process.exit(1))\""]
+      interval: 5s
+      timeout: 5s
+      retries: 3

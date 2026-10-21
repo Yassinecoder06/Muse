@@ -155,8 +155,13 @@ For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](.
    ```bash
    curl -s http://localhost:8080/health     # {"ok":true}
    curl -sI http://localhost:8080/ | head -n 1
-   docker compose ps                        # db, server, kong, and nginx should be healthy
+   docker compose ps                        # db, server, and nginx should be healthy
    ```
+
+   > To start developer tools (Supabase Studio on port 54323 and Postgres-meta):
+   > ```bash
+   > docker compose -f docker-compose.yml -f docker-compose.dev.yaml up -d
+   > ```
 
 ### Environment file
 
@@ -522,7 +527,7 @@ tunnel directly to Express.
 After the full stack is up, confirm every layer end to end:
 
 ```bash
-docker compose ps --format "table {{.Name}}\t{{.Status}}"   # db, server, kong & nginx healthy
+docker compose ps --format "table {{.Name}}\t{{.Status}}"   # db, server & nginx healthy
 docker compose exec server node -e "fetch('http://127.0.0.1:3002/health').then(r => r.json()).then(console.log)"
 curl -s http://localhost:8080/health                         # same health check through Nginx
 curl -sI https://notes.example.com/ | head -n 1             # 200 or 30x
