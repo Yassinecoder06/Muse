@@ -1282,7 +1282,7 @@ class _MusicTabState extends State<MusicTab> {
                               if (isCurrentSong) {
                                 _music.togglePlayPause();
                               } else {
-                                _music.playSong(song);
+                                _music.playSong(song, contextQueue: filtered);
                               }
                             },
                             leading: Container(
@@ -1341,7 +1341,7 @@ class _MusicTabState extends State<MusicTab> {
                               icon: Icon(Icons.more_vert, size: 20, color: AppTheme.getTextSecondary(context)),
                               onSelected: (val) {
                                 if (val == 'play') {
-                                  _music.playSong(song);
+                                  _music.playSong(song, contextQueue: filtered);
                                 } else if (val == 'add_playlist') {
                                   _addSongToPlaylistModal(song);
                                 } else if (val == 'delete') {
