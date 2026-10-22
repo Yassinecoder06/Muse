@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:quick_actions/quick_actions.dart';
 import 'data/services/app_events.dart';
 import 'data/services/device_timezone.dart';
@@ -12,6 +14,17 @@ import 'ui/views/pairing_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.muse.muse_mobile.playback',
+      androidNotificationChannelName: 'Muse playback',
+      androidNotificationChannelDescription: 'Playback controls for Muse',
+      androidNotificationOngoing: true,
+      androidStopForegroundOnPause: false,
+      artDownscaleWidth: 256,
+      artDownscaleHeight: 256,
+    );
+  }
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,

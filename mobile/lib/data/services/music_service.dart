@@ -2,14 +2,21 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show Color;
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:just_audio/just_audio.dart';
+import 'package:just_audio_background/just_audio_background.dart';
+import 'package:path_provider/path_provider.dart';
 import 'api_service.dart';
 import 'app_events.dart';
+
+enum PlayerState {
+  stopped,
+  playing,
+  paused,
+  completed,
+}
 
 class MusicService {
   MusicService._() {
@@ -21,11 +28,6 @@ class MusicService {
 
   final ApiService _api = ApiService();
   final AudioPlayer _player = AudioPlayer();
-  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
-
-  static const int _notificationId = 88888;
-  static const String _channelId = 'muse_music_playback';
-  static const String _channelName = 'Music Playback';
 
   // State Notifiers
   final ValueNotifier<Map<String, dynamic>?> currentTrack = ValueNotifier(null);
@@ -52,44 +54,27 @@ class MusicService {
   List<Map<String, dynamic>> _originalQueue = [];
   Timer? _sleepTimer;
 
-  StreamSubscription? _stateSub;
+  StreamSubscription? _playerStateSub;
   StreamSubscription? _posSub;
   StreamSubscription? _durSub;
-  StreamSubscription? _compSub;
+  StreamSubscription? _indexSub;
 
   void _init() {
-    // Configure audio context to hold wakelock for continuous playback when locked
-    try {
-      _player.setAudioContext(
-        AudioContext(
-          android: const AudioContextAndroid(
-            stayAwake: true,
-            contentType: AndroidContentType.music,
-            usageType: AndroidUsageType.media,
-            audioFocus: AndroidAudioFocus.gain,
-          ),
-          iOS: AudioContextIOS(
-            category: AVAudioSessionCategory.playback,
-            options: {AVAudioSessionOptions.defaultToSpeaker},
-          ),
-        ),
-      );
-    } catch (_) {}
-
-    int lastNotifSec = -1;
-    _stateSub = _player.onPlayerStateChanged.listen((state) {
-      playerState.value = state;
-      lastNotifSec = -1;
-      _updateNotification();
+    _playerStateSub = _player.playerStateStream.listen((state) {
+      if (state.processingState == ProcessingState.completed) {
+        playerState.value = PlayerState.completed;
+        _onTrackCompleted();
+      } else if (state.playing) {
+        playerState.value = PlayerState.playing;
+      } else if (state.processingState == ProcessingState.idle) {
+        playerState.value = PlayerState.stopped;
+      } else {
+        playerState.value = PlayerState.paused;
+      }
     });
 
-    _posSub = _player.onPositionChanged.listen((pos) {
+    _posSub = _player.positionStream.listen((pos) {
       position.value = pos;
-      final curSec = pos.inSeconds;
-      if (curSec != lastNotifSec) {
-        lastNotifSec = curSec;
-        _updateNotification();
-      }
       final fadeSec = crossfadeSeconds.value;
       final durSec = duration.value.inSeconds;
       if (fadeSec > 0 && durSec > fadeSec && pos.inSeconds >= durSec - fadeSec) {
@@ -99,14 +84,18 @@ class MusicService {
       }
     });
 
-    _durSub = _player.onDurationChanged.listen((dur) {
-      duration.value = dur;
-      lastNotifSec = -1;
-      _updateNotification();
+    _durSub = _player.durationStream.listen((dur) {
+      if (dur != null) {
+        duration.value = dur;
+      }
     });
 
-    _compSub = _player.onPlayerComplete.listen((_) {
-      _onTrackCompleted();
+    _indexSub = _player.currentIndexStream.listen((index) {
+      if (index == null || index < 0 || index >= queue.value.length) return;
+      if (queueIndex.value != index) {
+        queueIndex.value = index;
+        currentTrack.value = queue.value[index];
+      }
     });
 
     AppEvents.musicAction.addListener(_handleMusicAction);
@@ -246,6 +235,118 @@ class MusicService {
     } catch (_) {}
   }
 
+  Future<void> _configureAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+    } catch (_) {}
+  }
+
+  Future<AudioSource> _buildAudioSource(Map<String, dynamic> track) async {
+    final filename = track['filename'] as String? ?? '';
+    final title = (track['title'] as String?)?.trim().isNotEmpty == true
+        ? (track['title'] as String).trim()
+        : (filename.isNotEmpty ? filename : 'Music');
+    final artist = (track['artist'] as String?)?.trim().isNotEmpty == true
+        ? (track['artist'] as String).trim()
+        : (activePlaylistName.value ?? 'Muse Music');
+    final album = (track['album'] as String?)?.trim().isNotEmpty == true
+        ? (track['album'] as String).trim()
+        : 'Muse';
+
+    Uri? artUri;
+    try {
+      final offlineCover = await getOfflineCoverFile(filename);
+      if (offlineCover != null && await offlineCover.exists()) {
+        artUri = Uri.file(offlineCover.path);
+      } else if (filename.isNotEmpty) {
+        final coverPath = '/api/music/cover/${Uri.encodeComponent(filename)}';
+        final resolvedUrl = await _api.resolveUrl(coverPath);
+        artUri = Uri.tryParse(resolvedUrl);
+      }
+    } catch (_) {}
+
+    final id = filename.isNotEmpty ? filename : '${title}_${DateTime.now().millisecondsSinceEpoch}';
+    final mediaItem = MediaItem(
+      id: id,
+      title: title,
+      artist: artist,
+      album: album,
+      artUri: artUri,
+    );
+
+    try {
+      final offlineDir = await _getOfflineDir();
+      final localFile = File('${offlineDir.path}/$filename');
+      if (await localFile.exists()) {
+        return AudioSource.file(localFile.path, tag: mediaItem);
+      }
+    } catch (_) {}
+
+    final streamPath = '/api/music/stream/${Uri.encodeComponent(filename)}';
+    final streamUrl = await _api.resolveUrl(streamPath);
+    return AudioSource.uri(Uri.parse(streamUrl), tag: mediaItem);
+  }
+
+  Future<void> _startPlayQueue({required int startIndex}) async {
+    final tracks = queue.value;
+    if (tracks.isEmpty) return;
+    final targetIndex = startIndex.clamp(0, tracks.length - 1);
+    final track = tracks[targetIndex];
+
+    loading.value = true;
+    currentTrack.value = track;
+    queueIndex.value = targetIndex;
+    position.value = Duration.zero;
+    duration.value = Duration.zero;
+
+    try {
+      await _configureAudioSession();
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(true);
+      } catch (_) {}
+
+      await _player.stop();
+      await _player.setVolume(1.0);
+
+      final sources = await Future.wait(tracks.map(_buildAudioSource));
+      await _player.setAudioSources(
+        sources,
+        initialIndex: targetIndex,
+        initialPosition: Duration.zero,
+      );
+
+      await _player.setSpeed(playbackRate.value);
+      _applyLoopMode();
+      await _player.play();
+    } catch (e) {
+      debugPrint('[MusicService] Failed to play track: $e');
+      rethrow;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  Future<void> _rebuildPlaylistKeepPosition() async {
+    final tracks = queue.value;
+    if (tracks.isEmpty || currentTrack.value == null) return;
+    try {
+      final currentPos = _player.position;
+      final isPlaying = _player.playing;
+      final sources = await Future.wait(tracks.map(_buildAudioSource));
+      await _player.setAudioSources(
+        sources,
+        initialIndex: queueIndex.value.clamp(0, tracks.length - 1),
+        initialPosition: currentPos,
+      );
+      _applyLoopMode();
+      if (isPlaying) {
+        await _player.play();
+      }
+    } catch (_) {}
+  }
+
   Future<void> _onTrackCompleted() async {
     if (sleepTimerDuration.value == 'track') {
       await stop();
@@ -262,14 +363,15 @@ class MusicService {
     final idx = queueIndex.value;
     final list = queue.value;
     if (idx >= 0 && idx + 1 < list.length) {
-      await playTrackAt(idx + 1);
+      if (!_player.hasNext) {
+        await playTrackAt(idx + 1);
+      }
     } else {
       if (repeatMode.value == 'all' && list.isNotEmpty) {
         await playTrackAt(0);
       } else {
         playerState.value = PlayerState.stopped;
         position.value = Duration.zero;
-        _cancelNotification();
       }
     }
   }
@@ -300,7 +402,7 @@ class MusicService {
     }
     activePlaylistId.value = null;
     activePlaylistName.value = null;
-    await _startPlay(song);
+    await _startPlayQueue(startIndex: queueIndex.value);
   }
 
   /// Play an entire playlist starting at [startIndex]
@@ -322,12 +424,12 @@ class MusicService {
       others.shuffle();
       queue.value = [chosen, ...others];
       queueIndex.value = 0;
-      await _startPlay(chosen);
+      await _startPlayQueue(startIndex: 0);
     } else {
       final targetIndex = (startIndex >= 0 && startIndex < tracks.length) ? startIndex : 0;
       queue.value = tracks;
       queueIndex.value = targetIndex;
-      await _startPlay(tracks[targetIndex]);
+      await _startPlayQueue(startIndex: targetIndex);
     }
   }
 
@@ -336,41 +438,16 @@ class MusicService {
     final list = queue.value;
     if (index < 0 || index >= list.length) return;
     queueIndex.value = index;
-    await _startPlay(list[index]);
-  }
+    currentTrack.value = list[index];
 
-  Future<void> _startPlay(Map<String, dynamic> track) async {
-    final filename = track['filename'] as String? ?? '';
-    if (filename.isEmpty) return;
-
-    loading.value = true;
-    currentTrack.value = track;
-    position.value = Duration.zero;
-    duration.value = Duration.zero;
-
-    try {
-      final offlineDir = await _getOfflineDir();
-      final localFile = File('${offlineDir.path}/$filename');
-
-      await _player.stop();
-      await _player.setVolume(1.0);
-
-      if (await localFile.exists()) {
-        await _player.play(DeviceFileSource(localFile.path));
-      } else {
-        final streamPath = '/api/music/stream/${Uri.encodeComponent(filename)}';
-        final fullUrl = await _api.resolveUrl(streamPath);
-        await _player.play(UrlSource(fullUrl));
-      }
-
-      await _player.setPlaybackRate(playbackRate.value);
-      _updateNotification();
-    } catch (e) {
-      debugPrint('[MusicService] Failed to play track: $e');
-      rethrow;
-    } finally {
-      loading.value = false;
+    if (_player.audioSources.length == list.length) {
+      try {
+        await _player.seek(Duration.zero, index: index);
+        await _player.play();
+        return;
+      } catch (_) {}
     }
+    await _startPlayQueue(startIndex: index);
   }
 
   void toggleShuffle() {
@@ -385,6 +462,7 @@ class MusicService {
         others.shuffle();
         queue.value = [current, ...others];
         queueIndex.value = 0;
+        _rebuildPlaylistKeepPosition();
       }
     } else {
       if (_originalQueue.isNotEmpty) {
@@ -394,8 +472,26 @@ class MusicService {
           final idx = queue.value.indexWhere((t) => t['filename'] == current['filename']);
           queueIndex.value = idx != -1 ? idx : 0;
         }
+        _rebuildPlaylistKeepPosition();
       }
     }
+  }
+
+  void _applyLoopMode() {
+    try {
+      switch (repeatMode.value) {
+        case 'one':
+          _player.setLoopMode(LoopMode.one);
+          break;
+        case 'all':
+          _player.setLoopMode(LoopMode.all);
+          break;
+        case 'off':
+        default:
+          _player.setLoopMode(LoopMode.off);
+          break;
+      }
+    } catch (_) {}
   }
 
   void toggleRepeatMode() {
@@ -411,12 +507,13 @@ class MusicService {
         repeatMode.value = 'off';
         break;
     }
+    _applyLoopMode();
   }
 
   Future<void> setPlaybackRate(double rate) async {
     playbackRate.value = rate;
     try {
-      await _player.setPlaybackRate(rate);
+      await _player.setSpeed(rate);
     } catch (_) {}
   }
 
@@ -467,31 +564,38 @@ class MusicService {
   }
 
   Future<void> pause() async {
-    await _player.pause();
-    _updateNotification();
+    try {
+      await _player.pause();
+    } catch (_) {}
   }
 
   Future<void> resume() async {
-    await _player.resume();
-    _updateNotification();
+    try {
+      final session = await AudioSession.instance;
+      await session.setActive(true);
+    } catch (_) {}
+    try {
+      await _player.play();
+    } catch (_) {}
   }
 
   Future<void> stop() async {
-    await _player.stop();
+    try {
+      await _player.stop();
+    } catch (_) {}
     currentTrack.value = null;
     queueIndex.value = -1;
     position.value = Duration.zero;
     duration.value = Duration.zero;
     playerState.value = PlayerState.stopped;
-    _cancelNotification();
   }
 
   Future<void> next() async {
     final list = queue.value;
     if (list.isEmpty) return;
-    final idx = queueIndex.value;
-    if (idx >= 0 && idx + 1 < list.length) {
-      await playTrackAt(idx + 1);
+    if (_player.hasNext) {
+      await _player.seekToNext();
+      await _player.play();
     } else {
       if (repeatMode.value == 'off') {
         await pause();
@@ -507,18 +611,20 @@ class MusicService {
       await seek(Duration.zero);
       return;
     }
-    final list = queue.value;
-    if (list.isEmpty) return;
-    final idx = queueIndex.value;
-    if (idx > 0) {
-      await playTrackAt(idx - 1);
+    if (_player.hasPrevious) {
+      await _player.seekToPrevious();
+      await _player.play();
+    } else if (repeatMode.value == 'all' && queue.value.isNotEmpty) {
+      await playTrackAt(queue.value.length - 1);
     } else {
-      await playTrackAt(list.length - 1);
+      await seek(Duration.zero);
     }
   }
 
   Future<void> seek(Duration target) async {
-    await _player.seek(target);
+    try {
+      await _player.seek(target);
+    } catch (_) {}
   }
 
   void updateQueue(List<Map<String, dynamic>> newTracks) {
@@ -529,112 +635,16 @@ class MusicService {
       final newIdx = newTracks.indexWhere((t) => t['filename'] == currentFile);
       queueIndex.value = newIdx;
     }
-  }
-
-  Future<void> _updateNotification() async {
-    final track = currentTrack.value;
-    if (track == null) {
-      _cancelNotification();
-      return;
-    }
-
-    final isPlaying = playerState.value == PlayerState.playing;
-    final title = track['title'] as String? ?? track['filename'] as String? ?? 'Music';
-    final artist = track['artist'] as String? ?? activePlaylistName.value ?? 'Muse Music';
-    final pos = position.value;
-    final dur = duration.value;
-    final durSec = dur.inSeconds;
-    final posSec = pos.inSeconds;
-    final posStr = _formatDuration(pos);
-    final durStr = _formatDuration(dur);
-    final filename = track['filename'] as String? ?? '';
-
-    AndroidBitmap<Object> largeIconBitmap = const DrawableResourceAndroidBitmap('ic_muse_logo');
-    try {
-      final offlineCover = await getOfflineCoverFile(filename);
-      if (offlineCover != null && await offlineCover.exists()) {
-        largeIconBitmap = FilePathAndroidBitmap(offlineCover.path);
-      }
-    } catch (_) {}
-
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: 'Media controls and currently playing song in Muse',
-      importance: Importance.low,
-      priority: Priority.low,
-      ongoing: isPlaying,
-      autoCancel: false,
-      showWhen: false,
-      category: AndroidNotificationCategory.transport,
-      visibility: NotificationVisibility.public,
-      color: const Color(0xFF7C3AED),
-      icon: 'ic_muse_logo',
-      largeIcon: largeIconBitmap,
-      subText: durSec > 0 ? '$posStr / $durStr' : null,
-      showProgress: durSec > 0,
-      maxProgress: durSec > 0 ? durSec : 100,
-      progress: durSec > 0 ? posSec.clamp(0, durSec) : 0,
-      indeterminate: false,
-      styleInformation: const MediaStyleInformation(),
-      actions: [
-        const AndroidNotificationAction(
-          'music_prev',
-          'Previous',
-          icon: DrawableResourceAndroidBitmap('ic_media_prev'),
-          showsUserInterface: false,
-          cancelNotification: false,
-        ),
-        AndroidNotificationAction(
-          isPlaying ? 'music_pause' : 'music_play',
-          isPlaying ? 'Pause' : 'Play',
-          icon: DrawableResourceAndroidBitmap(isPlaying ? 'ic_media_pause' : 'ic_media_play'),
-          showsUserInterface: false,
-          cancelNotification: false,
-        ),
-        const AndroidNotificationAction(
-          'music_next',
-          'Next',
-          icon: DrawableResourceAndroidBitmap('ic_media_next'),
-          showsUserInterface: false,
-          cancelNotification: false,
-        ),
-      ],
-    );
-
-    const iosDetails = DarwinNotificationDetails(
-      presentSound: false,
-      presentAlert: false,
-      presentBadge: false,
-    );
-
-    await _notifications.show(
-      id: _notificationId,
-      title: title,
-      body: durSec > 0 ? '$artist • $posStr / $durStr' : artist,
-      notificationDetails: NotificationDetails(android: androidDetails, iOS: iosDetails),
-      payload: 'muse_music',
-    );
-  }
-
-  String _formatDuration(Duration d) {
-    final m = d.inMinutes;
-    final s = d.inSeconds % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
-  }
-
-  void _cancelNotification() {
-    _notifications.cancel(id: _notificationId);
+    _rebuildPlaylistKeepPosition();
   }
 
   void dispose() {
     _sleepTimer?.cancel();
-    _stateSub?.cancel();
+    _playerStateSub?.cancel();
     _posSub?.cancel();
     _durSub?.cancel();
-    _compSub?.cancel();
+    _indexSub?.cancel();
     AppEvents.musicAction.removeListener(_handleMusicAction);
-    _cancelNotification();
     _player.dispose();
   }
 }
