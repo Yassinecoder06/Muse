@@ -12,9 +12,11 @@ import { searchWeb } from './web-search.service.js'
 import { evaluateMath } from './calculator.service.js'
 import { executeInSandbox } from './sandbox.service.js'
 import { getAvailableSongs, createPlaylistInternal, resolvePlaylistTracks, parseTrackInfo } from '../controllers/music.controller.js'
+import { generateOrEditImage, type ImageAttachment } from './image-generation.service.js'
+import { settings } from './settings.repository.js'
 
 export interface AgentActionCard {
-  type: 'note' | 'note_updated' | 'task' | 'task_updated' | 'event' | 'memory' | 'template' | 'specialized_note' | 'item_deleted' | 'confirm_required' | 'music' | 'music_download_plan' | 'music_download_progress' | 'playlist'
+  type: 'note' | 'note_updated' | 'task' | 'task_updated' | 'event' | 'memory' | 'template' | 'specialized_note' | 'item_deleted' | 'confirm_required' | 'music' | 'music_download_plan' | 'music_download_progress' | 'playlist' | 'generated_image'
   id?: string
   title?: string
   contentSnippet?: string
@@ -486,6 +488,30 @@ export const agentToolDeclarations = [
           description: 'Optional name or partial name of the playlist to play. If omitted or user says "play a playlist", plays the first available playlist.'
         }
       }
+    }
+  },
+  {
+    name: 'generate_image',
+    description: 'Generate an image, artwork, illustration, or picture from a descriptive text prompt using Gemini image models (Nano Banana). Call this whenever the user asks Bip to draw, paint, sketch, generate an image, or create a picture.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        prompt: { type: 'STRING', description: 'Detailed prompt describing what to depict in the image' },
+        style: { type: 'STRING', description: 'Optional visual style (e.g. "realistic", "watercolor", "anime", "digital art", "minimalist")' }
+      },
+      required: ['prompt']
+    }
+  },
+  {
+    name: 'edit_image',
+    description: 'Edit or modify an existing image using Gemini image editing models (Nano Banana). Can change the background, style, add or remove elements.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        prompt: { type: 'STRING', description: 'Instructions describing the modification to make to the image' },
+        image_id: { type: 'STRING', description: 'Optional UUID of the image to edit' }
+      },
+      required: ['prompt']
     }
   }
 ]
@@ -2148,6 +2174,81 @@ export async function executeAgentTool(
             itemType: 'Conversation',
             status: 'Conversation deleted',
             data: { id: targetId, title: targetTitle, itemType: 'Conversation', status: 'Conversation deleted' }
+          }
+        }
+      }
+
+      case 'generate_image': {
+        const prompt = String(args.prompt || '').trim()
+        const style = args.style ? ` in ${args.style} style` : ''
+        const fullPrompt = `${prompt}${style}`
+        const { geminiKey } = await settings.getEffectiveAiKeys(userId)
+        if (!geminiKey) {
+          throw new Error('A Gemini API key is required to generate images with Gemini image models. Please configure your key in Settings.')
+        }
+        const imgResult = await generateOrEditImage(geminiKey, fullPrompt, { userId })
+        return {
+          toolName: name,
+          args,
+          result: {
+            success: true,
+            imageUrl: imgResult.imageUrl,
+            imageId: imgResult.imageId,
+            model: imgResult.modelUsed,
+            prompt: imgResult.prompt
+          },
+          actionCard: {
+            type: 'generated_image',
+            id: imgResult.imageId,
+            title: 'Generated Image',
+            contentSnippet: imgResult.prompt,
+            data: {
+              url: imgResult.imageUrl,
+              imageId: imgResult.imageId,
+              prompt: imgResult.prompt,
+              model: imgResult.modelUsed,
+              mimeType: imgResult.mimeType
+            }
+          }
+        }
+      }
+
+      case 'edit_image': {
+        const prompt = String(args.prompt || '').trim()
+        let inputImage: ImageAttachment | undefined
+        if (args.image_id) {
+          const { data: imgRow } = await supabase.from('images').select('mime, data').eq('id', args.image_id).single()
+          if (imgRow) {
+            inputImage = { mimeType: imgRow.mime, data: imgRow.data }
+          }
+        }
+        const { geminiKey } = await settings.getEffectiveAiKeys(userId)
+        if (!geminiKey) {
+          throw new Error('A Gemini API key is required to edit images. Please configure your key in Settings.')
+        }
+        const imgResult = await generateOrEditImage(geminiKey, prompt, { inputImage, userId })
+        return {
+          toolName: name,
+          args,
+          result: {
+            success: true,
+            imageUrl: imgResult.imageUrl,
+            imageId: imgResult.imageId,
+            model: imgResult.modelUsed,
+            prompt: imgResult.prompt
+          },
+          actionCard: {
+            type: 'generated_image',
+            id: imgResult.imageId,
+            title: 'Edited Image',
+            contentSnippet: imgResult.prompt,
+            data: {
+              url: imgResult.imageUrl,
+              imageId: imgResult.imageId,
+              prompt: imgResult.prompt,
+              model: imgResult.modelUsed,
+              mimeType: imgResult.mimeType
+            }
           }
         }
       }

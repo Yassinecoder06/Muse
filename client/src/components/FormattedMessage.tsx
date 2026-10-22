@@ -3,6 +3,7 @@ import { marked } from 'marked'
 import { Check, Copy, BookmarkPlus } from 'lucide-react'
 import katex from 'katex'
 import DOMPurify from 'dompurify'
+import { resolveApiImageSrc } from '../services/api'
 import 'katex/dist/katex.min.css'
 
 marked.setOptions({
@@ -97,16 +98,50 @@ export function FormattedMessage({ text, role = 'assistant', onCreateNote }: For
     }
 
     const mainHtml = processLatexAndMarkdown(clean)
-    // Model output can echo text from notes, documents, or web pages, so it is
-    // untrusted HTML once marked has rendered it.
+    let processedHtml = DOMPurify.sanitize(`${disclaimerHtml}${mainHtml}`)
+    // Ensure relative /api/images/ sources are resolved for display
+    processedHtml = processedHtml.replace(/src="(\/api\/images\/[^"]+)"/g, (_, src) => `src="${resolveApiImageSrc(src)}"`)
     return {
-      html: DOMPurify.sanitize(`${disclaimerHtml}${mainHtml}`),
+      html: processedHtml,
       title: detectedTitle
     }
   }, [text, role])
 
   if (role === 'user') {
-    return <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span>
+    const imgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g
+    const images: Array<{ alt: string; url: string }> = []
+    let match: RegExpExecArray | null
+    while ((match = imgRegex.exec(text)) !== null) {
+      images.push({ alt: match[1] || 'Attached Image', url: match[2] })
+    }
+    const cleanText = text.replace(imgRegex, '').trim()
+
+    return (
+      <div className="formatted-user-message">
+        {images.length > 0 && (
+          <div className="formatted-user-images-grid">
+            {images.map((img, i) => (
+              <a
+                key={i}
+                href={resolveApiImageSrc(img.url)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="formatted-user-image-thumb-link"
+                title="Click to view full size"
+              >
+                <img
+                  src={resolveApiImageSrc(img.url)}
+                  alt={img.alt}
+                  className="formatted-user-image-thumb"
+                  loading="lazy"
+                />
+              </a>
+            ))}
+          </div>
+        )}
+        {cleanText && <span style={{ whiteSpace: 'pre-wrap' }}>{cleanText}</span>}
+      </div>
+    )
   }
 
   function handleCopy() {

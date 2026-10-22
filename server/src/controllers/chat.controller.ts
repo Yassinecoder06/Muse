@@ -5,6 +5,7 @@ import { runAgentConversation } from '../services/agent.service.js'
 import { executeAgentTool, CONFIRMATION_REQUIRED_TOOLS } from '../services/agent-tools.service.js'
 import { consumeConfirmationToken } from '../services/agent-confirmation.service.js'
 import { requestTimezone } from '../utils/timezone.js'
+import { parseImageData, type ImageAttachment } from '../services/image-generation.service.js'
 
 const createSessionSchema = z.object({
   title: z.string().trim().max(100).optional().default('New Conversation'),
@@ -16,11 +17,80 @@ const updateSessionSchema = z.object({
   title: z.string().trim().min(1).max(100)
 })
 
-const sendMessageSchema = z.object({
-  message: z.string().trim().min(1, 'Message cannot be empty').max(8000),
-  model: z.string().max(100).optional(),
-  userName: z.string().max(80).optional()
+const imageItemSchema = z.object({
+  mimeType: z.string().default('image/png'),
+  data: z.string().optional().default(''),
+  url: z.string().optional()
 })
+
+const sendMessageSchema = z.object({
+  message: z.string().max(8000).optional().default(''),
+  model: z.string().max(100).optional(),
+  userName: z.string().max(80).optional(),
+  images: z.array(imageItemSchema).optional().default([])
+}).refine(data => data.message.trim().length > 0 || data.images.length > 0, {
+  message: 'Message cannot be empty unless an image is attached'
+})
+
+async function normalizeImages(
+  rawImages: Array<{ mimeType: string; data?: string; url?: string }>,
+  userId: string
+): Promise<ImageAttachment[]> {
+  const result: ImageAttachment[] = []
+  for (const item of rawImages) {
+    let mimeType = item.mimeType || 'image/png'
+    let data = item.data || ''
+    let url = item.url
+
+    if (data) {
+      const parsed = parseImageData(data, mimeType)
+      mimeType = parsed.mimeType
+      data = parsed.data
+
+      // If no persistent server URL yet, persist to images table so chat history has permanent URL
+      if (!url || !url.startsWith('/api/images/')) {
+        try {
+          const buffer = Buffer.from(data, 'base64')
+          const { data: dbImg, error } = await supabase
+            .from('images')
+            .insert({
+              user_id: userId,
+              mime: mimeType,
+              size: buffer.length,
+              data
+            })
+            .select('id')
+            .single()
+          if (!error && dbImg?.id) {
+            url = `/api/images/${dbImg.id}`
+          }
+        } catch (saveErr) {
+          console.warn('[Chat] Could not save uploaded image to images table:', saveErr)
+        }
+      }
+      result.push({ mimeType, data, url })
+    } else if (url) {
+      // If client sent an existing /api/images/:id URL without inline data
+      if (url.startsWith('/api/images/')) {
+        const id = url.replace('/api/images/', '').split('?')[0].split('/')[0]
+        if (z.string().uuid().safeParse(id).success) {
+          const { data: dbImg } = await supabase
+            .from('images')
+            .select('mime, data')
+            .eq('id', id)
+            .eq('user_id', userId)
+            .maybeSingle()
+          if (dbImg?.data) {
+            result.push({ mimeType: dbImg.mime, data: dbImg.data, url })
+            continue
+          }
+        }
+      }
+      result.push({ mimeType, data: '', url })
+    }
+  }
+  return result
+}
 
 const createMemorySchema = z.object({
   fact: z.string().trim().min(1, 'Memory fact is required').max(1000),
@@ -158,6 +228,7 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
     }
 
     const resolvedUserName = body.userName || (req.headers['x-muse-user-name'] ? decodeURIComponent(req.headers['x-muse-user-name'] as string) : undefined)
+    const normalizedImages = await normalizeImages(body.images || [], req.userId!)
 
     const output = await runAgentConversation({
       userId: req.userId!,
@@ -165,7 +236,8 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
       messageText: body.message,
       model: body.model,
       userName: resolvedUserName,
-      timezone: requestTimezone(req)
+      timezone: requestTimezone(req),
+      images: normalizedImages
     })
 
     const reply = output.assistantMessage.content
@@ -291,12 +363,17 @@ export async function deleteMemory(req: Request, res: Response, next: NextFuncti
 
 export async function directChat(req: Request, res: Response, next: NextFunction) {
   try {
-    const body = z.object({
-      message: z.string().trim().min(1, 'Message cannot be empty').max(8000),
+    const directChatSchema = z.object({
+      message: z.string().max(8000).optional().default(''),
       sessionId: z.string().trim().uuid().optional().nullable().or(z.literal('')).transform(val => (val ? val : undefined)),
       model: z.string().max(100).optional(),
-      userName: z.string().max(80).optional()
-    }).parse(req.body)
+      userName: z.string().max(80).optional(),
+      images: z.array(imageItemSchema).optional().default([])
+    }).refine(data => data.message.trim().length > 0 || data.images.length > 0, {
+      message: 'Message cannot be empty unless an image is attached'
+    })
+
+    const body = directChatSchema.parse(req.body)
 
     let sessionId = body.sessionId
 
@@ -340,6 +417,7 @@ export async function directChat(req: Request, res: Response, next: NextFunction
     }
 
     const resolvedUserName = body.userName || (req.headers['x-muse-user-name'] ? decodeURIComponent(req.headers['x-muse-user-name'] as string) : undefined)
+    const normalizedImages = await normalizeImages(body.images || [], req.userId!)
 
     const output = await runAgentConversation({
       userId: req.userId!,
@@ -347,7 +425,8 @@ export async function directChat(req: Request, res: Response, next: NextFunction
       messageText: body.message,
       model: body.model,
       userName: resolvedUserName,
-      timezone: requestTimezone(req)
+      timezone: requestTimezone(req),
+      images: normalizedImages
     })
 
     const reply = output.assistantMessage.content

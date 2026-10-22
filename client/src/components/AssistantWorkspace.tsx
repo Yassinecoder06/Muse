@@ -23,7 +23,8 @@ import {
   Square,
   Pencil,
   RotateCcw,
-  Loader2
+  Loader2,
+  ImagePlus
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
@@ -71,6 +72,56 @@ export function AssistantWorkspace({
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
   const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [attachedImages, setAttachedImages] = useState<
+    Array<{ id: string; mimeType: string; data: string; previewUrl: string; name: string }>
+  >([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const addAttachedFiles = (files: FileList | File[]) => {
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('image/')) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        const previewUrl = URL.createObjectURL(file)
+        const [mimePart, dataPart] = dataUrl.split(',')
+        const mimeType = mimePart.match(/:(.*?);/)?.[1] || file.type || 'image/png'
+        setAttachedImages(prev => [
+          ...prev,
+          {
+            id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            mimeType,
+            data: dataPart,
+            previewUrl,
+            name: file.name
+          }
+        ])
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    const imageFiles: File[] = []
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) {
+          imageFiles.push(file)
+        }
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault()
+      addAttachedFiles(imageFiles)
+    }
+  }
+
+  const removeAttachedImage = (id: string) => {
+    setAttachedImages(prev => prev.filter(img => img.id !== id))
+  }
 
   const handleToggleMic = () => {
     if (isListening || isProcessingVoice) {
@@ -227,23 +278,30 @@ export function AssistantWorkspace({
 
   const handleSend = async (customPrompt?: string) => {
     const textToSend = (customPrompt || input).trim()
-    if (!textToSend || loading || !activeSessionId) return
+    if ((!textToSend && attachedImages.length === 0) || loading || !activeSessionId) return
 
     if (isListening || isProcessingVoice) {
       stt.stopListening()
       setSttState('idle')
     }
 
+    const currentAttachments = [...attachedImages]
     robotAudio.play('blip')
     setInput('')
+    setAttachedImages([])
     setLoading(true)
     robotAudio.startThinkingLoop()
 
-    // Optimistically add user message
+    // Optimistically add user message with images
+    const imgMarkdown = currentAttachments.map(img => `![Attached Image](${img.previewUrl})`).join('\n')
+    const optimisticContent = imgMarkdown
+      ? (textToSend ? `${imgMarkdown}\n\n${textToSend}` : imgMarkdown)
+      : textToSend
+
     const tempUserMsg: ChatMessage = {
       id: `temp-${Date.now()}`,
       role: 'user',
-      content: textToSend,
+      content: optimisticContent,
       created_at: new Date().toISOString()
     }
     setMessages(prev => [...prev, tempUserMsg])
@@ -251,7 +309,11 @@ export function AssistantWorkspace({
     try {
       const res = await api.sendChatMessage(activeSessionId, {
         message: textToSend,
-        model: chatModel() || undefined
+        model: chatModel() || undefined,
+        images: currentAttachments.map(img => ({
+          mimeType: img.mimeType,
+          data: img.data
+        }))
       })
 
       robotAudio.stopThinkingLoop()
@@ -804,12 +866,44 @@ export function AssistantWorkspace({
 
         {/* Composer Input */}
         <div className="assistant-composer-wrapper">
+          {attachedImages.length > 0 && (
+            <div className="assistant-attached-images-tray">
+              {attachedImages.map(img => (
+                <div key={img.id} className="assistant-image-chip">
+                  <img src={img.previewUrl} alt={img.name} className="assistant-image-chip-thumb" />
+                  <span className="assistant-image-chip-name">{img.name || 'Pasted Image'}</span>
+                  <button
+                    type="button"
+                    className="assistant-image-chip-remove"
+                    onClick={() => removeAttachedImage(img.id)}
+                    title="Remove image"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={e => {
+              if (e.target.files) addAttachedFiles(e.target.files)
+              e.target.value = ''
+            }}
+          />
+
           <form
             className="assistant-composer-form"
             onSubmit={e => {
               e.preventDefault()
               void handleSend()
             }}
+            onPaste={handlePaste}
           >
             <textarea
               ref={inputRef}
@@ -818,14 +912,24 @@ export function AssistantWorkspace({
               placeholder={
                 isProcessingVoice
                   ? 'Transcribing with Gemini AI…'
-                  : (isListening ? 'Listening to your voice… tap mic when done' : 'Ask Bip anything, schedule events, create tasks, write notes, or store memories...')
+                  : (isListening ? 'Listening to your voice… tap mic when done' : 'Ask Bip anything, paste images (Ctrl+V) to analyze, generate images, write notes...')
               }
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               disabled={loading || isProcessingVoice}
               autoFocus
             />
+            <button
+              type="button"
+              className="assistant-attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              title="Attach an image from file or paste with Ctrl+V"
+            >
+              <ImagePlus size={18} />
+            </button>
             <button
               type="button"
               className={`assistant-mic-btn ${isListening ? 'listening' : ''} ${isProcessingVoice ? 'processing' : ''}`}
@@ -842,7 +946,7 @@ export function AssistantWorkspace({
             <button
               type="submit"
               className="assistant-send-btn"
-              disabled={!input.trim() || loading}
+              disabled={(!input.trim() && attachedImages.length === 0) || loading}
               title="Send (Enter)"
             >
               <ArrowUp size={18} />

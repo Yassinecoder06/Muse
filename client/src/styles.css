@@ -4519,6 +4519,170 @@
   color: #ffffff !important;
 }
 
+/* Image Attachments & Multimodal Vision */
+.assistant-attached-images-tray {
+  max-width: 840px;
+  margin: 0 auto 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.assistant-image-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 6px;
+  border-radius: 8px;
+  background: #f3f0f9;
+  border: 1px solid #e1dee8;
+  font-size: 12px;
+  color: #4b455b;
+}
+[data-theme=dark] .assistant-image-chip {
+  background: #2a2733;
+  border-color: #3d394a;
+  color: #ddd6fe;
+}
+.assistant-image-chip-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+.assistant-image-chip-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.assistant-image-chip-remove {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #9c97a8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 4px;
+}
+.assistant-image-chip-remove:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+.assistant-attach-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: #f3f0f9;
+  color: #6c667d;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e1dee8;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+}
+.assistant-attach-btn:hover:not(:disabled) {
+  background: #ebe6f5;
+  color: #7c3aed;
+  border-color: #c4b5fd;
+}
+[data-theme=dark] .assistant-attach-btn {
+  background: #2a2733;
+  color: #b5adc4;
+  border-color: #3d394a;
+}
+[data-theme=dark] .assistant-attach-btn:hover:not(:disabled) {
+  background: #373344;
+  color: #ddd6fe;
+  border-color: #5b5372;
+}
+
+/* User Message Rendered Images */
+.formatted-user-message {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.formatted-user-images-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.formatted-user-image-thumb-link {
+  display: block;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: transform 0.15s ease;
+}
+.formatted-user-image-thumb-link:hover {
+  transform: scale(1.02);
+}
+.formatted-user-image-thumb {
+  max-width: 220px;
+  max-height: 180px;
+  object-fit: cover;
+  display: block;
+  border-radius: 8px;
+}
+
+/* Robot Companion Image Attachments */
+.bip-attached-images-tray {
+  padding: 6px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: rgba(0,0,0,0.02);
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.bip-image-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border, #e2e8f0);
+  font-size: 11px;
+}
+.bip-image-chip-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+.bip-image-chip-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #94a3b8;
+  padding: 1px;
+  display: flex;
+}
+.bip-image-chip-remove:hover {
+  color: #ef4444;
+}
+.bip-attach-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary, #64748b);
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.bip-attach-btn:hover {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+}
+
 /* Settings Voice Section Styles */
 .setting-section-header {
   margin-top: 18px;

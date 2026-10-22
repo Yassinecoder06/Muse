@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Loader2, Maximize2, Mic, MicOff, Music, Pencil, Plus, RotateCcw, Sparkles, Square, Trash2, Volume2, VolumeX, X } from 'lucide-react'
+import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Loader2, Maximize2, Mic, MicOff, Music, Pencil, Plus, RotateCcw, Sparkles, Square, Trash2, Volume2, VolumeX, X, ImagePlus } from 'lucide-react'
 import { BipFigure, type BipMood } from './BipFigure'
 import { FormattedMessage } from '../FormattedMessage'
 import { ActionCards } from '../ActionCards'
@@ -118,6 +118,56 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       return null
     }
   })
+  const [attachedImages, setAttachedImages] = useState<
+    Array<{ id: string; mimeType: string; data: string; previewUrl: string; name: string }>
+  >([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const addAttachedFiles = (files: FileList | File[]) => {
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('image/')) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        const dataUrl = reader.result as string
+        const previewUrl = URL.createObjectURL(file)
+        const [mimePart, dataPart] = dataUrl.split(',')
+        const mimeType = mimePart.match(/:(.*?);/)?.[1] || file.type || 'image/png'
+        setAttachedImages(prev => [
+          ...prev,
+          {
+            id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            mimeType,
+            data: dataPart,
+            previewUrl,
+            name: file.name
+          }
+        ])
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+    const imageFiles: File[] = []
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (file) {
+          imageFiles.push(file)
+        }
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault()
+      addAttachedFiles(imageFiles)
+    }
+  }
+
+  const removeAttachedImage = (id: string) => {
+    setAttachedImages(prev => prev.filter(img => img.id !== id))
+  }
 
   // Position management with automatic boundary clamping
   const [pos, setPos] = useState(() => {
@@ -461,17 +511,25 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
 
   async function handleSend(textToSend?: string) {
     const query = (textToSend || input).trim()
-    if (!query || loading) return
+    if ((!query && attachedImages.length === 0) || loading) return
 
     if (isListening || isProcessingVoice) {
       stt.stopListening()
       setSttState('idle')
     }
 
+    const currentAttachments = [...attachedImages]
     robotAudio.play('blip')
     setInput('')
+    setAttachedImages([])
     const tempId = `temp-${Date.now()}`
-    setMessages(prev => [...prev, { id: tempId, role: 'user', text: query }])
+
+    const imgMarkdown = currentAttachments.map(img => `![Attached Image](${img.previewUrl})`).join('\n')
+    const optimisticText = imgMarkdown
+      ? (query ? `${imgMarkdown}\n\n${query}` : imgMarkdown)
+      : query
+
+    setMessages(prev => [...prev, { id: tempId, role: 'user', text: optimisticText }])
     setLoading(true)
     setMood('thinking')
     robotAudio.startThinkingLoop()
@@ -485,7 +543,11 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       const activeId = await ensureSession()
       const res = await api.sendChatMessage(activeId, {
         message: query,
-        model: chatModel() || undefined
+        model: chatModel() || undefined,
+        images: currentAttachments.map(img => ({
+          mimeType: img.mimeType,
+          data: img.data
+        }))
       })
 
       robotAudio.stopThinkingLoop()
@@ -892,13 +954,56 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
           </div>
 
           {/* Chat Input */}
+          {attachedImages.length > 0 && (
+            <div className="bip-attached-images-tray">
+              {attachedImages.map(img => (
+                <div key={img.id} className="bip-image-chip">
+                  <img src={img.previewUrl} alt={img.name} className="bip-image-chip-thumb" />
+                  <span style={{ maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {img.name || 'Image'}
+                  </span>
+                  <button
+                    type="button"
+                    className="bip-image-chip-remove"
+                    onClick={() => removeAttachedImage(img.id)}
+                    title="Remove image"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={e => {
+              if (e.target.files) addAttachedFiles(e.target.files)
+              e.target.value = ''
+            }}
+          />
+
           <form
             className="bip-input-area"
             onSubmit={e => {
               e.preventDefault()
               void handleSend()
             }}
+            onPaste={handlePaste}
           >
+            <button
+              type="button"
+              className="bip-attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+              title="Attach image or paste with Ctrl+V"
+            >
+              <ImagePlus size={15} />
+            </button>
             <button
               type="button"
               className={`bip-mic-btn ${isListening ? 'listening' : ''} ${isProcessingVoice ? 'processing' : ''}`}
@@ -918,17 +1023,18 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
               placeholder={
                 isProcessingVoice
                   ? 'Transcribing with Gemini AI…'
-                  : (isListening ? 'Listening to your voice…' : 'Ask me anything…')
+                  : (isListening ? 'Listening to your voice…' : 'Ask me anything or paste an image…')
               }
               value={input}
               onChange={e => setInput(e.target.value)}
+              onPaste={handlePaste}
               disabled={loading || isProcessingVoice}
               autoFocus
             />
             <button
               type="submit"
               className="bip-send-btn"
-              disabled={!input.trim() || loading}
+              disabled={(!input.trim() && attachedImages.length === 0) || loading}
               title="Send"
             >
               <ArrowUp size={16} />

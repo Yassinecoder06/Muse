@@ -448,12 +448,23 @@ export const api = {
   updateChatSession: (id: string, data: { title: string }) =>
     request<ChatSession>(`/chat/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteChatSession: (id: string) => request<void>(`/chat/sessions/${id}`, { method: 'DELETE' }),
-  sendChatMessage: (sessionId: string, data: { message: string; model?: string }) =>
+  sendChatMessage: (sessionId: string, data: { message: string; model?: string; images?: Array<{ mimeType: string; data?: string; url?: string }> }) =>
     request<{
       userMessage: ChatMessage
       assistantMessage: ChatMessage
       sessionTitle?: string
     }>(`/chat/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify(data) }),
+  directChatMessage: (data: { message: string; sessionId?: string; model?: string; images?: Array<{ mimeType: string; data?: string; url?: string }> }) =>
+    request<{
+      reply: string
+      response: string
+      sessionId: string
+      sessionTitle?: string
+      actionCards?: any[]
+      toolCalls?: any[]
+      userMessage?: ChatMessage
+      assistantMessage: ChatMessage
+    }>('/ai/chat', { method: 'POST', body: JSON.stringify(data) }),
   updateChatMessage: (id: string, data: { content: string }) =>
     request<ChatMessage>(`/chat/messages/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteChatMessage: (id: string) => request<void>(`/chat/messages/${id}`, { method: 'DELETE' }),

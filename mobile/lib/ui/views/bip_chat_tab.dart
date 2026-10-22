@@ -556,6 +556,66 @@ class _BipChatTabState extends State<BipChatTab> {
     _scrollToBottom();
   }
 
+  Widget _buildMarkdownImage(String raw, String? alt) {
+    if (raw.startsWith('data:image/')) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.memory(
+            UriData.parse(raw).contentAsBytes(),
+            fit: BoxFit.contain,
+            errorBuilder: (_, error, stack) => const Icon(Icons.broken_image_outlined, size: 24),
+          ),
+        ),
+      );
+    }
+    return FutureBuilder<String>(
+      future: _api.resolveUrl(raw),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox(height: 40);
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.network(
+              snapshot.data!,
+              fit: BoxFit.contain,
+              errorBuilder: (_, error, stack) => const Icon(Icons.broken_image_outlined, size: 24),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildUserMessageContent(BuildContext context, String text) {
+    final imgRegex = RegExp(r'!\[([^\]]*)\]\(([^)]+)\)');
+    final matches = imgRegex.allMatches(text).toList();
+    if (matches.isEmpty) {
+      return Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+      );
+    }
+
+    final cleanText = text.replaceAll(imgRegex, '').trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final m in matches) ...[
+          _buildMarkdownImage(m.group(2) ?? '', m.group(1)),
+          const SizedBox(height: 6),
+        ],
+        if (cleanText.isNotEmpty)
+          Text(
+            cleanText,
+            style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1186,13 +1246,11 @@ class _BipChatTabState extends State<BipChatTab> {
                     border: isUser ? null : Border.all(color: AppTheme.getSurfaceBorder(context)),
                   ),
                   child: isUser
-                      ? Text(
-                          message.text,
-                          style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4),
-                        )
+                      ? _buildUserMessageContent(context, message.text)
                       : MarkdownBody(
                           data: message.text,
                           selectable: true,
+                          sizedImageBuilder: (config) => _buildMarkdownImage(config.uri.toString(), config.alt),
                           styleSheet: MarkdownStyleSheet(
                             p: TextStyle(color: AppTheme.getTextPrimary(context), fontSize: 14, height: 1.5),
                             strong: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.getTextPrimary(context)),
@@ -1479,6 +1537,15 @@ class _ActionCardTile extends StatelessWidget {
         musicFilename = field('filename');
         if (title.isEmpty) title = musicFilename;
         subtitle = field('artist').isNotEmpty ? field('artist') : 'Muse Audio';
+        break;
+
+      case 'generated_image':
+        icon = Icons.image_outlined;
+        color = const Color(0xFFEC4899);
+        label = 'Generated Image';
+        final prompt = field('prompt').isNotEmpty ? field('prompt') : field('contentSnippet');
+        if (title.isEmpty) title = 'Image by Gemini';
+        subtitle = prompt;
         break;
 
       case 'playlist':

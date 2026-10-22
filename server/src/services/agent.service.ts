@@ -16,8 +16,17 @@ import {
   isGeminiModel,
   cloudModelName,
   OLLAMA_CLOUD_URL,
-  OLLAMA_LOCAL_URL
+  OLLAMA_LOCAL_URL,
+  GEMINI_CHAT_MODEL
 } from './ai.service.js'
+import {
+  type ImageAttachment,
+  isImageGenerationPrompt,
+  isImageEditingPrompt,
+  generateOrEditImage,
+  parseImageData,
+  DEFAULT_IMAGE_MODEL
+} from './image-generation.service.js'
 import { templates } from './template.repository.js'
 import { notes } from './note.repository.js'
 import type { SpecializedTemplate } from '../types/index.js'
@@ -234,7 +243,8 @@ export async function runAgentConversation({
   messageText,
   model,
   userName: rawUserName = 'Explorer',
-  timezone = 'UTC'
+  timezone = 'UTC',
+  images = []
 }: {
   userId: string
   sessionId: string
@@ -242,16 +252,27 @@ export async function runAgentConversation({
   model?: string
   userName?: string
   timezone?: string
+  images?: ImageAttachment[]
 }): Promise<AgentRunOutput> {
   const userName = cleanUserName(rawUserName)
-  // 1. Save user message to database
+  const effectivePrompt = messageText.trim() || (images.length > 0 ? 'Please describe and analyze this image in detail.' : '')
+
+  // 1. Format and save user message to database
+  let savedUserContent = messageText.trim()
+  if (images.length > 0) {
+    const imgMarkdown = images.map(img => img.url ? `![Attached Image](${img.url})` : '').filter(Boolean).join('\n')
+    if (imgMarkdown) {
+      savedUserContent = savedUserContent ? `${imgMarkdown}\n\n${savedUserContent}` : imgMarkdown
+    }
+  }
+
   const { data: userMsg, error: userMsgErr } = await supabase
     .from('chat_messages')
     .insert({
       session_id: sessionId,
       user_id: userId,
       role: 'user',
-      content: messageText
+      content: savedUserContent
     })
     .select()
     .single()
@@ -325,14 +346,68 @@ export async function runAgentConversation({
     return executeAgentTool(userId, name, args, { timezone })
   }
 
+  // 4b. Auto-switch to Gemini Image Generation & Editing model if prompt asks for images
+  const hasImages = images.length > 0
+  const isGen = isImageGenerationPrompt(effectivePrompt)
+  const isEdit = isImageEditingPrompt(effectivePrompt, hasImages)
+
+  if ((isGen || isEdit) && geminiKey) {
+    try {
+      console.log(`[Agent] Detected ${isEdit ? 'image edit' : 'image generation'} prompt. Auto-switching to Gemini Image model...`)
+      const imgResult = await generateOrEditImage(geminiKey, effectivePrompt, {
+        inputImage: hasImages ? images[0] : undefined,
+        model,
+        userId
+      })
+
+      const prefix = isEdit
+        ? `Beep boop! 🎨 I've edited your image using **${imgResult.modelUsed}**:`
+        : `Beep boop! 🎨 Here is the image you requested using **${imgResult.modelUsed}**:`
+      finalResponseText = `${prefix}\n\n![${isEdit ? 'Edited Image' : 'Generated Image'}](${imgResult.imageUrl})`
+      if (imgResult.text) {
+        finalResponseText += `\n\n${imgResult.text}`
+      }
+
+      allActionCards.push({
+        type: 'generated_image',
+        id: imgResult.imageId,
+        title: isEdit ? 'Edited Image' : 'Generated Image',
+        contentSnippet: imgResult.prompt,
+        data: {
+          url: imgResult.imageUrl,
+          imageId: imgResult.imageId,
+          prompt: imgResult.prompt,
+          model: imgResult.modelUsed,
+          mimeType: imgResult.mimeType
+        }
+      })
+    } catch (imgErr: any) {
+      console.warn('[Agent] Auto-switched image generation model encountered error:', imgErr?.message || imgErr)
+      const errMsg = String(imgErr?.message || imgErr || '')
+      if (errMsg.includes('429') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('quota') || errMsg.includes('limit: 0')) {
+        finalResponseText = `Beep boop! 🎨 I detected your request to ${isEdit ? 'edit' : 'generate'} an image and switched to the Gemini Image model (**${DEFAULT_IMAGE_MODEL}**).
+
+⚠️ **Notice:** Your Google Gemini API key is currently on the free tier, which has an image generation quota of 0.
+
+To generate and edit images with Gemini Nano Banana, please enable billing on your Google AI Studio account at [ai.google.dev](https://ai.google.dev).`
+      }
+    }
+  }
+
   // The user's own chat models (Settings → AI providers), with their
   // fallbacks. Works with any provider format; tool calls are normalized.
   const routes = await chatRoutes(userId, model).catch(() => [])
-  if (routes.length) {
+  if (routes.length && !finalResponseText) {
     const convo: ChatMessage[] = historyRows.map(msg => msg.role === 'user'
       ? { role: 'user' as const, content: msg.content }
       : { role: 'assistant' as const, content: withToolSummary(msg.content, msg.tool_calls) })
-    if (convo[convo.length - 1]?.role !== 'user') convo.push({ role: 'user', content: messageText })
+    if (convo[convo.length - 1]?.role !== 'user') {
+      convo.push({
+        role: 'user',
+        content: effectivePrompt,
+        images: images.length > 0 ? images.map(img => parseImageData(img.data, img.mimeType)) : undefined
+      })
+    }
     try {
       let turns = 0
       while (turns < MAX_TOOL_ROUNDS) {
@@ -392,7 +467,12 @@ export async function runAgentConversation({
   // tools already executed: that would repeat their actions.
   if (geminiKey && !finalResponseText && recordedToolCalls.length === 0) {
     // Priority: Run with Gemini Agent Engine using Waterfall Cascade
-    const geminiCandidates = getCascadeCandidates(model, geminiKey)
+    // If user provided images, route to a vision-capable Gemini model
+    let targetModel = model
+    if (images.length > 0 && (!targetModel || !isGeminiModel(targetModel))) {
+      targetModel = GEMINI_CHAT_MODEL
+    }
+    const geminiCandidates = getCascadeCandidates(targetModel, geminiKey)
     const client = new GoogleGenAI({ apiKey: geminiKey })
 
     // Build Gemini contents history
@@ -408,11 +488,23 @@ export async function runAgentConversation({
       }
     }
 
-    // Add current user prompt if not already in contents
-    const lastContent = contents[contents.length - 1]
-    if (!lastContent || lastContent.role !== 'user' || lastContent.parts[0]?.text !== messageText) {
-      contents.push({ role: 'user', parts: [{ text: messageText }] })
+    // Add current user prompt with multimodal image parts
+    const userParts: any[] = []
+    if (images.length > 0) {
+      for (const img of images) {
+        const parsed = parseImageData(img.data, img.mimeType)
+        if (parsed.data) {
+          userParts.push({
+            inlineData: {
+              mimeType: parsed.mimeType || 'image/png',
+              data: parsed.data
+            }
+          })
+        }
+      }
     }
+    userParts.push({ text: effectivePrompt })
+    contents.push({ role: 'user', parts: userParts })
 
     let modelIdx = 0
     let activeModel = geminiCandidates[modelIdx] || 'gemini-2.5-flash'
