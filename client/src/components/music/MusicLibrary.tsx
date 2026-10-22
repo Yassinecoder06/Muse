@@ -27,7 +27,9 @@ import {
   Maximize2,
   Moon,
   Image as ImageIcon,
-  Sliders
+  Sliders,
+  LayoutGrid,
+  List
 } from 'lucide-react'
 import { api } from '../../services/api'
 import { robotMusic, type MusicPlayerState } from '../../services/robot-music.service'
@@ -63,6 +65,16 @@ export function MusicLibrary({
   const [search, setSearch] = useState('')
   const [playerState, setPlayerState] = useState<MusicPlayerState>(robotMusic.getState())
   const [showQueue, setShowQueue] = useState(false)
+
+  // View mode: Grid cards vs List table
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    return (localStorage.getItem('muse_music_view_mode') as 'grid' | 'list') || 'grid'
+  })
+
+  const handleViewModeChange = (mode: 'grid' | 'list') => {
+    setViewMode(mode)
+    localStorage.setItem('muse_music_view_mode', mode)
+  }
 
   // Delete State
   const [deletingSong, setDeletingSong] = useState<string | null>(null)
@@ -597,7 +609,7 @@ export function MusicLibrary({
         </div>
       )}
 
-      {/* Song List Subbar (Selection Toolbar / Count) */}
+      {/* Song List Subbar (Selection Toolbar / Count / View Toggle) */}
       {songs.length > 0 && (
         <div className="music-library-subbar">
           {selectedSongs.length > 0 ? (
@@ -629,6 +641,27 @@ export function MusicLibrary({
               )}
             </div>
           )}
+
+          <div className="music-view-toggle-wrap">
+            <button
+              type="button"
+              className={`music-view-btn ${viewMode === 'grid' ? 'active' : ''}`}
+              onClick={() => handleViewModeChange('grid')}
+              title="Grid View"
+            >
+              <LayoutGrid size={15} />
+              <span>Grid</span>
+            </button>
+            <button
+              type="button"
+              className={`music-view-btn ${viewMode === 'list' ? 'active' : ''}`}
+              onClick={() => handleViewModeChange('list')}
+              title="List View"
+            >
+              <List size={15} />
+              <span>List</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -648,7 +681,164 @@ export function MusicLibrary({
               : 'No songs match your search query.'}
           </p>
         </div>
+      ) : viewMode === 'list' ? (
+        /* List Mode View (Spotify / Apple Music Table style) */
+        <div className="music-tracks-list">
+          <div className="music-tracks-list-header">
+            <div className="list-col col-check">#</div>
+            <div className="list-col col-main">Track</div>
+            <div className="list-col col-size">Size</div>
+            <div className="list-col col-date">Date Added</div>
+            <div className="list-col col-actions">Actions</div>
+          </div>
+          <div className="music-tracks-list-body">
+            {filtered.map((song, index) => {
+              const isPlaying = isCurrentPlaying(song.filename)
+              const isSelected = playerState.currentTrack?.filename === song.filename
+              const isSongSelected = selectedSongs.includes(song.filename)
+
+              return (
+                <div
+                  key={song.filename}
+                  className={`music-track-row ${isSelected ? 'active-track' : ''} ${isSongSelected ? 'selected-row' : ''}`}
+                  onClick={() => {
+                    if (selectedSongs.length > 0) {
+                      toggleSelect(song.filename)
+                    }
+                  }}
+                  onDoubleClick={() => handlePlayToggle(song)}
+                >
+                  <div className="list-col col-check">
+                    <button
+                      className={`note-check ${isSongSelected ? 'on' : ''} ${selectedSongs.length > 0 ? 'visible' : 'hover-only'}`}
+                      title={isSongSelected ? 'Deselect song' : 'Select song'}
+                      onClick={e => {
+                        e.stopPropagation()
+                        toggleSelect(song.filename)
+                      }}
+                    >
+                      {isSongSelected ? <Check size={12} /> : null}
+                    </button>
+                    <span className="row-index-num">{index + 1}</span>
+                  </div>
+
+                  <div className="list-col col-main">
+                    <button
+                      className={`track-play-badge compact ${isPlaying ? 'playing' : ''}`}
+                      onClick={e => {
+                        e.stopPropagation()
+                        handlePlayToggle(song)
+                      }}
+                      title={isPlaying ? 'Pause song' : 'Play song & sing with Bip'}
+                    >
+                      {isPlaying ? (
+                        <Pause size={14} />
+                      ) : (
+                        <Play size={14} fill="currentColor" style={{ marginLeft: 1 }} />
+                      )}
+                    </button>
+
+                    <div
+                      className="track-cover-badge compact"
+                      onClick={e => {
+                        e.stopPropagation()
+                        setCoverModalSong(song)
+                      }}
+                      title="Search & change album cover on iTunes"
+                    >
+                      <img
+                        src={song.coverUrl || `/api/music/cover/${encodeURIComponent(song.filename)}`}
+                        alt={song.title}
+                        className="track-cover-img"
+                        onError={e => {
+                          ;(e.currentTarget as HTMLElement).style.display = 'none'
+                        }}
+                      />
+                      <div className="track-cover-overlay-hint">
+                        <ImageIcon size={10} />
+                      </div>
+                    </div>
+
+                    <div className="track-details">
+                      <div className="track-title-row">
+                        <span className="track-title" title={song.title}>
+                          {song.title}
+                        </span>
+                        {song.artist && <span className="track-artist">{song.artist}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="list-col col-size">
+                    <span className="track-meta-item">
+                      <HardDrive size={12} /> {formatSize(song.size)}
+                    </span>
+                  </div>
+
+                  <div className="list-col col-date">
+                    {song.mtime ? (
+                      <span className="track-meta-item">
+                        <Clock size={12} /> {formatDate(song.mtime)}
+                      </span>
+                    ) : (
+                      <span className="track-meta-item">-</span>
+                    )}
+                  </div>
+
+                  <div className="list-col col-actions">
+                    <div className="track-actions">
+                      <button
+                        className="track-action-btn"
+                        onClick={e => {
+                          e.stopPropagation()
+                          setCoverModalSong(song)
+                        }}
+                        title="Search and change album cover on iTunes"
+                      >
+                        <ImageIcon size={14} />
+                      </button>
+
+                      <button
+                        className={`track-action-btn sing-btn ${isPlaying ? 'playing' : ''}`}
+                        onClick={e => {
+                          e.stopPropagation()
+                          handlePlayToggle(song)
+                        }}
+                        title={isPlaying ? 'Pause singing companion' : 'Sing along with Bip'}
+                      >
+                        <Mic size={14} />
+                      </button>
+
+                      <button
+                        className="track-action-btn"
+                        onClick={e => {
+                          e.stopPropagation()
+                          openAddToPlaylist(song)
+                        }}
+                        title="Add song to playlist or priority queue"
+                      >
+                        <ListPlus size={14} />
+                      </button>
+
+                      <button
+                        className="track-action-btn delete-btn"
+                        onClick={e => {
+                          e.stopPropagation()
+                          setDeletingSong(song.filename)
+                        }}
+                        title="Delete song from library"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
       ) : (
+        /* Grid Mode View */
         <div className="music-tracks-grid">
           {filtered.map(song => {
             const isPlaying = isCurrentPlaying(song.filename)
@@ -676,21 +866,6 @@ export function MusicLibrary({
                   {isSongSelected ? <Check size={13} /> : null}
                 </button>
 
-                <button
-                  className={`track-play-badge ${isPlaying ? 'playing' : ''}`}
-                  onClick={e => {
-                    e.stopPropagation()
-                    handlePlayToggle(song)
-                  }}
-                  title={isPlaying ? 'Pause song' : 'Play song & sing with Bip'}
-                >
-                  {isPlaying ? (
-                    <Pause size={18} />
-                  ) : (
-                    <Play size={18} fill="currentColor" style={{ marginLeft: 2 }} />
-                  )}
-                </button>
-
                 <div
                   className="track-cover-badge"
                   onClick={e => {
@@ -712,9 +887,24 @@ export function MusicLibrary({
                   </div>
                 </div>
 
+                <button
+                  className={`track-play-badge ${isPlaying ? 'playing' : ''}`}
+                  onClick={e => {
+                    e.stopPropagation()
+                    handlePlayToggle(song)
+                  }}
+                  title={isPlaying ? 'Pause song' : 'Play song & sing with Bip'}
+                >
+                  {isPlaying ? (
+                    <Pause size={17} />
+                  ) : (
+                    <Play size={17} fill="currentColor" style={{ marginLeft: 2 }} />
+                  )}
+                </button>
+
                 <div className="track-details">
                   <div className="track-title-row">
-                    <span className="track-title music-song-name-red" title={song.title}>
+                    <span className="track-title" title={song.title}>
                       {song.title}
                     </span>
                     {song.artist && <span className="track-artist">{song.artist}</span>}
@@ -722,55 +912,52 @@ export function MusicLibrary({
 
                   <div className="track-meta-row">
                     <span className="track-meta-item">
-                      <HardDrive size={12} /> {formatSize(song.size)}
+                      <HardDrive size={11} /> {formatSize(song.size)}
                     </span>
-                    {song.mtime && (
+                    {song.mtime ? (
                       <span className="track-meta-item">
-                        <Clock size={12} /> {formatDate(song.mtime)}
+                        <Clock size={11} /> {formatDate(song.mtime)}
                       </span>
-                    )}
+                    ) : null}
                   </div>
                 </div>
 
                 <div className="track-actions">
                   <button
-                    className="track-cover-btn"
+                    className="track-action-btn"
                     onClick={e => {
                       e.stopPropagation()
                       setCoverModalSong(song)
                     }}
                     title="Search and change album cover on iTunes"
                   >
-                    <ImageIcon size={13} />
-                    <span>Cover</span>
+                    <ImageIcon size={14} />
                   </button>
 
                   <button
-                    className="track-sing-btn"
+                    className={`track-action-btn sing-btn ${isPlaying ? 'playing' : ''}`}
                     onClick={e => {
                       e.stopPropagation()
                       handlePlayToggle(song)
                     }}
-                    title="Sing along with Bip"
+                    title={isPlaying ? 'Pause singing companion' : 'Sing along with Bip'}
                   >
                     <Mic size={14} />
-                    <span>Sing</span>
                   </button>
 
                   <button
-                    className="track-add-playlist-btn"
+                    className="track-action-btn"
                     onClick={e => {
                       e.stopPropagation()
                       openAddToPlaylist(song)
                     }}
-                    title="Add music to playlist or set playback priority"
+                    title="Add song to playlist or priority queue"
                   >
                     <ListPlus size={14} />
-                    <span>Add</span>
                   </button>
 
                   <button
-                    className="track-del-btn"
+                    className="track-action-btn delete-btn"
                     onClick={e => {
                       e.stopPropagation()
                       setDeletingSong(song.filename)
@@ -805,7 +992,7 @@ export function MusicLibrary({
               <div className="add-target-song-banner">
                 <Music2 size={18} className="banner-icon" />
                 <div className="banner-meta">
-                  <span className="banner-title music-song-name-red">{targetSong.title}</span>
+                  <span className="banner-title">{targetSong.title}</span>
                   {targetSong.artist && <span className="banner-artist">{targetSong.artist}</span>}
                 </div>
               </div>

@@ -369,7 +369,7 @@ export function MusicPlaylists() {
                             className={`builder-picker-item ${isAdded ? 'is-added' : ''}`}
                           >
                             <div className="picker-song-meta">
-                              <span className="picker-song-title music-song-name-red">
+                              <span className="picker-song-title">
                                 {song.title}
                               </span>
                               {song.artist && (

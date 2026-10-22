@@ -159,7 +159,7 @@ export function DraggableTrackList({
               {/* Track Title and Artist */}
               <div className="track-info-col">
                 <div className="track-name-row">
-                  <span className="track-title-text music-song-name-red" title={track.title}>
+                  <span className="track-title-text" title={track.title}>
                     {track.title || track.filename}
                   </span>
                   {isPlaying && (
