@@ -3,18 +3,32 @@ import {
   ListMusic,
   Plus,
   Play,
+  Pause,
+  Music,
+  Music2,
+  Mic,
+  AlertCircle,
   Trash2,
   RefreshCw,
   Edit2,
   X,
   Disc,
   ArrowUpDown,
-  Search
+  Search,
+  SkipBack,
+  SkipForward
 } from 'lucide-react'
 import { api } from '../../services/api'
-import { robotMusic } from '../../services/robot-music.service'
+import { robotMusic, type MusicPlayerState } from '../../services/robot-music.service'
 import { ConfirmModal } from '../ConfirmModal'
 import { DraggableTrackList, type TrackItem } from './DraggableTrackList'
+
+function formatTime(secs: number) {
+  if (!secs || isNaN(secs)) return '0:00'
+  const m = Math.floor(secs / 60)
+  const s = Math.floor(secs % 60)
+  return `${m}:${s < 10 ? '0' : ''}${s}`
+}
 
 interface Playlist {
   id: string
@@ -29,6 +43,7 @@ export function MusicPlaylists() {
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [availableSongs, setAvailableSongs] = useState<TrackItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [playerState, setPlayerState] = useState<MusicPlayerState>(robotMusic.getState())
 
   // Create / Edit Modal State
   const [modalOpen, setModalOpen] = useState(false)
@@ -65,6 +80,8 @@ export function MusicPlaylists() {
 
   useEffect(() => {
     loadData()
+    const unsub = robotMusic.subscribe(setPlayerState)
+    return () => unsub()
   }, [])
 
   const openCreateModal = () => {
@@ -167,7 +184,14 @@ export function MusicPlaylists() {
 
   const handlePlayPlaylist = (pl: Playlist, startIndex = 0) => {
     if (!pl.tracks || pl.tracks.length === 0) return
-    robotMusic.playPlaylist(pl.name, pl.tracks, startIndex)
+    const isCurrent = playerState.playlistName === pl.name
+    if (isCurrent && playerState.isPlaying) {
+      robotMusic.pause()
+    } else if (isCurrent && !playerState.isPlaying && playerState.currentTrack) {
+      robotMusic.resume()
+    } else {
+      void robotMusic.playPlaylist(pl.name, pl.tracks, startIndex)
+    }
   }
 
   const filteredAvailable = availableSongs.filter(s =>
@@ -196,6 +220,77 @@ export function MusicPlaylists() {
         </div>
       </div>
 
+      {/* Active Player Banner when a track is playing / paused */}
+      {playerState.currentTrack && (
+        <div className="music-player-wrapper" style={{ marginBottom: 16 }}>
+          <div className="music-active-player-banner">
+            <div className="player-track-info">
+              <div className="player-track-icon cover-interactive">
+                <img
+                  src={
+                    playerState.currentTrack.coverUrl ||
+                    `/api/music/cover/${encodeURIComponent(playerState.currentTrack.filename)}`
+                  }
+                  alt={playerState.currentTrack.title}
+                  className="player-thumb-img"
+                  onError={e => {
+                    ;(e.currentTarget as HTMLElement).style.display = 'none'
+                  }}
+                />
+                <Music2 size={18} className={playerState.isPlaying ? 'pulsing-note' : ''} />
+              </div>
+              <div className="player-track-meta">
+                <span className="player-title">{playerState.currentTrack.title}</span>
+                <span className="player-bip-tag">
+                  <Mic size={12} /> Bip Singing Companion
+                  {playerState.playlistName && ` · ${playerState.playlistName}`}
+                </span>
+              </div>
+            </div>
+
+            <div className="player-controls">
+              <div className="player-buttons-group">
+                <button
+                  type="button"
+                  className="player-step-btn"
+                  onClick={() => robotMusic.prevTrack()}
+                  title="Previous song"
+                >
+                  <SkipBack size={17} />
+                </button>
+                <button
+                  type="button"
+                  className="player-play-btn"
+                  onClick={() => robotMusic.togglePlay()}
+                  title={playerState.isPlaying ? 'Pause' : 'Play'}
+                >
+                  {playerState.isPlaying ? <Pause size={18} /> : <Play size={18} fill="currentColor" />}
+                </button>
+                <button
+                  type="button"
+                  className="player-step-btn"
+                  onClick={() => robotMusic.nextTrack()}
+                  title="Next song"
+                >
+                  <SkipForward size={17} />
+                </button>
+              </div>
+              <span className="player-time-text">
+                {formatTime(playerState.currentTime)} / {formatTime(playerState.duration)}
+              </span>
+              <input
+                type="range"
+                className="player-scrub-slider"
+                min={0}
+                max={playerState.duration || 100}
+                value={playerState.currentTime || 0}
+                onChange={e => robotMusic.seek(parseFloat(e.target.value))}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Grid of Playlists */}
       {loading && playlists.length === 0 ? (
         <div className="music-empty-state">
@@ -216,10 +311,12 @@ export function MusicPlaylists() {
         <div className="playlists-grid">
           {playlists.map(pl => {
             const trackCount = (pl.tracks || []).length
+            const isCurrent = playerState.playlistName === pl.name
+            const isPlayingThis = isCurrent && playerState.isPlaying
             return (
-              <div key={pl.id} className="playlist-card">
+              <div key={pl.id} className={`playlist-card ${isCurrent ? 'active-playing-card' : ''}`}>
                 <div className="playlist-card-top">
-                  <div className="playlist-icon-badge">
+                  <div className="playlist-icon-badge" style={isCurrent ? { color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' } : undefined}>
                     <ListMusic size={20} />
                   </div>
                   <div className="playlist-meta">
@@ -250,15 +347,39 @@ export function MusicPlaylists() {
                   )}
                 </div>
 
+                {/* Active playback status / error indicator */}
+                {isCurrent && playerState.currentTrack && (
+                  <div style={{ margin: '6px 0', fontSize: 12, color: '#10b981', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                    <Music size={13} className={isPlayingThis ? 'spin-icon' : ''} />
+                    <span>Track #{(playerState.playlistIndex || 0) + 1}: {playerState.currentTrack.title}</span>
+                  </div>
+                )}
+                {isCurrent && playerState.error && !isPlayingThis && (
+                  <div style={{ margin: '6px 0', fontSize: 12, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <AlertCircle size={13} style={{ flexShrink: 0 }} />
+                    <span>{playerState.error}</span>
+                  </div>
+                )}
+
                 <div className="playlist-card-footer">
                   <button
                     className="playlist-play-btn"
                     disabled={trackCount === 0}
                     onClick={() => handlePlayPlaylist(pl)}
-                    title="Play playlist from top priority track"
+                    title={isPlayingThis ? 'Pause mix' : 'Play playlist from top priority track'}
+                    style={isPlayingThis ? { background: '#10b981' } : undefined}
                   >
-                    <Play size={14} fill="currentColor" />
-                    <span>Play Mix</span>
+                    {isPlayingThis ? (
+                      <>
+                        <Pause size={14} fill="currentColor" />
+                        <span>Pause Mix</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play size={14} fill="currentColor" />
+                        <span>Play Mix</span>
+                      </>
+                    )}
                   </button>
 
                   <div className="playlist-btn-group">
