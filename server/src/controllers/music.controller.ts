@@ -44,12 +44,13 @@ export function parseTrackInfo(filename: string): { title: string; artist?: stri
   // Clean up typical download suffixes like -SnapYT.App, -YouTube, etc.
   const cleaned = base
     .replace(/[-_]?(SnapYT\.App|YouTube|Official|Audio|Video|Lyrics)/gi, '')
+    .replace(/[-_\s]+$/, '')
     .trim()
 
   if (cleaned.includes(' - ')) {
     const parts = cleaned.split(' - ')
     const artist = parts[0].trim()
-    const title = parts.slice(1).join(' - ').trim()
+    const title = parts.slice(1).join(' - ').replace(/[-_\s]+$/, '').trim()
     return { title: title || base, artist: artist || undefined }
   }
 
