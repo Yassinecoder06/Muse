@@ -45,6 +45,7 @@ class _TasksTabState extends State<TasksTab> {
 
   @override
   void dispose() {
+    _undoTimer?.cancel();
     AppEvents.dataChanged.removeListener(_onDataChanged);
     super.dispose();
   }
@@ -152,20 +153,39 @@ class _TasksTabState extends State<TasksTab> {
     }
   }
 
+  Timer? _undoTimer;
+
   /// Removes an item from the list right away and only deletes it on the
   /// server once the Undo snackbar has gone without being tapped.
-  void _deleteWithUndo({required String label, required VoidCallback removeLocally, required VoidCallback restoreLocally, required Future<void> Function() deleteRemotely}) {
+  /// Automatically auto-dismisses after 10 seconds.
+  void _deleteWithUndo({
+    required String label,
+    required VoidCallback removeLocally,
+    required VoidCallback restoreLocally,
+    required Future<void> Function() deleteRemotely,
+  }) {
     setState(removeLocally);
+    _undoTimer?.cancel();
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
-    messenger
-        .showSnackBar(SnackBar(
-          content: Text('$label deleted'),
-          duration: const Duration(seconds: 4),
-          action: SnackBarAction(label: 'Undo', onPressed: () {}),
-        ))
-        .closed
-        .then((reason) async {
+
+    final controller = messenger.showSnackBar(
+      SnackBar(
+        content: Text('$label deleted'),
+        duration: const Duration(seconds: 10),
+        action: SnackBarAction(label: 'Undo', onPressed: () {}),
+      ),
+    );
+
+    _undoTimer = Timer(const Duration(seconds: 10), () {
+      if (mounted) {
+        messenger.hideCurrentSnackBar();
+      }
+    });
+
+    controller.closed.then((reason) async {
+      _undoTimer?.cancel();
+      _undoTimer = null;
       if (reason == SnackBarClosedReason.action) {
         if (mounted) setState(restoreLocally);
         return;
@@ -176,7 +196,12 @@ class _TasksTabState extends State<TasksTab> {
       } catch (e) {
         if (!mounted) return;
         setState(restoreLocally);
-        messenger.showSnackBar(SnackBar(content: Text('Could not delete: ${e.toString().replaceFirst('Exception: ', '')}'), backgroundColor: Colors.redAccent));
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Could not delete: ${e.toString().replaceFirst('Exception: ', '')}'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
       }
     });
   }

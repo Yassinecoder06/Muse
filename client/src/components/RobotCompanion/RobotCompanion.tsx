@@ -424,7 +424,8 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     robotAudio.play('blip')
     stt.startListening({
       continuous: true,
-      silenceTimeoutMs: 5000,
+      initialText: input,
+      silenceTimeoutMs: 15000,
       onInterim: interim => {
         setInput(interim)
       },

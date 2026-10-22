@@ -10,11 +10,15 @@ class EventCache {
 
   static Map<String, dynamic>? _data;
   static Future<void> _pendingWrite = Future.value();
+  static bool disableDiskForTests = false;
 
   static Future<File> _file() async => File('${(await getApplicationSupportDirectory()).path}/muse_events_cache.json');
 
   static Future<Map<String, dynamic>> _load() async {
     if (_data != null) return _data!;
+    if (disableDiskForTests) {
+      return _data = {'order': <dynamic>[], 'events': <String, dynamic>{}, 'aliases': <String, dynamic>{}};
+    }
     try {
       final file = await _file();
       _data = await file.exists() ? jsonDecode(await file.readAsString()) as Map<String, dynamic> : null;
@@ -25,6 +29,7 @@ class EventCache {
   }
 
   static Future<void> _save() {
+    if (disableDiskForTests) return Future.value();
     final snapshot = jsonEncode(_data);
     return _pendingWrite = _pendingWrite.then((_) async {
       try {
@@ -95,5 +100,8 @@ class EventCache {
   static Future<String?> serverIdFor(String localId) async => ((await _load())['aliases'] as Map?)?[localId] as String?;
 
   /// Tests only
-  static void resetForTests(Map<String, dynamic>? data) => _data = data;
+  static void resetForTests(Map<String, dynamic>? data) {
+    _data = data;
+    _pendingWrite = Future.value();
+  }
 }

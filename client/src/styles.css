@@ -8758,6 +8758,61 @@
   color: #ffffff;
 }
 
+/* Task Deletion Undo Bar */
+.task-undo-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e1b2e;
+  color: #ffffff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 999;
+  font-size: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: slideUpFade 0.2s ease-out;
+}
+
+[data-theme=dark] .task-undo-bar {
+  background: #181622;
+  border-color: #383348;
+}
+
+.task-undo-btn {
+  background: #7c3aed;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.task-undo-btn:hover {
+  background: #6d28d9;
+  transform: translateY(-1px);
+}
+
+.task-undo-close {
+  background: transparent;
+  border: none;
+  color: #9f99aa;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+}
+
+.task-undo-close:hover {
+  color: #ffffff;
+}
+
 /* ==========================================================================
    Music Player Advanced Features: Cover Art, Now Playing, Speed & Sleep Timer
    ========================================================================== */
