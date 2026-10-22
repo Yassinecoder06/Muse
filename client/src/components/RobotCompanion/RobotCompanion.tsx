@@ -122,6 +122,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     Array<{ id: string; mimeType: string; data: string; previewUrl: string; name: string }>
   >([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const lastPasteRef = useRef<number>(0)
 
   const addAttachedFiles = (files: FileList | File[]) => {
     Array.from(files).forEach(file => {
@@ -132,16 +133,19 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
         const previewUrl = URL.createObjectURL(file)
         const [mimePart, dataPart] = dataUrl.split(',')
         const mimeType = mimePart.match(/:(.*?);/)?.[1] || file.type || 'image/png'
-        setAttachedImages(prev => [
-          ...prev,
-          {
-            id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            mimeType,
-            data: dataPart,
-            previewUrl,
-            name: file.name
-          }
-        ])
+        setAttachedImages(prev => {
+          if (prev.some(existing => existing.data === dataPart)) return prev
+          return [
+            ...prev,
+            {
+              id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              mimeType,
+              data: dataPart,
+              previewUrl,
+              name: file.name
+            }
+          ]
+        })
       }
       reader.readAsDataURL(file)
     })
@@ -161,6 +165,10 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     }
     if (imageFiles.length > 0) {
       e.preventDefault()
+      e.stopPropagation()
+      const now = Date.now()
+      if (now - lastPasteRef.current < 200) return
+      lastPasteRef.current = now
       addAttachedFiles(imageFiles)
     }
   }
@@ -993,7 +1001,6 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
               e.preventDefault()
               void handleSend()
             }}
-            onPaste={handlePaste}
           >
             <button
               type="button"
