@@ -23,9 +23,10 @@ import {
   RefreshCw,
   Music2,
   ListMusic,
-  ArrowRight
+  ArrowRight,
+  Image as ImageIcon
 } from 'lucide-react'
-import { api } from '../services/api'
+import { api, resolveApiImageSrc } from '../services/api'
 import { robotMusic, type MusicPlayerState } from '../services/robot-music.service'
 import type {
   ActionCard,
@@ -37,7 +38,8 @@ import type {
   SpecializedNoteActionCard,
   DeletedItemActionCard,
   ConfirmRequiredActionCard,
-  MusicActionCard
+  MusicActionCard,
+  GeneratedImageActionCard
 } from '../types'
 
 interface ActionCardsProps {
@@ -166,6 +168,21 @@ function normalizeCard(raw: any): ActionCard {
       status: raw.status || d.status || ''
     }
   }
+  if (type === 'generated_image') {
+    return {
+      type: 'generated_image',
+      id: raw.id || d.id || d.imageId || '',
+      title: raw.title || d.title || 'Generated Image',
+      contentSnippet: raw.contentSnippet || d.prompt || raw.prompt || '',
+      data: {
+        url: d.url || raw.url || '',
+        imageId: d.imageId || raw.id || '',
+        prompt: d.prompt || raw.prompt || '',
+        model: d.model || raw.model || 'Gemini Image',
+        mimeType: d.mimeType || 'image/png'
+      }
+    }
+  }
   return raw
 }
 
@@ -176,6 +193,15 @@ export function ActionCards({ cards, onOpenNote, onNavigate }: ActionCardsProps)
     <div className="action-cards-container">
       {cards.map((rawCard, idx) => {
         const card = normalizeCard(rawCard)
+        if (card.type === 'generated_image') {
+          return (
+            <GeneratedImageCard
+              key={`gen-img-${card.id || idx}-${idx}`}
+              card={card}
+              onNavigate={onNavigate}
+            />
+          )
+        }
         if (card.type === 'playlist') {
           return (
             <PlaylistCard
@@ -992,4 +1018,125 @@ function PlaylistCard({
     </div>
   )
 }
+
+function GeneratedImageCard({ card, onNavigate }: { card: GeneratedImageActionCard; onNavigate?: (path: string) => void }) {
+  const queryClient = useQueryClient()
+  const [savedToNote, setSavedToNote] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const imgUrl = resolveApiImageSrc(card.data?.url || (card as any).url || '')
+
+  const handleSaveToNote = async () => {
+    if (!imgUrl || saving) return
+    setSaving(true)
+    try {
+      const title = card.title || 'Generated Image'
+      const content = `<p><img src="${imgUrl}" alt="${card.data?.prompt || title}" /></p><p>${card.data?.prompt || ''}</p>`
+      const note = await api.createNote({
+        title,
+        content,
+        tags: ['image', 'ai-generated']
+      })
+      queryClient.invalidateQueries({ queryKey: ['notes'] })
+      setSavedToNote(true)
+      setTimeout(() => setSavedToNote(false), 3000)
+      if (note?.id && onNavigate) {
+        onNavigate(`/note/${note.id}`)
+      }
+    } catch (err) {
+      console.error('Failed to save generated image to note:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="action-card generated-image-card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="action-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="action-card-title-group" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ImageIcon size={16} className="action-card-icon" style={{ color: '#ec4899' }} />
+          <span className="action-card-title" style={{ fontWeight: 600 }}>{card.title || 'Generated Image'}</span>
+          {card.data?.model && (
+            <span
+              className="action-card-badge"
+              style={{
+                fontSize: 11,
+                padding: '2px 8px',
+                borderRadius: 12,
+                backgroundColor: 'rgba(236, 72, 153, 0.1)',
+                color: '#db2777',
+                border: '1px solid rgba(236, 72, 153, 0.2)'
+              }}
+            >
+              {card.data.model}
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {imgUrl && (
+            <a
+              href={imgUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="action-card-btn"
+              title="Open full size in new tab"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 12,
+                padding: '4px 10px',
+                borderRadius: 6,
+                textDecoration: 'none',
+                color: 'inherit',
+                border: '1px solid var(--border, #cbd5e1)'
+              }}
+            >
+              <ExternalLink size={12} />
+              <span>View</span>
+            </a>
+          )}
+          <button
+            type="button"
+            className="action-card-btn"
+            onClick={handleSaveToNote}
+            disabled={saving || !imgUrl}
+            title="Save as a new note in Muse"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: 12,
+              padding: '4px 10px',
+              borderRadius: 6,
+              cursor: saving ? 'wait' : 'pointer',
+              border: '1px solid var(--border, #cbd5e1)'
+            }}
+          >
+            {savedToNote ? <><Check size={12} /> Saved</> : <><FileText size={12} /> Save to Note</>}
+          </button>
+        </div>
+      </div>
+
+      {imgUrl && (
+        <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border, #e2e8f0)', maxHeight: 320, display: 'flex', justifyContent: 'center', background: '#0000000a' }}>
+          <a href={imgUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'block', maxWidth: '100%' }}>
+            <img
+              src={imgUrl}
+              alt={card.data?.prompt || card.title}
+              style={{ maxWidth: '100%', maxHeight: 320, objectFit: 'contain', display: 'block' }}
+              loading="lazy"
+            />
+          </a>
+        </div>
+      )}
+
+      {card.data?.prompt && (
+        <p style={{ margin: 0, fontSize: 12, fontStyle: 'italic', color: 'var(--text-secondary, #64748b)' }}>
+          "{card.data.prompt}"
+        </p>
+      )}
+    </div>
+  )
+}
+
 

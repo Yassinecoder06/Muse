@@ -11,7 +11,7 @@ import { env } from '../../utils/env.js'
 export type ToolCall = { id: string; name: string; args: Record<string, any> }
 
 export type ChatMessage =
-  | { role: 'user'; content: string }
+  | { role: 'user'; content: string; images?: Array<{ mimeType: string; data: string }> }
   // `raw` keeps the provider's own assistant content (Gemini thought
   // signatures, Anthropic thinking blocks) so it can be sent back unchanged
   // within the same tool loop.
@@ -71,7 +71,21 @@ async function geminiGenerate(p: ResolvedProvider, model: string, req: GenerateR
   const client = new GoogleGenAI({ apiKey: p.apiKey || '' })
   const contents: any[] = []
   for (const m of req.messages) {
-    if (m.role === 'user') contents.push({ role: 'user', parts: [{ text: m.content }] })
+    if (m.role === 'user') {
+      const parts: any[] = []
+      if (m.images && m.images.length > 0) {
+        for (const img of m.images) {
+          parts.push({
+            inlineData: {
+              mimeType: img.mimeType || 'image/png',
+              data: img.data
+            }
+          })
+        }
+      }
+      parts.push({ text: m.content })
+      contents.push({ role: 'user', parts })
+    }
     else if (m.role === 'assistant') {
       if (m.raw?.kind === 'gemini') contents.push({ role: 'model', parts: m.raw.value })
       else {
@@ -127,7 +141,23 @@ async function openAiGenerate(p: ResolvedProvider, model: string, req: GenerateR
   const messages: any[] = []
   if (req.system) messages.push({ role: 'system', content: req.system })
   for (const m of req.messages) {
-    if (m.role === 'user') messages.push({ role: 'user', content: m.content })
+    if (m.role === 'user') {
+      if (m.images && m.images.length > 0) {
+        const parts: any[] = []
+        if (m.content) parts.push({ type: 'text', text: m.content })
+        for (const img of m.images) {
+          parts.push({
+            type: 'image_url',
+            image_url: {
+              url: `data:${img.mimeType || 'image/png'};base64,${img.data}`
+            }
+          })
+        }
+        messages.push({ role: 'user', content: parts })
+      } else {
+        messages.push({ role: 'user', content: m.content })
+      }
+    }
     else if (m.role === 'assistant') {
       messages.push({
         role: 'assistant',
@@ -157,7 +187,25 @@ async function anthropicGenerate(p: ResolvedProvider, model: string, req: Genera
   const client = new Anthropic({ apiKey: p.apiKey || '', baseURL: baseUrl(p), timeout: req.timeoutMs ?? DEFAULT_TIMEOUT_MS, maxRetries: 1 })
   const messages: Anthropic.MessageParam[] = []
   for (const m of req.messages) {
-    if (m.role === 'user') messages.push({ role: 'user', content: m.content })
+    if (m.role === 'user') {
+      if (m.images && m.images.length > 0) {
+        const content: Anthropic.ContentBlockParam[] = []
+        for (const img of m.images) {
+          content.push({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: (img.mimeType || 'image/png') as any,
+              data: img.data
+            }
+          })
+        }
+        if (m.content) content.push({ type: 'text', text: m.content })
+        messages.push({ role: 'user', content })
+      } else {
+        messages.push({ role: 'user', content: m.content })
+      }
+    }
     else if (m.role === 'assistant') {
       if (m.raw?.kind === 'anthropic') messages.push({ role: 'assistant', content: m.raw.value as Anthropic.ContentBlockParam[] })
       else {
@@ -201,7 +249,17 @@ async function ollamaGenerate(p: ResolvedProvider, model: string, req: GenerateR
   const messages: any[] = []
   if (req.system) messages.push({ role: 'system', content: req.system })
   for (const m of req.messages) {
-    if (m.role === 'user') messages.push({ role: 'user', content: m.content })
+    if (m.role === 'user') {
+      if (m.images && m.images.length > 0) {
+        messages.push({
+          role: 'user',
+          content: m.content,
+          images: m.images.map(img => img.data)
+        })
+      } else {
+        messages.push({ role: 'user', content: m.content })
+      }
+    }
     else if (m.role === 'assistant') messages.push({ role: 'assistant', content: m.content, ...(m.toolCalls?.length ? { tool_calls: m.toolCalls.map(c => ({ function: { name: c.name, arguments: c.args } })) } : {}) })
     else messages.push({ role: 'tool', content: m.content, tool_name: m.name })
   }

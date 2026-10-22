@@ -522,6 +522,7 @@ class ApiService {
     String message, {
     String? sessionId,
     String? model,
+    List<Map<String, dynamic>>? images,
   }) async {
     final base = await _getBaseUrl();
     final headers = await _getHeaders();
@@ -537,6 +538,7 @@ class ApiService {
       if (!hasSession && sessionId != null && sessionId.trim().isNotEmpty) 'sessionId': sessionId.trim(),
       if (model != null && model.isNotEmpty) 'model': model,
       if (userName.isNotEmpty) 'userName': userName,
+      if (images != null && images.isNotEmpty) 'images': images,
     };
 
     final response = await _http

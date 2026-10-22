@@ -159,6 +159,20 @@ export interface PlaylistActionCard {
   status?: string
 }
 
+export interface GeneratedImageActionCard {
+  type: 'generated_image'
+  id: string
+  title: string
+  contentSnippet?: string
+  data?: {
+    url: string
+    imageId: string
+    prompt: string
+    model: string
+    mimeType: string
+  }
+}
+
 export type ActionCard =
   | ConfirmRequiredActionCard
   | NoteActionCard
@@ -172,6 +186,7 @@ export type ActionCard =
   | MusicDownloadPlanActionCard
   | MusicDownloadProgressActionCard
   | PlaylistActionCard
+  | GeneratedImageActionCard
 
 export interface ChatMessage {
   id: string
