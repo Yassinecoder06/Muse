@@ -176,6 +176,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
   const ref = useRef<HTMLDivElement>(null)
   const timer = useRef<number | undefined>(undefined)
   const imageInput = useRef<HTMLInputElement>(null)
+  const lastPaste = useRef<number>(0)
   const [aiOpen, setAiOpen] = useState(false)
   const [chat, setChat] = useState(false)
   const [menu, setMenu] = useState(false)
@@ -426,6 +427,10 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
     const file = item?.getAsFile()
     if (!file) return
     event.preventDefault()
+    event.stopPropagation()
+    const now = Date.now()
+    if (now - lastPaste.current < 250) return
+    lastPaste.current = now
     void insertImage(file)
   }
 
