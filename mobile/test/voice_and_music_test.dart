@@ -19,12 +19,46 @@ void main() {
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall methodCall) async => '/tmp',
     );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugin.csdcorp.com/speech_to_text'),
+      (MethodCall methodCall) async {
+        if (methodCall.method == 'has_permission') return true;
+        if (methodCall.method == 'initialize') return true;
+        if (methodCall.method == 'listen') return true;
+        if (methodCall.method == 'stop') return true;
+        if (methodCall.method == 'cancel') return true;
+        return true;
+      },
+    );
   });
 
   group('VoiceService Pause and Text Preservation', () {
     test('isDictating starts false', () {
       final voice = VoiceService();
       expect(voice.isDictating, isFalse);
+    });
+
+    test('Dictate in two chunks with a long silence in between -> both chunks remain in the input', () async {
+      final voice = VoiceService();
+      String received = '';
+
+      voice.setCommittedText('');
+      await voice.startDictation(onText: (text) => received = text);
+
+      // Chunk 1
+      voice.handleSimulatedSpeech('Buy apples and oranges', isFinal: true);
+      expect(received, 'Buy apples and oranges');
+      expect(voice.committedText, 'Buy apples and oranges');
+
+      // Long silence in between (platform stops session on pause)
+      voice.handleSimulatedPause();
+      expect(voice.committedText, 'Buy apples and oranges');
+
+      // Chunk 2 after pause
+      voice.handleSimulatedSpeech('and call the grocery store', isFinal: true);
+      expect(received, 'Buy apples and oranges and call the grocery store');
+      expect(voice.committedText, 'Buy apples and oranges and call the grocery store');
+      await voice.stop();
     });
   });
 

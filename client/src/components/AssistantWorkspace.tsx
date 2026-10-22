@@ -81,7 +81,8 @@ export function AssistantWorkspace({
     robotAudio.play('blip')
     stt.startListening({
       continuous: true,
-      silenceTimeoutMs: 5000,
+      initialText: input,
+      silenceTimeoutMs: 15000,
       onInterim: interim => {
         setInput(interim)
       },

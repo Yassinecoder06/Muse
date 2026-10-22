@@ -29,9 +29,11 @@ export interface STTOptions {
   lang?: string
   continuous?: boolean
   interimResults?: boolean
-  silenceTimeoutMs?: number // Delay in ms after speech before auto-stopping (default: 3500ms, 0 for infinite)
+  silenceTimeoutMs?: number // Delay in ms after speech before auto-stopping (default: 15000ms, 0 for infinite)
+  initialText?: string // Preserve existing input text and accumulate onto it
   onInterim?: (interimText: string) => void
   onFinal?: (finalText: string) => void
+  onFinalSegment?: (segment: string) => void
   onComplete?: (fullText: string) => void
   onError?: (error: string) => void
   onStateChange?: (state: STTState) => void

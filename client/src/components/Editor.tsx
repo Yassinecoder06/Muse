@@ -213,9 +213,10 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
     stt.startListening({
       continuous: true,
       interimResults: true,
-      onFinal: text => {
+      silenceTimeoutMs: 15000,
+      onFinalSegment: segment => {
         ref.current?.focus()
-        document.execCommand('insertText', false, text + ' ')
+        document.execCommand('insertText', false, segment + ' ')
         edit(ref.current?.innerHTML || '')
       },
       onStateChange: state => setIsDictating(state === 'listening' || state === 'processing'),

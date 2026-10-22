@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Check, CheckSquare, ChevronRight, FileText, Plus, Trash2, Calendar, AlertCircle } from 'lucide-react'
@@ -42,12 +42,54 @@ export function TasksView({ onBack }: { onBack: () => void }) {
   const saveReminder = (id: string, patch: Partial<Task>) =>
     api.updateTask(id, patch).then(() => queryClient.invalidateQueries({ queryKey: ['all-tasks'] }))
 
+  const [deletedTaskUndo, setDeletedTaskUndo] = useState<{ id: string; text: string; task: Task } | null>(null)
+  const undoTimerRef = useRef<any>(null)
+
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) {
+        clearTimeout(undoTimerRef.current)
+      }
+    }
+  }, [])
+
   const deleteTask = useMutation({
     mutationFn: (id: string) => api.deleteTask(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['all-tasks'] })
     }
   })
+
+  const handleDeleteTaskWithUndo = (task: Task) => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current)
+    }
+    deleteTask.mutate(task.id)
+    setDeletedTaskUndo({ id: task.id, text: task.text, task })
+
+    // Auto-dismiss undo bar after 10 seconds
+    undoTimerRef.current = setTimeout(() => {
+      setDeletedTaskUndo(null)
+      undoTimerRef.current = null
+    }, 10000)
+  }
+
+  const handleUndoTask = async () => {
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current)
+      undoTimerRef.current = null
+    }
+    if (deletedTaskUndo) {
+      const { task } = deletedTaskUndo
+      await createTask.mutateAsync({
+        text: task.text,
+        due_date: task.due_date ?? null,
+        due_time: task.due_time ?? null,
+        priority: (task.priority as 'low' | 'medium' | 'high') || 'medium'
+      })
+      setDeletedTaskUndo(null)
+    }
+  }
 
   const handleAddTask = (e: React.FormEvent) => {
     e.preventDefault()
@@ -271,7 +313,7 @@ export function TasksView({ onBack }: { onBack: () => void }) {
                       <td className="cell-actions">
                         <button
                           className="delete-task-btn"
-                          onClick={() => deleteTask.mutate(task.id)}
+                          onClick={() => handleDeleteTaskWithUndo(task)}
                           title="Delete task"
                         >
                           <Trash2 size={14} />
@@ -285,6 +327,22 @@ export function TasksView({ onBack }: { onBack: () => void }) {
           </div>
         </section>
       </div>
+
+      {deletedTaskUndo && (
+        <div className="task-undo-bar">
+          <span className="task-undo-text">Task "{deletedTaskUndo.text}" deleted</span>
+          <button className="task-undo-btn" onClick={handleUndoTask}>
+            Undo
+          </button>
+          <button
+            className="task-undo-close"
+            onClick={() => setDeletedTaskUndo(null)}
+            title="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   )
 }

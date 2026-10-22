@@ -52,18 +52,51 @@ class VoiceService {
     required void Function(String text) onText,
     void Function(String error)? onError,
     void Function()? onStopped,
+    String? initialText,
   }) async {
     if (!await _ensureInitialized()) return false;
     if (_active) await stop(); // another screen was dictating
     _onText = onText;
     _onError = onError;
     _onStopped = onStopped;
-    _committed = '';
+    _committed = initialText?.trim() ?? '';
     _partial = '';
     _restartFailures = 0;
     _active = true;
     await _listen();
     return true;
+  }
+
+  /// Manually appends text or resets the dictation accumulator.
+  void setCommittedText(String text) {
+    _committed = text.trim();
+  }
+
+  String get committedText => _committed;
+
+  @visibleForTesting
+  void handleSimulatedSpeech(String text, {required bool isFinal}) {
+    if (!_active) return;
+    if (isFinal) {
+      final words = text.trim();
+      if (words.isNotEmpty) {
+        if (_committed.isEmpty) {
+          _committed = words;
+        } else {
+          _committed = '$_committed $words';
+        }
+      }
+      _partial = '';
+    } else {
+      _partial = text.trim();
+    }
+    _restartFailures = 0;
+    _onText?.call(_fullText);
+  }
+
+  @visibleForTesting
+  void handleSimulatedPause() {
+    _handleStatus('notListening');
   }
 
   void _commitPartial() {
