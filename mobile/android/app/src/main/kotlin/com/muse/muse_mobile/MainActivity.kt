@@ -8,7 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -17,7 +17,7 @@ import io.flutter.plugin.common.MethodChannel
  * whether Bip's alarms can ring, and open the right settings page for each,
  * including Xiaomi/HyperOS's own permission screens (Autostart, lock screen).
  */
-class MainActivity : FlutterActivity() {
+class MainActivity : AudioServiceActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "muse/system").setMethodCallHandler { call, result ->

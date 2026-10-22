@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +6,7 @@ import '../../data/models/chat_message.dart';
 import '../../data/models/chat_session.dart';
 import '../../data/services/api_service.dart';
 import '../../data/services/app_events.dart';
+import '../../data/services/music_service.dart';
 import '../../data/services/note_store.dart';
 import '../../data/services/tts_service.dart';
 import '../../data/services/voice_service.dart';
@@ -69,9 +69,9 @@ class _BipChatTabState extends State<BipChatTab> {
   String _sessionSearchQuery = '';
 
   // Audio Playback for Music Cards
-  AudioPlayer? _musicPlayer;
-  String? _currentlyPlayingFilename;
-  PlayerState _musicPlayerState = PlayerState.stopped;
+  String? get _currentlyPlayingFilename =>
+      MusicService.instance.currentTrack.value?['filename'] as String?;
+  PlayerState get _musicPlayerState => MusicService.instance.playerState.value;
 
   final List<String> _suggestions = [
     'What notes do I have?',
@@ -93,7 +93,8 @@ class _BipChatTabState extends State<BipChatTab> {
   void initState() {
     super.initState();
     _messages.add(_welcome);
-    _initAudioPlayer();
+    MusicService.instance.currentTrack.addListener(_onMusicServiceChanged);
+    MusicService.instance.playerState.addListener(_onMusicServiceChanged);
     _loadInitialData();
 
     _tts.getAutoReadAloud().then((on) {
@@ -109,22 +110,8 @@ class _BipChatTabState extends State<BipChatTab> {
     });
   }
 
-  void _initAudioPlayer() {
-    try {
-      final p = AudioPlayer();
-      p.onPlayerStateChanged.listen((state) {
-        if (mounted) setState(() => _musicPlayerState = state);
-      });
-      p.onPlayerComplete.listen((_) {
-        if (mounted) {
-          setState(() {
-            _musicPlayerState = PlayerState.stopped;
-            _currentlyPlayingFilename = null;
-          });
-        }
-      });
-      _musicPlayer = p;
-    } catch (_) {}
+  void _onMusicServiceChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onLaunchAction() {
@@ -341,18 +328,23 @@ class _BipChatTabState extends State<BipChatTab> {
 
   Future<void> _playSong(String filename, String title) async {
     try {
-      if (_currentlyPlayingFilename == filename && _musicPlayerState == PlayerState.playing) {
-        await _musicPlayer?.pause();
-        setState(() => _musicPlayerState = PlayerState.paused);
+      final music = MusicService.instance;
+      final current = music.currentTrack.value;
+      final isCurrent = (current != null &&
+          (current['filename'] == filename || current['title'] == title));
+
+      if (isCurrent && music.playerState.value == PlayerState.playing) {
+        await music.pause();
+        return;
+      }
+      if (isCurrent && music.playerState.value == PlayerState.paused) {
+        await music.resume();
         return;
       }
 
-      final streamUrl = await _api.resolveUrl('/api/music/stream/${Uri.encodeComponent(filename)}');
-      await _musicPlayer?.stop();
-      await _musicPlayer?.play(UrlSource(streamUrl));
-      setState(() {
-        _currentlyPlayingFilename = filename;
-        _musicPlayerState = PlayerState.playing;
+      await music.playSong({
+        'filename': filename,
+        'title': title,
       });
     } catch (e) {
       if (mounted) {
@@ -408,9 +400,10 @@ class _BipChatTabState extends State<BipChatTab> {
   @override
   void dispose() {
     AppEvents.launchAction.removeListener(_onLaunchAction);
+    MusicService.instance.currentTrack.removeListener(_onMusicServiceChanged);
+    MusicService.instance.playerState.removeListener(_onMusicServiceChanged);
     _voice.cancel();
     _tts.stop();
-    _musicPlayer?.dispose();
     _textController.dispose();
     _searchController.dispose();
     _scrollController.dispose();

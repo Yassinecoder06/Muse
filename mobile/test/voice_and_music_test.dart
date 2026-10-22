@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:muse_mobile/data/services/app_events.dart';
 import 'package:muse_mobile/data/services/music_service.dart';
 import 'package:muse_mobile/data/services/voice_service.dart';
 
@@ -8,12 +9,17 @@ void main() {
 
   setUpAll(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-      const MethodChannel('xyz.luan/audioplayers.global'),
-      (MethodCall methodCall) async => 1,
+      const MethodChannel('com.ryanheise.just_audio.methods'),
+      (MethodCall methodCall) async {
+        if (methodCall.method == 'init') {
+          return {'id': 'test-player'};
+        }
+        return {};
+      },
     );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
-      const MethodChannel('xyz.luan/audioplayers'),
-      (MethodCall methodCall) async => 1,
+      const MethodChannel('com.ryanheise.audio_session'),
+      (MethodCall methodCall) async => null,
     );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
@@ -130,6 +136,20 @@ void main() {
       music.setSleepTimer(null);
       expect(music.sleepTimerDuration.value, isNull);
       expect(music.sleepTimerRemaining.value, isNull);
+    });
+
+    test('PlayerState enum and AppEvents music actions dispatch smoothly', () {
+      final music = MusicService.instance;
+      expect(PlayerState.values, containsAll([
+        PlayerState.stopped,
+        PlayerState.playing,
+        PlayerState.paused,
+        PlayerState.completed,
+      ]));
+
+      // Test AppEvents action handling
+      AppEvents.musicAction.value = 'music_pause';
+      expect(music.playerState.value, PlayerState.stopped);
     });
   });
 }
