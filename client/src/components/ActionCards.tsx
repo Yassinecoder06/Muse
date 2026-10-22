@@ -928,13 +928,14 @@ function PlaylistCard({
   onNavigate?: (path: string) => void
 }) {
   const [musicState, setMusicState] = useState<MusicPlayerState>(robotMusic.getState())
-  const tracks = card.tracks || []
+  const tracks = card.tracks || card.data?.tracks || []
+  const description = card.description || card.data?.description
 
   useEffect(() => {
     return robotMusic.subscribe(setMusicState)
   }, [])
 
-  const playlistTitle = card.name || card.title
+  const playlistTitle = card.name || card.title || card.data?.name || card.data?.title || 'Playlist'
   const isCurrentPlaylist = musicState.isPlaying && musicState.playlistName === playlistTitle
 
   const handlePlayToggle = (e: React.MouseEvent) => {
@@ -996,9 +997,16 @@ function PlaylistCard({
         </div>
       )}
 
-      {card.description && (
+      {musicState.error && !musicState.isPlaying && (musicState.playlistName === playlistTitle || !musicState.playlistName) && (
+        <div style={{ marginTop: 6, fontSize: 12, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(245, 158, 11, 0.08)', padding: '6px 10px', borderRadius: 6 }}>
+          <ShieldAlert size={13} style={{ flexShrink: 0 }} />
+          <span>{musicState.error}</span>
+        </div>
+      )}
+
+      {description && (
         <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--text-secondary, #64748b)' }}>
-          {card.description}
+          {description}
         </p>
       )}
 

@@ -603,7 +603,7 @@ export function resolvePlaylistTracks(tracks: any[]): any[] {
       return {
         filename: match.filename,
         title: match.title,
-        artist: match.artist,
+        artist: match.artist || t.artist || undefined,
         url: match.url,
         size: match.size
       }
@@ -739,7 +739,10 @@ export async function getPlaylist(req: Request, res: Response) {
 
     if (error) throw error
     if (!data) return res.status(404).json({ error: 'Playlist not found' })
-    res.json(data)
+    res.json({
+      ...data,
+      tracks: resolvePlaylistTracks(data.tracks || [])
+    })
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to fetch playlist' })
   }

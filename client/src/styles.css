@@ -7413,6 +7413,11 @@
   border-color: #8b5cf6;
 }
 
+.playlist-card.active-playing-card {
+  border-color: #10b981;
+  box-shadow: 0 4px 18px rgba(16, 185, 129, 0.15);
+}
+
 .playlist-card-top {
   display: flex;
   align-items: flex-start;

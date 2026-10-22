@@ -215,6 +215,14 @@ class RobotMusicService {
       finalFilename = chosen.filename
     }
 
+    if (finalUrl && !finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+      const prefix = '/api/music/stream/'
+      if (finalUrl.startsWith(prefix)) {
+        const rawParam = finalUrl.slice(prefix.length)
+        finalUrl = `${prefix}${encodeURIComponent(decodeURIComponent(rawParam))}`
+      }
+    }
+
     let coverUrl =
       track.coverUrl ||
       (finalFilename ? `/api/music/cover/${encodeURIComponent(finalFilename)}` : undefined)
@@ -287,9 +295,12 @@ class RobotMusicService {
       await this.audio.play()
     } catch (err: any) {
       console.warn('Playback play failed:', err)
+      const isAutoplay = err?.name === 'NotAllowedError' || (err?.message && /user didn't interact|not allowed/i.test(err.message))
       this.updateState({
         isPlaying: false,
-        error: err?.message || 'Failed to start playback'
+        error: isAutoplay
+          ? 'Browser blocked autoplay. Click Play Mix to start.'
+          : (err?.message || 'Failed to start playback')
       })
     }
   }
