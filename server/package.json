@@ -7,7 +7,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/services/providers/providers.test.ts src/controllers/tasks.reminder.test.ts src/middleware/auth.test.ts src/utils/timezone.test.ts src/services/vault-security.test.ts src/services/reporting/analytics.test.ts src/services/calendar-tasks.test.ts src/services/agent-tools.test.ts src/services/image-generation.test.ts"
+    "test": "tsx --test src/services/providers/providers.test.ts src/controllers/tasks.reminder.test.ts src/middleware/auth.test.ts src/utils/timezone.test.ts src/services/vault-security.test.ts src/services/reporting/analytics.test.ts src/services/calendar-tasks.test.ts src/services/agent-tools.test.ts src/services/image-generation.test.ts src/services/owner.service.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",

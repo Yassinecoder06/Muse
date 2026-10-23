@@ -6,9 +6,9 @@ import { createSession, readSession, SESSION_COOKIE, sessionCookie } from '../se
 
 const passphrase = z.string().min(10, 'Use at least 10 characters.').max(256)
 
-function startSession(res: Response) {
+function startSession(res: Response, extraData?: Record<string, unknown>) {
   const token = createSession(DEFAULT_LOCAL_USER_ID)
-  res.cookie(SESSION_COOKIE, token, sessionCookie(token)).json({ authenticated: true })
+  res.cookie(SESSION_COOKIE, token, sessionCookie(token)).json({ authenticated: true, ...extraData })
 }
 
 export async function ownerStatus(req: Request, res: Response, next: NextFunction) {
@@ -31,5 +31,34 @@ export async function loginOwner(req: Request, res: Response, next: NextFunction
     const body = z.object({ passphrase: z.string().min(1).max(256) }).parse(req.body)
     if (!(await owner.verify(body.passphrase))) return res.status(401).json({ error: 'That passphrase is not correct.' })
     startSession(res)
+  } catch (error) { next(error) }
+}
+
+export async function changeOwnerPassphrase(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = z.object({
+      currentPassphrase: z.string().min(1, 'Current passphrase is required.').max(256),
+      newPassphrase: passphrase
+    }).parse(req.body)
+    await owner.changePassphrase(body.currentPassphrase, body.newPassphrase)
+    startSession(res, { message: 'Passphrase changed successfully.' })
+  } catch (error) { next(error) }
+}
+
+export async function resetOwnerPassphrase(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = z.object({
+      setupCode: z.string().min(1, 'Setup code is required.').max(20),
+      newPassphrase: passphrase
+    }).parse(req.body)
+    await owner.resetWithCode(body.newPassphrase, body.setupCode)
+    startSession(res, { message: 'Passphrase reset successfully.' })
+  } catch (error) { next(error) }
+}
+
+export async function requestResetCode(_req: Request, res: Response, next: NextFunction) {
+  try {
+    await owner.requestResetCode()
+    res.json({ ok: true, message: 'A setup code has been printed to the Muse server log.' })
   } catch (error) { next(error) }
 }

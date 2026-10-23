@@ -25,6 +25,7 @@ import { RobotCompanion } from './components/RobotCompanion/RobotCompanion'
 import { RemotePairingModal } from './components/RemotePairingModal'
 import { OwnerGate } from './components/OwnerGate'
 import { AiProvidersPanel } from './components/AiProvidersPanel'
+import { PassphraseSettings } from './components/PassphraseSettings'
 import { BipAlarmCenter } from './components/BipAlarmCenter'
 import type { CustomTemplate } from './services/templates'
 
@@ -666,6 +667,8 @@ function MuseApp() {
               Pair Phone / Devices
             </button>
           </div>
+
+          <PassphraseSettings onToast={setToast}/>
 
           <button className="sign-out" onClick={() => {
             localStorage.removeItem('muse-user-name')
