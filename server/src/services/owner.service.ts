@@ -14,6 +14,7 @@ type OwnerRow = { passphrase_hash: string; session_salt: string }
 
 let cached: OwnerRow | null | undefined
 let loading: Promise<OwnerRow | null> | null = null
+let persistDisabledForTests = false
 // Shown once in the server log while no passphrase exists, so only someone
 // with access to the host (not anyone on the LAN) can claim the instance.
 let setupCode: string | null = null
@@ -66,9 +67,11 @@ export class OwnerError extends Error {
 export const owner = {
   async init() {
     const row = await load()
+    setupCode = newSetupCode()
     if (!row) {
-      setupCode = newSetupCode()
       console.log(`\n  Muse setup code: ${setupCode}\n  Enter it in the browser to choose the owner passphrase.\n`)
+    } else {
+      console.log(`\n  Muse recovery / setup code: ${setupCode}\n  Use this code if you need to reset the owner passphrase.\n`)
     }
   },
 
@@ -78,10 +81,60 @@ export const owner = {
     if (await load()) throw new OwnerError('Muse already has an owner passphrase.', 409)
     if (!setupCode || !codesMatch(code, setupCode)) throw new OwnerError('That setup code is not correct. Find it in the Muse server log.', 403)
     const row = { id: 1, passphrase_hash: await hashPassphrase(passphrase), session_salt: randomBytes(32).toString('base64url') }
-    const { error } = await supabase.from('app_owner').insert(row)
-    if (error) throw error.code === '23505' ? new OwnerError('Muse already has an owner passphrase.', 409) : error
+    if (!persistDisabledForTests) {
+      const { error } = await supabase.from('app_owner').insert(row)
+      if (error) throw error.code === '23505' ? new OwnerError('Muse already has an owner passphrase.', 409) : error
+    }
     cached = { passphrase_hash: row.passphrase_hash, session_salt: row.session_salt }
-    setupCode = null
+    setupCode = newSetupCode()
+  },
+
+  async changePassphrase(currentPassphrase: string, newPassphrase: string) {
+    const row = await load()
+    if (!row) throw new OwnerError('Muse owner passphrase is not set up yet.', 400)
+    const matches = await passphraseMatches(currentPassphrase, row.passphrase_hash)
+    if (!matches) throw new OwnerError('The current passphrase is not correct.', 401)
+    const newHash = await hashPassphrase(newPassphrase)
+    const newSalt = randomBytes(32).toString('base64url')
+    if (!persistDisabledForTests) {
+      const { error } = await supabase.from('app_owner').update({
+        passphrase_hash: newHash,
+        session_salt: newSalt
+      }).eq('id', 1)
+      if (error) throw error
+    }
+    cached = { passphrase_hash: newHash, session_salt: newSalt }
+    setupCode = newSetupCode()
+    console.log(`\n  Owner passphrase changed. New setup / recovery code: ${setupCode}\n`)
+  },
+
+  async resetWithCode(newPassphrase: string, code: string) {
+    const row = await load()
+    if (!row) throw new OwnerError('Muse owner passphrase is not set up yet.', 400)
+    if (!setupCode || !codesMatch(code, setupCode)) {
+      throw new OwnerError('That setup code is not correct. Find it in the Muse server log.', 403)
+    }
+    const newHash = await hashPassphrase(newPassphrase)
+    const newSalt = randomBytes(32).toString('base64url')
+    if (!persistDisabledForTests) {
+      const { error } = await supabase.from('app_owner').update({
+        passphrase_hash: newHash,
+        session_salt: newSalt
+      }).eq('id', 1)
+      if (error) throw error
+    }
+    cached = { passphrase_hash: newHash, session_salt: newSalt }
+    setupCode = newSetupCode()
+    console.log(`\n  Owner passphrase reset. New setup / recovery code: ${setupCode}\n`)
+  },
+
+  async requestResetCode() {
+    setupCode = newSetupCode()
+    console.log(`\n=======================================================`)
+    console.log(`  Muse setup / reset code: ${setupCode}`)
+    console.log(`  Enter it in the browser to reset your passphrase.`)
+    console.log(`=======================================================\n`)
+    return setupCode
   },
 
   async verify(passphrase: string) {
@@ -102,4 +155,18 @@ export const owner = {
 /** Tests only: pretend the owner row is loaded, so no database is needed. */
 export function primeOwnerForTests(row: OwnerRow | null) {
   cached = row
+}
+
+/** Tests only: disable database persistence */
+export function disableOwnerPersistForTests(disable = true) {
+  persistDisabledForTests = disable
+}
+
+/** Tests only: set or get setupCode */
+export function setSetupCodeForTests(code: string | null) {
+  setupCode = code
+}
+
+export function getSetupCodeForTests() {
+  return setupCode
 }
