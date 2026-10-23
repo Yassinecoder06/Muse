@@ -2,11 +2,12 @@ node_modules
 dist
 .vite/
 .env
+.env.*
 *.log
 supabase/.temp
 server/uploads/
-docker/pgsodium_root.key
+docker/pgsodium_root*.key
 backup/
-/music/
+/music*/
 # Local helper scripts (build/install on phone, diagnostics, tests)
 scripts/

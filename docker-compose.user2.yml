@@ -1,0 +1,143 @@
+name: muse2
+
+services:
+  db:
+    image: supabase/postgres:15.8.1.060
+    restart: unless-stopped
+    env_file: .env.user2
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXP: 3600
+    volumes:
+      - postgres-data-user2:/var/lib/postgresql/data
+      - ./docker/pgsodium_root_user2.key:/etc/postgresql-custom/pgsodium_root.key:ro
+      - ./docker/supabase/roles.sql:/docker-entrypoint-initdb.d/z0_roles.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    image: supabase/postgres:15.8.1.060
+    restart: "no"
+    depends_on:
+      db: { condition: service_healthy }
+    env_file: .env.user2
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./supabase/migrations:/migrations:ro
+      - ./docker/migrate/migrate.sh:/migrate.sh:ro
+    entrypoint: ["sh", "/migrate.sh"]
+
+  nginx:
+    image: muse-nginx:latest
+    restart: unless-stopped
+    depends_on:
+      auth: { condition: service_started }
+      rest: { condition: service_started }
+    ports:
+      - "127.0.0.1:8081:80"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./supabase/templates:/usr/share/nginx/html/email-templates:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  server:
+    image: muse-server:latest
+    restart: unless-stopped
+    env_file: .env.user2
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      PUBLIC_URL: ${PUBLIC_URL:-https://ko.yassinejemmali.me}
+      SUPABASE_URL: http://nginx:80
+      QDRANT_URL: http://qdrant:6333
+      OLLAMA_EMBEDDING_BASE_URL: ${OLLAMA_EMBEDDING_BASE_URL_DOCKER:-http://host.docker.internal:11434}
+      MUSIC_DOWNLOADER_URL: http://music-downloader:8001
+    volumes:
+      - ./music-user2:/app/music:rw
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      nginx: { condition: service_started }
+      rest: { condition: service_started }
+      auth: { condition: service_started }
+      qdrant: { condition: service_started }
+      music-downloader: { condition: service_started }
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3002/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  music-downloader:
+    image: muse-music-downloader:latest
+    build:
+      context: .
+      dockerfile: docker/music-downloader/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 8001
+      MUSIC_DIR: /music
+    volumes:
+      - ./music-user2:/music:rw
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  auth:
+    image: supabase/gotrue:v2.158.1
+    restart: unless-stopped
+    depends_on: [db]
+    env_file: .env.user2
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${PUBLIC_URL:-https://ko.yassinejemmali.me}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      GOTRUE_SITE_URL: ${PUBLIC_URL:-https://ko.yassinejemmali.me}
+      GOTRUE_URI_ALLOW_LIST: ${PUBLIC_URL:-https://ko.yassinejemmali.me},http://localhost:8081
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_DISABLE_SIGNUP: "${DISABLE_SIGNUP:-false}"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "false"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: "true"
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: http://nginx/email-templates/confirmation.html
+      GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE: http://nginx/email-templates/email-change.html
+      GOTRUE_MAILER_TEMPLATES_RECOVERY: http://nginx/email-templates/recovery.html
+
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    restart: unless-stopped
+    depends_on: [db]
+    env_file: .env.user2
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    volumes:
+      - qdrant-data-user2:/qdrant/storage
+
+volumes:
+  postgres-data-user2:
+  qdrant-data-user2:
