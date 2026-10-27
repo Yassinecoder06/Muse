@@ -29,10 +29,17 @@ import {
   Image as ImageIcon,
   Sliders,
   LayoutGrid,
-  List
+  List,
+  Download,
+  DownloadCloud,
+  HardDriveDownload,
+  WifiOff,
+  FileDown,
+  CheckCircle2
 } from 'lucide-react'
 import { api } from '../../services/api'
 import { robotMusic, type MusicPlayerState } from '../../services/robot-music.service'
+import { offlineMusic, type BatchOfflineStatus } from '../../services/offline-music.service'
 import { ConfirmModal } from '../ConfirmModal'
 import { DraggableTrackList, type TrackItem } from './DraggableTrackList'
 import { CoverArtModal } from './CoverArtModal'
@@ -104,6 +111,25 @@ export function MusicLibrary({
   const [showNowPlaying, setShowNowPlaying] = useState(false)
   const [showPlayerSleepMenu, setShowPlayerSleepMenu] = useState(false)
 
+  // Offline music state (read directly from this machine)
+  const [offlineFilenames, setOfflineFilenames] = useState<Set<string>>(() => offlineMusic.getOfflineFilenames())
+  const [batchStatus, setBatchStatus] = useState<BatchOfflineStatus>(() => offlineMusic.getBatchStatus())
+  const [filterOfflineOnly, setFilterOfflineOnly] = useState(false)
+  const [offlineStats, setOfflineStats] = useState<{ count: number; totalBytes: number }>({ count: 0, totalBytes: 0 })
+  const [downloadingSong, setDownloadingSong] = useState<string | null>(null)
+  const [isOfflineFallback, setIsOfflineFallback] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg)
+    setTimeout(() => setToastMessage(null), 3000)
+  }
+
+  const refreshOfflineStats = async () => {
+    const stats = await offlineMusic.getOfflineStorageStats()
+    setOfflineStats(stats)
+  }
+
   const handleCoverSelected = (filename: string, newCoverUrl: string) => {
     setSongs(prev =>
       prev.map(s => (s.filename === filename ? { ...s, coverUrl: newCoverUrl } : s))
@@ -114,9 +140,34 @@ export function MusicLibrary({
     try {
       setLoading(true)
       const res = await api.listMusicSongs()
-      setSongs(res.songs || [])
+      const list = res.songs || []
+      setSongs(list)
+      setIsOfflineFallback(false)
+      if (list.length > 0) {
+        void offlineMusic.saveSongsListCache(list)
+      }
     } catch (err) {
-      console.error('Failed to load songs', err)
+      console.warn('[MusicLibrary] Network load failed, loading offline storage:', err)
+      const cached = await offlineMusic.loadSongsListCache()
+      if (cached && cached.length > 0) {
+        setSongs(cached)
+        setIsOfflineFallback(true)
+      } else {
+        const localTracks = await offlineMusic.getAllOfflineTracks()
+        if (localTracks.length > 0) {
+          setSongs(
+            localTracks.map(t => ({
+              filename: t.filename,
+              title: t.title,
+              artist: t.artist,
+              size: t.size,
+              mtime: t.cachedAt,
+              url: `/api/music/stream/${encodeURIComponent(t.filename)}`
+            }))
+          )
+          setIsOfflineFallback(true)
+        }
+      }
     } finally {
       setLoading(false)
     }
@@ -136,9 +187,60 @@ export function MusicLibrary({
 
   useEffect(() => {
     fetchSongs()
-    const unsubscribe = robotMusic.subscribe(state => setPlayerState(state))
-    return () => unsubscribe()
+    const unsubscribeMusic = robotMusic.subscribe(state => setPlayerState(state))
+    const unsubscribeOffline = offlineMusic.subscribe(filenames => {
+      setOfflineFilenames(filenames)
+      void refreshOfflineStats()
+    })
+    const unsubscribeBatch = offlineMusic.subscribeBatch(status => setBatchStatus(status))
+    void refreshOfflineStats()
+
+    return () => {
+      unsubscribeMusic()
+      unsubscribeOffline()
+      unsubscribeBatch()
+    }
   }, [])
+
+  const handleToggleOffline = async (song: MusicTrackItem) => {
+    const filename = song.filename
+    if (offlineFilenames.has(filename)) {
+      await offlineMusic.deleteOfflineTrack(filename)
+      showToast(`Removed "${song.title}" from this PC's offline cache`)
+    } else {
+      setDownloadingSong(filename)
+      const res = await offlineMusic.downloadTrackOffline(song)
+      setDownloadingSong(null)
+      if (res.alreadyDownloaded) {
+        showToast(`"${song.title}" is already downloaded on this PC!`)
+      } else if (res.success) {
+        showToast(`"${song.title}" saved to this PC for offline listening!`)
+      } else {
+        showToast(`Failed to download "${song.title}" to this PC: ${res.error || 'Network error'}`)
+      }
+    }
+  }
+
+  const handleDownloadAllToPC = async () => {
+    if (songs.length === 0) return
+    const unCached = songs.filter(s => !offlineFilenames.has(s.filename))
+    if (unCached.length === 0) {
+      showToast('All songs in your library are already downloaded on this PC!')
+      return
+    }
+    showToast(`Downloading ${unCached.length} songs to this PC for offline playback…`)
+    const res = await offlineMusic.downloadAllOffline(songs)
+    showToast(`Downloaded ${res.downloaded} songs (${res.skipped} already cached on this PC)!`)
+  }
+
+  const handleExportTrack = async (song: MusicTrackItem) => {
+    try {
+      showToast(`Exporting "${song.title}" to your computer's Downloads...`)
+      await offlineMusic.exportTrackToComputer(song)
+    } catch {
+      showToast('Could not export song file.')
+    }
+  }
 
   // Keyboard controls for switching tracks back and forth
   useEffect(() => {
@@ -316,9 +418,9 @@ export function MusicLibrary({
     })
   }
 
-  const filtered = songs.filter(s =>
-    `${s.title} ${s.artist || ''} ${s.filename}`.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = songs
+    .filter(s => `${s.title} ${s.artist || ''} ${s.filename}`.toLowerCase().includes(search.toLowerCase()))
+    .filter(s => (!filterOfflineOnly ? true : offlineFilenames.has(s.filename)))
 
   const isCurrentPlaying = (filename: string) =>
     playerState.currentTrack?.filename === filename && playerState.isPlaying
@@ -339,11 +441,60 @@ export function MusicLibrary({
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <button className="music-btn-secondary" onClick={fetchSongs} title="Refresh song list">
-          <RefreshCw size={15} className={loading ? 'spin-icon' : ''} />
-          <span>Refresh</span>
-        </button>
+
+        <div className="music-toolbar-actions">
+          {/* Download All to PC */}
+          <button
+            className={`music-btn-secondary ${batchStatus.active ? 'active-pulse' : ''}`}
+            onClick={handleDownloadAllToPC}
+            disabled={batchStatus.active || songs.length === 0}
+            title="Download all songs to this computer for offline playback"
+          >
+            <DownloadCloud size={15} />
+            <span>
+              {batchStatus.active
+                ? `Downloading ${batchStatus.current}/${batchStatus.total}...`
+                : songs.length > 0 && songs.every(s => offlineFilenames.has(s.filename))
+                ? 'All on this PC'
+                : `Download All to PC (${songs.filter(s => !offlineFilenames.has(s.filename)).length})`}
+            </span>
+          </button>
+
+          {/* Filter Offline Only */}
+          <button
+            className={`music-btn-secondary ${filterOfflineOnly ? 'active-offline' : ''}`}
+            onClick={() => setFilterOfflineOnly(!filterOfflineOnly)}
+            title={
+              filterOfflineOnly
+                ? 'Showing only songs saved on this PC (Click to show all)'
+                : 'Show only songs saved on this PC'
+            }
+          >
+            <HardDrive size={15} />
+            <span>Saved on PC ({offlineStats.count})</span>
+          </button>
+
+          <button className="music-btn-secondary" onClick={fetchSongs} title="Refresh song list">
+            <RefreshCw size={15} className={loading ? 'spin-icon' : ''} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
+
+      {isOfflineFallback && (
+        <div className="music-offline-banner">
+          <WifiOff size={16} />
+          <span>
+            <strong>Offline Mode:</strong> Connected server is unreachable. Reading songs stored locally on this machine!
+          </span>
+        </div>
+      )}
+
+      {toastMessage && (
+        <div className="music-toast-notification">
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* Floating Active Player if a track is active */}
       {playerState.currentTrack && (
@@ -370,7 +521,17 @@ export function MusicLibrary({
                 <Music2 size={18} className={playerState.isPlaying ? 'pulsing-note' : ''} />
               </div>
               <div className="player-track-meta">
-                <span className="player-title">{playerState.currentTrack.title}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="player-title">{playerState.currentTrack.title}</span>
+                  {(playerState.isCurrentOffline || offlineFilenames.has(playerState.currentTrack.filename)) && (
+                    <span
+                      className="player-offline-badge"
+                      title="Playing directly from this machine's storage without internet"
+                    >
+                      <HardDriveDownload size={11} /> Saved on PC
+                    </span>
+                  )}
+                </div>
                 <span className="player-bip-tag">
                   <Mic size={12} /> Bip Singing Companion
                   {playerState.playlistName && ` · ${playerState.playlistName}`}
@@ -529,6 +690,24 @@ export function MusicLibrary({
                 title="Search iTunes Cover Art"
               >
                 <ImageIcon size={15} />
+              </button>
+
+              {/* Quick Offline Save/Remove in Player */}
+              <button
+                type="button"
+                className={`player-step-btn ${offlineFilenames.has(playerState.currentTrack.filename) ? 'active-tint' : ''}`}
+                onClick={() => handleToggleOffline(playerState.currentTrack as any)}
+                title={
+                  offlineFilenames.has(playerState.currentTrack.filename)
+                    ? 'Saved on this PC (Click to remove)'
+                    : 'Download to this PC for offline listening'
+                }
+              >
+                {offlineFilenames.has(playerState.currentTrack.filename) ? (
+                  <HardDriveDownload size={15} style={{ color: '#10b981' }} />
+                ) : (
+                  <Download size={15} />
+                )}
               </button>
 
               {/* Volume Slider */}
@@ -764,6 +943,14 @@ export function MusicLibrary({
                         <span className="track-title" title={song.title}>
                           {song.title}
                         </span>
+                        {offlineFilenames.has(song.filename) && (
+                          <span
+                            className="track-offline-pill"
+                            title="Stored on this PC — 100% offline ready"
+                          >
+                            <HardDriveDownload size={11} /> On PC
+                          </span>
+                        )}
                         {song.artist && <span className="track-artist">{song.artist}</span>}
                       </div>
                     </div>
@@ -787,6 +974,46 @@ export function MusicLibrary({
 
                   <div className="list-col col-actions">
                     <div className="track-actions">
+                      {/* Offline Download/Remove Button */}
+                      <button
+                        className={`track-action-btn ${offlineFilenames.has(song.filename) ? 'offline-active-btn' : ''}`}
+                        onClick={e => {
+                          e.stopPropagation()
+                          handleToggleOffline(song)
+                        }}
+                        disabled={
+                          downloadingSong === song.filename ||
+                          (batchStatus.active && batchStatus.currentTitle === song.title)
+                        }
+                        title={
+                          downloadingSong === song.filename
+                            ? 'Downloading to this PC...'
+                            : offlineFilenames.has(song.filename)
+                            ? 'Saved on this PC (Click to remove)'
+                            : 'Download to this PC for offline listening'
+                        }
+                      >
+                        {downloadingSong === song.filename ? (
+                          <RefreshCw size={14} className="spin-icon text-amber-400" />
+                        ) : offlineFilenames.has(song.filename) ? (
+                          <HardDriveDownload size={14} />
+                        ) : (
+                          <Download size={14} />
+                        )}
+                      </button>
+
+                      {/* Export MP3 to Computer */}
+                      <button
+                        className="track-action-btn"
+                        onClick={e => {
+                          e.stopPropagation()
+                          handleExportTrack(song)
+                        }}
+                        title="Save MP3 file to your computer's Downloads folder"
+                      >
+                        <FileDown size={14} />
+                      </button>
+
                       <button
                         className="track-action-btn"
                         onClick={e => {
@@ -907,6 +1134,14 @@ export function MusicLibrary({
                     <span className="track-title" title={song.title}>
                       {song.title}
                     </span>
+                    {offlineFilenames.has(song.filename) && (
+                      <span
+                        className="track-offline-pill"
+                        title="Stored on this PC — 100% offline ready"
+                      >
+                        <HardDriveDownload size={11} /> On PC
+                      </span>
+                    )}
                     {song.artist && <span className="track-artist">{song.artist}</span>}
                   </div>
 
@@ -923,6 +1158,46 @@ export function MusicLibrary({
                 </div>
 
                 <div className="track-actions">
+                  {/* Offline Download/Remove Button */}
+                  <button
+                    className={`track-action-btn ${offlineFilenames.has(song.filename) ? 'offline-active-btn' : ''}`}
+                    onClick={e => {
+                      e.stopPropagation()
+                      handleToggleOffline(song)
+                    }}
+                    disabled={
+                      downloadingSong === song.filename ||
+                      (batchStatus.active && batchStatus.currentTitle === song.title)
+                    }
+                    title={
+                      downloadingSong === song.filename
+                        ? 'Downloading to this PC...'
+                        : offlineFilenames.has(song.filename)
+                        ? 'Saved on this PC (Click to remove)'
+                        : 'Download to this PC for offline listening'
+                    }
+                  >
+                    {downloadingSong === song.filename ? (
+                      <RefreshCw size={14} className="spin-icon text-amber-400" />
+                    ) : offlineFilenames.has(song.filename) ? (
+                      <HardDriveDownload size={14} />
+                    ) : (
+                      <Download size={14} />
+                    )}
+                  </button>
+
+                  {/* Export MP3 to Computer */}
+                  <button
+                    className="track-action-btn"
+                    onClick={e => {
+                      e.stopPropagation()
+                      handleExportTrack(song)
+                    }}
+                    title="Save MP3 file to your computer's Downloads folder"
+                  >
+                    <FileDown size={14} />
+                  </button>
+
                   <button
                     className="track-action-btn"
                     onClick={e => {

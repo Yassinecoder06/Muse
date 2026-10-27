@@ -1,3 +1,5 @@
+import { offlineMusic } from './offline-music.service'
+
 export interface MusicTrack {
   filename: string
   title: string
@@ -5,6 +7,7 @@ export interface MusicTrack {
   url: string
   artist?: string
   coverUrl?: string
+  isOffline?: boolean
 }
 
 export interface MusicPlayerState {
@@ -24,6 +27,7 @@ export interface MusicPlayerState {
   sleepTimerRemaining: number | null
   sleepTimerDuration: number | 'track' | null
   crossfadeSeconds: number
+  isCurrentOffline?: boolean
 }
 
 type MusicListener = (state: MusicPlayerState) => void
@@ -156,10 +160,28 @@ class RobotMusicService {
       const res = await fetch('/api/music/songs')
       if (!res.ok) throw new Error(`HTTP error ${res.status}`)
       const data = await res.json()
-      return Array.isArray(data.songs) ? data.songs : []
+      const songs = Array.isArray(data.songs) ? data.songs : []
+      if (songs.length > 0) {
+        void offlineMusic.saveSongsListCache(songs)
+      }
+      return songs
     } catch (err) {
-      console.error('Failed to fetch songs:', err)
-      return []
+      console.warn('[RobotMusic] Failed to fetch songs over network, attempting offline storage:', err)
+      // Fallback 1: cached songs list
+      const cached = await offlineMusic.loadSongsListCache()
+      if (cached && cached.length > 0) {
+        return cached
+      }
+      // Fallback 2: tracks downloaded into IndexedDB
+      const offlineTracks = await offlineMusic.getAllOfflineTracks()
+      return offlineTracks.map(t => ({
+        filename: t.filename,
+        title: t.title,
+        artist: t.artist,
+        size: t.size,
+        url: `/api/music/stream/${encodeURIComponent(t.filename)}`,
+        isOffline: true
+      }))
     }
   }
 
@@ -174,7 +196,7 @@ class RobotMusicService {
     let finalTitle = track.title || 'Music Track'
     let finalFilename = track.filename || 'song.mp3'
 
-    // If no URL given or empty path, fetch from API
+    // If no URL given or empty path, fetch from API or offline cache
     if (!finalUrl || finalUrl === '/api/music/stream/' || finalUrl.endsWith('/.mp3')) {
       const songs = await this.fetchAvailableSongs()
       if (songs.length === 0) {
@@ -193,9 +215,23 @@ class RobotMusicService {
       finalFilename = chosen.filename
     }
 
-    const coverUrl =
+    let coverUrl =
       track.coverUrl ||
       (finalFilename ? `/api/music/cover/${encodeURIComponent(finalFilename)}` : undefined)
+
+    // Check if the track is stored offline in the browser / PC memory
+    let isOffline = false
+    try {
+      const offlineAudioUrl = await offlineMusic.getOfflineAudioUrl(finalFilename)
+      if (offlineAudioUrl) {
+        finalUrl = offlineAudioUrl
+        isOffline = true
+        const offlineCover = await offlineMusic.getOfflineCoverUrl(finalFilename)
+        if (offlineCover) {
+          coverUrl = offlineCover
+        }
+      }
+    } catch (_) {}
 
     const currentTrackObj: MusicTrack = {
       filename: finalFilename,
@@ -203,7 +239,8 @@ class RobotMusicService {
       size: 0,
       url: finalUrl,
       artist: track.artist,
-      coverUrl
+      coverUrl,
+      isOffline
     }
 
     if (contextQueue && contextQueue.length > 0) {
@@ -225,6 +262,7 @@ class RobotMusicService {
 
     this.updateState({
       currentTrack: currentTrackObj,
+      isCurrentOffline: isOffline,
       error: null,
       queue: [...this.playlistQueue],
       playlistIndex: this.playlistIndex,

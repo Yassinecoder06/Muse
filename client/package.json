@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/services/insights.test.ts"
+    "test": "tsx --test src/services/insights.test.ts src/components/CalendarView.test.ts src/services/offline-music.test.ts"
   },
   "dependencies": {
     "@simplewebauthn/browser": "^13.3.0",

@@ -8,7 +8,7 @@ import { activeVaultUser, decryptNote, encryptNote, encryptRecord, newSecureNote
 import type { VaultRecord, SecureNote } from './vault'
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
 
-const root = import.meta.env.VITE_API_URL || '/api'
+const root = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '/api'
 function apiOrigin() { return /^https?:\/\//.test(root) ? new URL(root).origin : window.location.origin }
 export function resolveApiImageSrc(src: string) { return src.startsWith('/api/images/') ? `${apiOrigin()}${src}` : src }
 export function relativizeApiImageSrc(src: string) {
@@ -86,10 +86,27 @@ async function createSecureNote(input: NoteInput) {
   return persistSecureNote(note)
 }
 
+export function localDateString(date = new Date()): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+export function parseDateWithTime(rawDate: string, hours = 9, minutes = 0): Date {
+  const parts = rawDate.trim().split('-').map(Number)
+  if (parts.length === 3 && !parts.some(isNaN)) {
+    return new Date(parts[0], parts[1] - 1, parts[2], hours, minutes, 0, 0)
+  }
+  const d = new Date(rawDate)
+  d.setHours(hours, minutes, 0, 0)
+  return d
+}
+
 const specializedDefaults: Record<SpecializedCategory, { title: string; fields: Record<string, unknown>; aiInstruction: string }> = {
-  daily: { title: 'Daily plan', fields: { date: new Date().toISOString().slice(0, 10), feedback: '', wins: '', blockers: '', nextFocus: '' }, aiInstruction: 'Help plan tasks and provide concise daily feedback.' },
-  workout: { title: 'Gym Workout', fields: { date: new Date().toISOString().slice(0, 10), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }), name: 'Gym Workout', exerciseCount: '4' }, aiInstruction: 'Help structure workouts, track exercises, sets, and analyze progress without medical claims.' },
-  finance: { title: 'Financial decision', fields: { date: new Date().toISOString().slice(0, 10), amount: '', currency: 'USD', category: '', merchant: '', decision: '', rationale: '', outcome: '' }, aiInstruction: 'Help categorize expenses and compare financial decisions; state assumptions clearly.' },
+  daily: { title: 'Daily plan', fields: { date: localDateString(), feedback: '', wins: '', blockers: '', nextFocus: '' }, aiInstruction: 'Help plan tasks and provide concise daily feedback.' },
+  workout: { title: 'Gym Workout', fields: { date: localDateString(), time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }), name: 'Gym Workout', exerciseCount: '4' }, aiInstruction: 'Help structure workouts, track exercises, sets, and analyze progress without medical claims.' },
+  finance: { title: 'Financial decision', fields: { date: localDateString(), amount: '', currency: 'USD', category: '', merchant: '', decision: '', rationale: '', outcome: '' }, aiInstruction: 'Help categorize expenses and compare financial decisions; state assumptions clearly.' },
   custom: { title: 'Custom note', fields: { 'Field 1': '' }, aiInstruction: 'Follow this template’s fields and propose only supported updates.' },
   research: { title: 'Research Report', fields: { topic: '', objective: '', keyFindings: '', methodology: '', analysis: '', references: '' }, aiInstruction: 'Help conduct deep structured research with evidence-based reasoning, citations, and critical review.' }
 }
@@ -299,14 +316,13 @@ export const api = {
   updateEvent: (id: string, data: Partial<CalendarEvent>) => request<CalendarEvent>(`/calendar/events/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEvent: (id: string) => request<void>(`/calendar/events/${id}`, { method: 'DELETE' }),
   syncWorkoutToCalendar: async (noteId: string, fields: Record<string, unknown>, currentEventId?: string | null) => {
-    const rawDate = String(fields.date || fields.Date || new Date().toISOString().slice(0, 10))
+    const rawDate = String(fields.date || fields.Date || localDateString())
     const rawTime = String(fields.time || fields.Time || '10:00')
     const rawName = String(fields.name || fields.Name || 'Gym Workout')
     const exerciseCount = String(fields.exerciseCount || fields['N exercises'] || fields['n exercises'] || '')
 
     const [hours, minutes] = rawTime.split(':').map(Number)
-    const start = new Date(rawDate)
-    start.setHours(isNaN(hours) ? 10 : hours, isNaN(minutes) ? 0 : minutes, 0, 0)
+    const start = parseDateWithTime(rawDate, isNaN(hours) ? 10 : hours, isNaN(minutes) ? 0 : minutes)
     const end = new Date(start.getTime() + 60 * 60 * 1000)
 
     const payload = {
@@ -331,9 +347,8 @@ export const api = {
     return request<CalendarEvent>('/calendar/events', { method: 'POST', body: JSON.stringify(payload) })
   },
   syncDailyToCalendar: async (noteId: string, fields: Record<string, unknown>, currentEventId?: string | null) => {
-    const rawDate = String(fields.date || fields.Date || new Date().toISOString().slice(0, 10))
-    const start = new Date(rawDate)
-    start.setHours(9, 0, 0, 0)
+    const rawDate = String(fields.date || fields.Date || localDateString())
+    const start = parseDateWithTime(rawDate, 9, 0)
     const end = new Date(start.getTime() + 60 * 60 * 1000)
 
     const payload = {
@@ -369,16 +384,13 @@ export const api = {
         rawTime = String(val || '')
       }
     }
-    const finalDate = (rawDate && rawDate.trim()) || new Date().toISOString().slice(0, 10)
-    const start = new Date(finalDate)
-    if (isNaN(start.getTime())) {
-      start.setTime(Date.now())
-    }
+    const finalDate = (rawDate && rawDate.trim()) || localDateString()
+    let start: Date
     if (rawTime && rawTime.includes(':')) {
       const [hours, minutes] = rawTime.split(':').map(Number)
-      start.setHours(isNaN(hours) ? 9 : hours, isNaN(minutes) ? 0 : minutes, 0, 0)
+      start = parseDateWithTime(finalDate, isNaN(hours) ? 9 : hours, isNaN(minutes) ? 0 : minutes)
     } else {
-      start.setHours(9, 0, 0, 0)
+      start = parseDateWithTime(finalDate, 9, 0)
     }
     const end = new Date(start.getTime() + 60 * 60 * 1000)
 
