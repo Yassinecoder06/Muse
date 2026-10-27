@@ -35,7 +35,8 @@ import {
   HardDriveDownload,
   WifiOff,
   FileDown,
-  CheckCircle2
+  CheckCircle2,
+  MoreVertical
 } from 'lucide-react'
 import { api } from '../../services/api'
 import { robotMusic, type MusicPlayerState } from '../../services/robot-music.service'
@@ -119,6 +120,18 @@ export function MusicLibrary({
   const [downloadingSong, setDownloadingSong] = useState<string | null>(null)
   const [isOfflineFallback, setIsOfflineFallback] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [openMenuSong, setOpenMenuSong] = useState<string | null>(null)
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('.track-menu-wrap')) {
+        setOpenMenuSong(null)
+      }
+    }
+    window.addEventListener('click', handleOutsideClick)
+    return () => window.removeEventListener('click', handleOutsideClick)
+  }, [])
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -879,7 +892,7 @@ export function MusicLibrary({
               return (
                 <div
                   key={song.filename}
-                  className={`music-track-row ${isSelected ? 'active-track' : ''} ${isSongSelected ? 'selected-row' : ''}`}
+                  className={`music-track-row ${isSelected ? 'active-track' : ''} ${isSongSelected ? 'selected-row' : ''} ${openMenuSong === song.filename ? 'menu-open' : ''}`}
                   onClick={() => {
                     if (selectedSongs.length > 0) {
                       toggleSelect(song.filename)
@@ -939,7 +952,7 @@ export function MusicLibrary({
                     </div>
 
                     <div className="track-details">
-                      <div className="track-title-row">
+                      <div className="track-title-header">
                         <span className="track-title" title={song.title}>
                           {song.title}
                         </span>
@@ -951,8 +964,8 @@ export function MusicLibrary({
                             <HardDriveDownload size={11} /> On PC
                           </span>
                         )}
-                        {song.artist && <span className="track-artist">{song.artist}</span>}
                       </div>
+                      {song.artist && <span className="track-artist">{song.artist}</span>}
                     </div>
                   </div>
 
@@ -1002,29 +1015,6 @@ export function MusicLibrary({
                         )}
                       </button>
 
-                      {/* Export MP3 to Computer */}
-                      <button
-                        className="track-action-btn"
-                        onClick={e => {
-                          e.stopPropagation()
-                          handleExportTrack(song)
-                        }}
-                        title="Save MP3 file to your computer's Downloads folder"
-                      >
-                        <FileDown size={14} />
-                      </button>
-
-                      <button
-                        className="track-action-btn"
-                        onClick={e => {
-                          e.stopPropagation()
-                          setCoverModalSong(song)
-                        }}
-                        title="Search and change album cover on iTunes"
-                      >
-                        <ImageIcon size={14} />
-                      </button>
-
                       <button
                         className={`track-action-btn sing-btn ${isPlaying ? 'playing' : ''}`}
                         onClick={e => {
@@ -1047,16 +1037,54 @@ export function MusicLibrary({
                         <ListPlus size={14} />
                       </button>
 
-                      <button
-                        className="track-action-btn delete-btn"
-                        onClick={e => {
-                          e.stopPropagation()
-                          setDeletingSong(song.filename)
-                        }}
-                        title="Delete song from library"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {/* More Menu */}
+                      <div className="track-menu-wrap" onClick={e => e.stopPropagation()}>
+                        <button
+                          className={`track-action-btn ${openMenuSong === song.filename ? 'active' : ''}`}
+                          onClick={e => {
+                            e.stopPropagation()
+                            setOpenMenuSong(openMenuSong === song.filename ? null : song.filename)
+                          }}
+                          title="More song actions"
+                        >
+                          <MoreVertical size={14} />
+                        </button>
+
+                        {openMenuSong === song.filename && (
+                          <div className="track-menu-dropdown">
+                            <button
+                              onClick={() => {
+                                setOpenMenuSong(null)
+                                handleExportTrack(song)
+                              }}
+                            >
+                              <FileDown size={14} />
+                              <span>Save MP3 to Computer</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                setOpenMenuSong(null)
+                                setCoverModalSong(song)
+                              }}
+                            >
+                              <ImageIcon size={14} />
+                              <span>Change Album Cover</span>
+                            </button>
+
+                            <button
+                              className="danger"
+                              onClick={() => {
+                                setOpenMenuSong(null)
+                                setDeletingSong(song.filename)
+                              }}
+                            >
+                              <Trash2 size={14} />
+                              <span>Delete Song</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1075,7 +1103,7 @@ export function MusicLibrary({
             return (
               <div
                 key={song.filename}
-                className={`music-track-card ${isSelected ? 'active-track' : ''} ${isSongSelected ? 'selected-card' : ''}`}
+                className={`music-track-card ${isSelected ? 'active-track' : ''} ${isSongSelected ? 'selected-card' : ''} ${openMenuSong === song.filename ? 'menu-open' : ''}`}
                 onClick={() => {
                   if (selectedSongs.length > 0) {
                     toggleSelect(song.filename)
@@ -1130,7 +1158,7 @@ export function MusicLibrary({
                 </button>
 
                 <div className="track-details">
-                  <div className="track-title-row">
+                  <div className="track-title-header">
                     <span className="track-title" title={song.title}>
                       {song.title}
                     </span>
@@ -1142,8 +1170,8 @@ export function MusicLibrary({
                         <HardDriveDownload size={11} /> On PC
                       </span>
                     )}
-                    {song.artist && <span className="track-artist">{song.artist}</span>}
                   </div>
+                  {song.artist && <span className="track-artist">{song.artist}</span>}
 
                   <div className="track-meta-row">
                     <span className="track-meta-item">
@@ -1186,29 +1214,7 @@ export function MusicLibrary({
                     )}
                   </button>
 
-                  {/* Export MP3 to Computer */}
-                  <button
-                    className="track-action-btn"
-                    onClick={e => {
-                      e.stopPropagation()
-                      handleExportTrack(song)
-                    }}
-                    title="Save MP3 file to your computer's Downloads folder"
-                  >
-                    <FileDown size={14} />
-                  </button>
-
-                  <button
-                    className="track-action-btn"
-                    onClick={e => {
-                      e.stopPropagation()
-                      setCoverModalSong(song)
-                    }}
-                    title="Search and change album cover on iTunes"
-                  >
-                    <ImageIcon size={14} />
-                  </button>
-
+                  {/* Sing with Bip */}
                   <button
                     className={`track-action-btn sing-btn ${isPlaying ? 'playing' : ''}`}
                     onClick={e => {
@@ -1220,27 +1226,64 @@ export function MusicLibrary({
                     <Mic size={14} />
                   </button>
 
-                  <button
-                    className="track-action-btn"
-                    onClick={e => {
-                      e.stopPropagation()
-                      openAddToPlaylist(song)
-                    }}
-                    title="Add song to playlist or priority queue"
-                  >
-                    <ListPlus size={14} />
-                  </button>
+                  {/* More Options Dropdown */}
+                  <div className="track-menu-wrap" onClick={e => e.stopPropagation()}>
+                    <button
+                      className={`track-action-btn ${openMenuSong === song.filename ? 'active' : ''}`}
+                      onClick={e => {
+                        e.stopPropagation()
+                        setOpenMenuSong(openMenuSong === song.filename ? null : song.filename)
+                      }}
+                      title="More song actions"
+                    >
+                      <MoreVertical size={14} />
+                    </button>
 
-                  <button
-                    className="track-action-btn delete-btn"
-                    onClick={e => {
-                      e.stopPropagation()
-                      setDeletingSong(song.filename)
-                    }}
-                    title="Delete song from library"
-                  >
-                    <Trash2 size={14} />
-                  </button>
+                    {openMenuSong === song.filename && (
+                      <div className="track-menu-dropdown">
+                        <button
+                          onClick={() => {
+                            setOpenMenuSong(null)
+                            openAddToPlaylist(song)
+                          }}
+                        >
+                          <ListPlus size={14} />
+                          <span>Add to Playlist / Queue</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setOpenMenuSong(null)
+                            handleExportTrack(song)
+                          }}
+                        >
+                          <FileDown size={14} />
+                          <span>Save MP3 to Computer</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setOpenMenuSong(null)
+                            setCoverModalSong(song)
+                          }}
+                        >
+                          <ImageIcon size={14} />
+                          <span>Change Album Cover</span>
+                        </button>
+
+                        <button
+                          className="danger"
+                          onClick={() => {
+                            setOpenMenuSong(null)
+                            setDeletingSong(song.filename)
+                          }}
+                        >
+                          <Trash2 size={14} />
+                          <span>Delete Song</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )

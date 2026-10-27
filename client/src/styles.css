@@ -6070,7 +6070,12 @@
   border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   transition: all .15s ease;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
+}
+
+.music-track-card.menu-open {
+  z-index: 50;
+  border-color: rgba(124, 58, 237, 0.4);
 }
 
 .music-track-card:hover {
@@ -6236,17 +6241,20 @@
 /* Track Details & Typography */
 .track-details {
   flex: 1 1 0%;
-  min-width: 0;
+  min-width: 130px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
+.track-title-header,
 .track-title-row {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
+  max-width: 100%;
 }
 
 .track-title {
@@ -6257,6 +6265,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.35;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 [data-theme=dark] .track-title {
@@ -6391,6 +6401,87 @@
   color: #f87171;
 }
 
+.track-action-btn.active {
+  background: rgba(124, 58, 237, 0.15);
+  border-color: rgba(124, 58, 237, 0.4);
+  color: #7c3aed;
+}
+
+/* Track Menu Dropdown */
+.track-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.track-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 100;
+  width: 200px;
+  padding: 6px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.12));
+  border-radius: 10px;
+  background: var(--bg-card, #ffffff);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16), 0 4px 10px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: fadeIn 0.12s ease-out;
+}
+
+[data-theme=dark] .track-menu-dropdown {
+  background: #1e1c26;
+  border-color: #353242;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.7);
+}
+
+.track-menu-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary, #272533);
+  text-align: left;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+[data-theme=dark] .track-menu-dropdown button {
+  color: #ece7f5;
+}
+
+.track-menu-dropdown button:hover {
+  background: rgba(124, 58, 237, 0.08);
+  color: #7c3aed;
+}
+
+[data-theme=dark] .track-menu-dropdown button:hover {
+  background: rgba(139, 92, 246, 0.18);
+  color: #c4b5fd;
+}
+
+.track-menu-dropdown button.danger {
+  color: #ef4444;
+}
+
+.track-menu-dropdown button.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+[data-theme=dark] .track-menu-dropdown button.danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
 /* List Mode View (Spotify / Apple Music Table style) */
 .music-tracks-list {
   display: flex;
@@ -6398,7 +6489,7 @@
   background: var(--bg-card, #ffffff);
   border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 12px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 [data-theme=dark] .music-tracks-list {
@@ -6438,6 +6529,11 @@
   transition: all 0.15s ease;
   user-select: none;
   gap: 12px;
+  position: relative;
+}
+
+.music-track-row.menu-open {
+  z-index: 50;
 }
 
 .music-track-row:last-child {
