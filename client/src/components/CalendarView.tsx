@@ -5,6 +5,23 @@ import { ArrowLeft, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, 
 import { api } from '../services/api'
 import type { CalendarEvent } from '../types'
 
+export function toDateKey(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+export function getEventDateKey(iso: string): string {
+  try {
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return toDateKey(d)
+  } catch {
+    return ''
+  }
+}
+
 export function CalendarView({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -35,12 +52,23 @@ export function CalendarView({ onBack }: { onBack: () => void }) {
   })
 
   const quickAdd = useMutation({
-    mutationFn: (text: string) => api.quickAddEvent(text, selectedDate.toISOString()),
+    mutationFn: (text: string) => {
+      // Use noon on selectedDate to ensure safe timezone reference
+      const refDate = new Date(
+        selectedDate.getFullYear(),
+        selectedDate.getMonth(),
+        selectedDate.getDate(),
+        12,
+        0,
+        0
+      )
+      return api.quickAddEvent(text, refDate.toISOString())
+    },
     onSuccess: (newEvent) => {
       setPrompt('')
       setQuickAddError('')
       queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
-      if (newEvent.start_time) {
+      if (newEvent?.start_time) {
         setSelectedDate(new Date(newEvent.start_time))
       }
     },
@@ -51,10 +79,13 @@ export function CalendarView({ onBack }: { onBack: () => void }) {
 
   const createManual = useMutation({
     mutationFn: (data: Partial<CalendarEvent>) => api.createEvent(data),
-    onSuccess: () => {
+    onSuccess: (newEvent) => {
       setManualModal(false)
       setManualTitle('')
       queryClient.invalidateQueries({ queryKey: ['calendar-events'] })
+      if (newEvent?.start_time) {
+        setSelectedDate(new Date(newEvent.start_time))
+      }
     }
   })
 
@@ -73,8 +104,9 @@ export function CalendarView({ onBack }: { onBack: () => void }) {
     setSelectedDate(today)
   }
 
-  const selectedDateStr = selectedDate.toISOString().slice(0, 10)
-  const dayEvents = events.filter(e => e.start_time.startsWith(selectedDateStr))
+  const selectedDateKey = toDateKey(selectedDate)
+  const todayKey = toDateKey(new Date())
+  const dayEvents = events.filter(e => getEventDateKey(e.start_time) === selectedDateKey)
 
   const handleQuickAdd = (e: React.FormEvent) => {
     e.preventDefault()
@@ -86,8 +118,15 @@ export function CalendarView({ onBack }: { onBack: () => void }) {
     e.preventDefault()
     if (!manualTitle.trim()) return
     const [hours, mins] = manualTime.split(':').map(Number)
-    const start = new Date(selectedDate)
-    start.setHours(hours || 10, mins || 0, 0, 0)
+    const start = new Date(
+      selectedDate.getFullYear(),
+      selectedDate.getMonth(),
+      selectedDate.getDate(),
+      isNaN(hours) ? 10 : hours,
+      isNaN(mins) ? 0 : mins,
+      0,
+      0
+    )
     const end = new Date(start.getTime() + Number(manualDuration || 60) * 60 * 1000)
 
     createManual.mutate({
@@ -185,11 +224,11 @@ export function CalendarView({ onBack }: { onBack: () => void }) {
             {/* Days of current month */}
             {Array.from({ length: daysInMonth }).map((_, i) => {
               const dayNum = i + 1
-              const cellDate = new Date(year, month, dayNum)
-              const cellIso = cellDate.toISOString().slice(0, 10)
-              const isSelected = cellIso === selectedDateStr
-              const isToday = cellIso === new Date().toISOString().slice(0, 10)
-              const cellEvents = events.filter(e => e.start_time.startsWith(cellIso))
+              const cellDate = new Date(year, month, dayNum, 12, 0, 0)
+              const cellKey = toDateKey(cellDate)
+              const isSelected = cellKey === selectedDateKey
+              const isToday = cellKey === todayKey
+              const cellEvents = events.filter(e => getEventDateKey(e.start_time) === cellKey)
 
               return (
                 <div

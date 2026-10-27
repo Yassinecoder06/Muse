@@ -15,9 +15,11 @@ import {
   Moon,
   Sliders,
   Sparkles,
-  Gauge
+  Gauge,
+  HardDriveDownload
 } from 'lucide-react'
 import { robotMusic, type MusicPlayerState } from '../../services/robot-music.service'
+import { offlineMusic } from '../../services/offline-music.service'
 
 interface NowPlayingModalProps {
   isOpen: boolean
@@ -134,9 +136,19 @@ export function NowPlayingModal({
             <h2 className="now-playing-title" title={track.title}>
               {track.title}
             </h2>
-            <p className="now-playing-artist">
-              {track.artist || 'Bip Singing Companion'}
-            </p>
+            <div className="now-playing-artist-row">
+              <p className="now-playing-artist">
+                {track.artist || 'Bip Singing Companion'}
+              </p>
+              {(playerState.isCurrentOffline || offlineMusic.isTrackOffline(track.filename)) && (
+                <span
+                  className="now-playing-offline-tag"
+                  title="Playing directly from this PC (Offline ready)"
+                >
+                  <HardDriveDownload size={12} /> Stored on this PC
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Timeline & Scrubber */}
