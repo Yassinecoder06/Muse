@@ -6617,21 +6617,23 @@
 }
 
 .music-tracks-list .list-col.col-size {
-  width: 110px;
+  width: 95px;
   flex-shrink: 0;
   font-size: 12px;
   color: var(--text-secondary, #7d778d);
 }
 
 .music-tracks-list .list-col.col-date {
-  width: 130px;
+  width: 155px;
+  margin-right: 28px;
   flex-shrink: 0;
   font-size: 12px;
   color: var(--text-secondary, #7d778d);
+  white-space: nowrap;
 }
 
 .music-tracks-list .list-col.col-actions {
-  width: 150px;
+  width: 165px;
   flex-shrink: 0;
   display: flex;
   justify-content: flex-end;
