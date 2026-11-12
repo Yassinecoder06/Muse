@@ -12,7 +12,7 @@ export interface McpIdentity {
   approvalMode: ApprovalMode
 }
 
-export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'executed' | 'expired'
+export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'executed' | 'failed' | 'expired'
 
 export interface Approval {
   id: string

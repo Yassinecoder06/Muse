@@ -8,7 +8,7 @@ export type Approval = {
   tool: string
   args: Record<string, unknown>
   summary: string
-  status: 'pending' | 'approved' | 'denied' | 'executed' | 'expired'
+  status: 'pending' | 'approved' | 'denied' | 'executed' | 'failed' | 'expired'
   result?: { ok: boolean; summary: string }
 }
 export type McpScope = 'notes:read' | 'notes:write' | 'tasks' | 'calendar' | 'memory' | 'templates' | 'images' | 'research' | 'web' | 'code'

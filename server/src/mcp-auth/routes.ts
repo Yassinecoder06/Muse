@@ -128,15 +128,18 @@ oauthRouter.get('/oauth/authorize', async (req, res) => {
       .maybeSingle()
   )
   if (!client || !(client.redirect_uris as string[]).includes(redirect)) return res.status(400).send('Unknown client or redirect URI.')
-  const token = csrf(req, res),
-    granted = scopesFrom(client.scopes)
-  const options = SCOPES.map(
-    scope => `<label><input type="checkbox" name="scope" value="${scope}" ${granted.includes(scope) ? 'checked' : ''}> ${scope}</label>`
-  ).join('')
+  const token = csrf(req, res)
+  // Offer exactly what this request asks for (or the safe defaults), never more
+  // than the client registered for.
+  const registered = scopesFrom(client.scopes)
+  const asked = typeof req.query.scope === 'string' && req.query.scope.trim() ? scopesFrom(req.query.scope.trim().split(/\s+/)) : DEFAULT_SCOPES
+  const requested = asked.filter(scope => registered.includes(scope))
+  if (!requested.length) return res.status(400).send('This app did not request any scope Muse can grant.')
+  const options = requested.map(scope => `<label><input type="checkbox" name="scope" value="${scope}" checked> ${scope}</label>`).join('')
   page(
     res,
     'Connect an app',
-    `<p><strong>${escapeHtml(client.name)}</strong> requests access to Muse.</p><form method="post" action="/oauth/authorize"><input type="hidden" name="csrf" value="${token}"><input type="hidden" name="client_id" value="${escapeHtml(clientId)}"><input type="hidden" name="redirect_uri" value="${escapeHtml(redirect)}"><input type="hidden" name="challenge" value="${escapeHtml(challenge)}"><input type="hidden" name="state" value="${escapeHtml(state)}">${options}<label>Approval mode <select name="mode"><option value="minimal">Minimal</option><option value="standard">Standard</option><option value="trust">Trust (runs without owner approval)</option></select></label><label><input type="checkbox" name="remember" value="yes" ${client.remembered ? 'checked' : ''}> Remember this client</label><label>Muse passphrase <input type="password" name="passphrase" required autocomplete="current-password"></label><button>Authorize</button></form>`
+    `<p><strong>${escapeHtml(client.name)}</strong> requests access to Muse.</p><form method="post" action="/oauth/authorize"><input type="hidden" name="csrf" value="${token}"><input type="hidden" name="client_id" value="${escapeHtml(clientId)}"><input type="hidden" name="redirect_uri" value="${escapeHtml(redirect)}"><input type="hidden" name="challenge" value="${escapeHtml(challenge)}"><input type="hidden" name="state" value="${escapeHtml(state)}">${options}<label>Approval mode <select name="mode"><option value="minimal" selected>Minimal: the app asks before deleting</option><option value="standard">Standard: deletions also need approval in Muse</option><option value="trust">Trust: never asks (deletions keep a 7-day undo)</option></select></label><p><small>You can change the mode and scopes any time in Muse → Settings → Connected apps.</small></p><label><input type="checkbox" name="remember" value="yes" ${client.remembered ? 'checked' : ''}> Remember this client</label><label>Muse passphrase <input type="password" name="passphrase" required autocomplete="current-password"></label><button>Authorize</button></form>`
   )
 })
 oauthRouter.post('/oauth/authorize', loginLimiter, async (req, res, next) => {
@@ -189,6 +192,7 @@ oauthRouter.post('/oauth/authorize', loginLimiter, async (req, res, next) => {
 
 oauthRouter.post('/oauth/token', oauthLimiter, async (req, res, next) => {
   try {
+    res.set({ 'Cache-Control': 'no-store', Pragma: 'no-cache' })
     const grant = String(req.body.grant_type || '')
     if (grant === 'authorization_code') {
       const code = String(req.body.code || ''),
@@ -247,6 +251,8 @@ oauthRouter.post('/oauth/token', oauthLimiter, async (req, res, next) => {
         row = done(await db.from('mcp_tokens').select('*').eq('token_hash', digest).maybeSingle())
       const action = refreshAction(row)
       if (action === 'reject') return res.status(400).json({ error: 'invalid_grant' })
+      // A refresh token only works for the client it was issued to.
+      if (req.body.client_id && String(req.body.client_id) !== row.client_id) return res.status(400).json({ error: 'invalid_grant' })
       if (action === 'revoke-family') {
         done(await db.from('mcp_tokens').update({ revoked_at: new Date().toISOString() }).eq('family_id', row.family_id))
         return res.status(400).json({ error: 'invalid_grant' })
@@ -508,6 +514,8 @@ mcpApiRouter.post('/activity/:id/undo', async (req, res, next) => {
       )
     )
       return res.status(400).json({ error: 'Undo snapshot format is invalid' })
+    if (groups.some(group => group.rows.some(item => item.user_id !== undefined && item.user_id !== req.userId)))
+      return res.status(400).json({ error: 'Undo snapshot format is invalid' })
     const claimed = done(
       await db
         .from('mcp_undo')
@@ -518,10 +526,12 @@ mcpApiRouter.post('/activity/:id/undo', async (req, res, next) => {
         .maybeSingle()
     )
     if (!claimed) return res.status(410).json({ error: 'Undo snapshot expired or already used' })
-    for (const group of groups) {
-      const rows = group.rows
-      if (rows.some(item => item.user_id !== undefined && item.user_id !== req.userId)) return res.status(400).json({ error: 'Undo snapshot format is invalid' })
-      done(await db.from(group.table).upsert(rows, { onConflict: 'id' }))
+    try {
+      // Upserts are idempotent, so a failed restore can be retried.
+      for (const group of groups) done(await db.from(group.table).upsert(group.rows, { onConflict: 'id' }))
+    } catch (error) {
+      await db.from('mcp_undo').update({ used_at: null }).eq('id', row.id)
+      throw error
     }
     res.json({ ok: true })
   } catch (e) {

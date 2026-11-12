@@ -291,3 +291,18 @@ test('/mcp opens a session bound to the token and applies mode changes from the 
     assert.equal(app.sessions.sessions.get(sessionId!)?.state.mode, 'standard')
   } finally { app.close() }
 })
+
+test('/mcp closes a session when the caller\'s scopes no longer match it', async () => {
+  const port = new FakePort(); port.tokens.set('good', identity)
+  const app = await serve(port)
+  try {
+    const opened = await fetch(`${app.base}/mcp`, { method: 'POST', headers: { ...mcpHeaders, authorization: 'Bearer good' }, body: JSON.stringify(initialize) })
+    const sessionId = opened.headers.get('mcp-session-id')!
+    await opened.text()
+    // The owner removes notes:write from this client in Muse.
+    port.tokens.set('good', { ...identity, scopes: identity.scopes.filter(scope => scope !== 'notes:write') })
+    const next = await fetch(`${app.base}/mcp`, { method: 'POST', headers: { ...mcpHeaders, authorization: 'Bearer good', 'mcp-session-id': sessionId }, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) })
+    assert.equal(next.status, 404, 'stale session must be closed so the client reconnects with fewer tools')
+    assert.ok(!app.sessions.sessions.has(sessionId))
+  } finally { app.close() }
+})
