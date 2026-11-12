@@ -5,7 +5,7 @@ import { owner } from '../services/owner.service.js'
 import { loginLimiter, oauthLimiter } from '../middleware/rate-limit.js'
 import { requireAuth } from '../middleware/auth.js'
 import { escapeHtml } from '../utils/html.js'
-import { env } from '../utils/env.js'
+import { mcpPublicUrl } from '../utils/env.js'
 import { supabase } from '../supabase/client.js'
 // The project does not yet generate Supabase Database types for app tables.
 const db = supabase as unknown as { from: (table: string) => any }
@@ -41,7 +41,7 @@ function csrf(req: Request, res: Response) {
   res.cookie(csrfCookie, value, {
     httpOnly: true,
     sameSite: 'strict',
-    secure: new URL(env.PUBLIC_URL).protocol === 'https:',
+    secure: new URL(mcpPublicUrl).protocol === 'https:',
     maxAge: 10 * 60_000
   })
   return value
@@ -59,15 +59,15 @@ const scopesFrom = (value: unknown) =>
   Array.isArray(value) ? value.filter((s): s is string => typeof s === 'string' && (SCOPES as string[]).includes(s)) : []
 
 oauthRouter.get('/.well-known/oauth-protected-resource', (_req, res) =>
-  res.json({ resource: `${env.PUBLIC_URL.replace(/\/+$/, '')}/mcp`, authorization_servers: [env.PUBLIC_URL], scopes_supported: SCOPES, bearer_methods_supported: ['header'] })
+  res.json({ resource: `${mcpPublicUrl}/mcp`, authorization_servers: [mcpPublicUrl], scopes_supported: SCOPES, bearer_methods_supported: ['header'] })
 )
 oauthRouter.get('/.well-known/oauth-authorization-server', (_req, res) =>
   res.json({
-    issuer: env.PUBLIC_URL,
-    authorization_endpoint: `${env.PUBLIC_URL}/oauth/authorize`,
-    token_endpoint: `${env.PUBLIC_URL}/oauth/token`,
-    registration_endpoint: `${env.PUBLIC_URL}/oauth/register`,
-    revocation_endpoint: `${env.PUBLIC_URL}/oauth/revoke`,
+    issuer: mcpPublicUrl,
+    authorization_endpoint: `${mcpPublicUrl}/oauth/authorize`,
+    token_endpoint: `${mcpPublicUrl}/oauth/token`,
+    registration_endpoint: `${mcpPublicUrl}/oauth/register`,
+    revocation_endpoint: `${mcpPublicUrl}/oauth/revoke`,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],

@@ -1,6 +1,6 @@
 import { executeAgentTool } from '../services/agent-tools.service.js'
 import { notes } from '../services/note.repository.js'
-import { env } from '../utils/env.js'
+import { env, mcpPublicUrl } from '../utils/env.js'
 import { createMcpRouter } from './http.js'
 import { mcpAuthPort } from './ports.js'
 import { createResourceProvider } from './resources.js'
@@ -22,7 +22,7 @@ export function createMuseMcp() {
       getNote: (userId, id) => notes.get(userId, id),
       execute: (userId, name, args, options) => executeAgentTool(userId, name, args as Record<string, any>, options)
     }, scopes),
-    publicUrl: env.PUBLIC_URL,
+    publicUrl: mcpPublicUrl,
     allowedHosts: list(env.MCP_ALLOWED_HOSTS),
     allowedOrigins: list(env.MCP_ALLOWED_ORIGINS)
   })

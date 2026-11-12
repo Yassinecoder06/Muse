@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { supabase } from '../supabase/client.js'
-import { env } from '../utils/env.js'
+import { mcpPublicUrl } from '../utils/env.js'
 import { approvalCanBeDecided, validAccessRow } from './oauth-logic.js'
 import type { Approval, ApprovalMode } from './internal.js'
 export { onModeChange } from './internal-crypto.js'
@@ -60,7 +60,7 @@ export async function createApproval(input: {
       .select('id')
       .single()
   )
-  return { id: row.id, url: `${env.PUBLIC_URL.replace(/\/+$/, '')}/approve/${row.id}` }
+  return { id: row.id, url: `${mcpPublicUrl}/approve/${row.id}` }
 }
 
 function approvalShape(row: any): Approval {

@@ -52,7 +52,7 @@ Copy only the token string starting with `eyJh...`.
 
 Add it to your `.env` file:
 ```env
-PUBLIC_URL=https://muse-mcp.yassinejemmali.me
+MCP_PUBLIC_URL=https://muse-mcp.yassinejemmali.me
 CLOUDFLARE_TUNNEL_TOKEN=eyJh...your-token-here...
 ```
 
@@ -182,7 +182,7 @@ Muse provides tiered approval modes so you stay in control of what external mode
 ### Approval Mode Features
 - **Live Re-annotation**: Changing approval mode in Muse settings takes effect immediately across active MCP sessions without reconnecting.
 - **Interactive Dual-Approval**: Under `standard` mode, sensitive operations (such as permanently deleting a note or dropping a category) generate a secure single-use approval URL. The owner completes the action using their Muse passphrase or WebAuthn passkey.
-- **Activity & Undo Audit Log**: Every tool execution is recorded in `mcp_activity`. Write and destructive operations create snapshots in `mcp_undo` allowing 1-click rollback from Settings &rarr; Connected Apps.
+- **Activity & Undo Audit Log**: Every tool execution is recorded in `mcp_activity`. Deletions and note edits (`update_note`) keep a 7-day snapshot in `mcp_undo` allowing 1-click rollback from Settings &rarr; Connected Apps.
 
 ---
 
@@ -230,5 +230,5 @@ Muse provides tiered approval modes so you stay in control of what external mode
 
 ### 4. OAuth Issuer Mismatch
 - **Symptom**: Client fails OAuth discovery or rejects authorization codes.
-- **Cause**: The `PUBLIC_URL` configured in `.env` does not match the public HTTPS URL accessed by the client.
-- **Fix**: Set `PUBLIC_URL=https://muse-mcp.yassinejemmali.me` in `.env` (no trailing slash). Do not leave it set to `http://localhost:8080` when exposing via Cloudflare Tunnel.
+- **Cause**: The `MCP_PUBLIC_URL` configured in `.env` does not match the public HTTPS URL accessed by the client.
+- **Fix**: Set `MCP_PUBLIC_URL=https://muse-mcp.yassinejemmali.me` in `.env` (no trailing slash). Do not leave it set to `http://localhost:8080` when exposing via Cloudflare Tunnel.
