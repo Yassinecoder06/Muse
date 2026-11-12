@@ -18,6 +18,7 @@ import { router } from './routes/index.js'
 import { startAiWorker } from './services/ai-job.service.js'
 import { requireAuth } from './middleware/auth.js'
 import { owner } from './services/owner.service.js'
+import { oauthRouter } from './mcp-auth/routes.js'
 const app = express()
 const uploadsDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '../uploads')
 const imageTypes = new Map([
@@ -29,11 +30,12 @@ const allowedOrigins = [...new Set([...webauthn.origins, ...(process.env.NODE_EN
 // Encrypted attachments are base64 wrapped before they reach the vault. Keep
 // this below a deliberately bounded limit, but high enough for the existing
 // 5 MB attachment ceiling during the additive legacy migration.
-app.use(cors({ origin: allowedOrigins, credentials: true })); app.use(cookieParser()); app.use(express.json({ limit: '12mb' }))
+app.use(cors({ origin: allowedOrigins, credentials: true })); app.use(cookieParser()); app.use(express.json({ limit: '12mb' })); app.use(express.urlencoded({ extended: false, limit: '32kb' }))
 // Exactly one proxy (nginx) sits in front of Express; trusting more lets
 // clients spoof X-Forwarded-For and dodge the IP-keyed rate limits.
 app.set('trust proxy', 1)
 app.get('/health', (_req, res) => res.json({ ok: true }))
+app.use(oauthRouter)
 app.post('/api/uploads', requireAuth, express.raw({ type: 'image/*', limit: '5mb' }), async (req, res, next) => {
   try {
     const extension = imageTypes.get(req.headers['content-type']?.split(';')[0].toLowerCase() || '')

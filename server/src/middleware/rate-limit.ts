@@ -26,6 +26,13 @@ export const imageLimiter = rateLimit({
 
 // Brute-force protection for the owner passphrase.
 // Keyed by IP only: these run before authentication.
+// OAuth endpoints called by MCP clients' servers (token refresh, registration).
+// Behind the tunnel these share few IPs, so the budget is larger than login's.
+export const oauthLimiter = rateLimit({
+  windowMs: 15 * 60_000, limit: 120, standardHeaders: 'draft-8', legacyHeaders: false,
+  keyGenerator: ipKey, message: { error: 'too_many_requests' }
+})
+
 export const loginLimiter = rateLimit({
   windowMs: 15 * 60_000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false,
   keyGenerator: ipKey, message: { error: 'Too many attempts. Try again in a few minutes.' }

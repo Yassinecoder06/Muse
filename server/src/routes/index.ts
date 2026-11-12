@@ -16,6 +16,7 @@ import * as analytics from '../controllers/analytics.controller.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter, loginLimiter } from '../middleware/rate-limit.js'
 import { graph } from '../services/graph.service.js'
+import { mcpApiRouter } from '../mcp-auth/routes.js'
 
 export const router = Router()
 
@@ -32,6 +33,7 @@ router.delete('/auth/session', vault.logout)
 
 router.use(requireAuth)
 router.use(apiLimiter)
+router.use('/mcp', mcpApiRouter)
 
 // Session & Vault
 router.post('/auth/session', vault.createFallbackSession)
