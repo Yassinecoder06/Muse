@@ -335,7 +335,7 @@ mcpApiRouter.get('/status', async (req, res, next) => {
       db.from('mcp_clients').select('client_id', { count: 'exact', head: true }).eq('user_id', req.userId!),
       db.from('mcp_approvals').select('id', { count: 'exact', head: true }).eq('user_id', req.userId!).eq('status', 'pending')
     ])
-    res.json({ settings, tokens: tokens.count || 0, clients: clients.count || 0, pendingApprovals: approvals.count || 0 })
+    res.json({ mcpUrl: `${mcpPublicUrl}/mcp`, settings, tokens: tokens.count || 0, clients: clients.count || 0, pendingApprovals: approvals.count || 0 })
   } catch (e) {
     next(e)
   }
