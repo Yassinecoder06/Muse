@@ -18,6 +18,7 @@ import * as music from '../controllers/music.controller.js'
 import { requireAuth } from '../middleware/auth.js'
 import { apiLimiter, loginLimiter, pairingLimiter } from '../middleware/rate-limit.js'
 import { graph } from '../services/graph.service.js'
+import { mcpApiRouter } from '../mcp-auth/routes.js'
 
 export const router = Router()
 
@@ -40,6 +41,7 @@ router.post('/music/cover/:filename', music.saveCoverArt)
 
 router.use(requireAuth)
 router.use(apiLimiter)
+router.use('/mcp', mcpApiRouter)
 
 // Session & Vault
 router.post('/auth/session', vault.createFallbackSession)
