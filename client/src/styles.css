@@ -227,18 +227,7 @@
 /* Research controls: true dark surfaces and light foregrounds. */
 [data-theme=dark]{color-scheme:dark}[data-theme=dark] .research-panel,[data-theme=dark] .research-panel .research-input,[data-theme=dark] .research-options select,[data-theme=dark] .research-skills,[data-theme=dark] .research-file-list li{background:#1d1c21;color:#f1eef5;border-color:#393640}[data-theme=dark] .research-panel header button{color:#d9d5e1}[data-theme=dark] .research-panel header button:hover{background:#302d36}[data-theme=dark] .research-options select{background:#1d1c21;color:#f1eef5}[data-theme=dark] .research-skills label{background:#302e36;color:#e7e3ec}[data-theme=dark] .research-skills p,[data-theme=dark] .research-progress span{color:#b4afba}[data-theme=dark] .research-start{background:#f3f0f7;color:#211f26}[data-theme=dark] .research-start:hover{background:#a78bfa;color:#1e1433}[data-theme=dark] .research-start:disabled{background:#8f8a96;color:#29262e}
 
-/* Graph view */
-.graph-page{display:grid;grid-template-rows:auto 1fr;height:100vh;background:#faf9fb}[data-theme=dark] .graph-page{background:#17161b}
-.graph-shell{display:grid;grid-template-rows:auto 1fr;min-height:0}
-.graph-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-bottom:1px solid #eeedf1;background:#fff}[data-theme=dark] .graph-header{background:#1d1c21;border-color:#33303a}
-.graph-title{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:700}.graph-title em{font-style:normal;font-weight:500;color:#8a8791;font-size:11px}
-.graph-back,.graph-new{display:inline-flex;align-items:center;gap:6px;border:1px solid #e2dfe8;background:#fff;color:#3b3744;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;transition:.15s}[data-theme=dark] .graph-back,[data-theme=dark] .graph-new{background:#242329;border-color:#37353d;color:#e8e6ec}
-.graph-back:hover,.graph-new:hover{background:#f4f2f8}[data-theme=dark] .graph-back:hover,[data-theme=dark] .graph-new:hover{background:#2c2a33}
-.graph-canvas{position:relative;min-height:0}
-.graph-empty{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:6px;text-align:center;color:#8a8791;padding:0 20px}.graph-empty h3{margin:6px 0 0;font-size:15px;color:#3b3744}[data-theme=dark] .graph-empty h3{color:#e8e6ec}.graph-empty p{max-width:360px;font-size:12.5px;line-height:1.5}
-.graph-legend{position:absolute;left:14px;bottom:14px;display:flex;flex-wrap:wrap;gap:10px;background:rgba(255,255,255,.85);border:1px solid #eeedf1;border-radius:10px;padding:8px 12px;font-size:11px;color:#5d5a66;backdrop-filter:blur(4px)}[data-theme=dark] .graph-legend{background:rgba(29,28,33,.85);border-color:#33303a;color:#c2bfc9}.graph-legend span{display:inline-flex;align-items:center;gap:5px}.graph-legend i{width:9px;height:9px;border-radius:50%}.graph-legend i.edge{width:16px;height:2px;border-radius:99px}.graph-legend i.edge.similar{background:#8660f1}.graph-legend i.edge.tag{background:rgba(196,136,42,.55)}
-.graph-clear{position:absolute;top:14px;right:14px;border:1px solid #e2dfe8;background:#fff;color:#3b3744;border-radius:8px;padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer}[data-theme=dark] .graph-clear{background:#242329;border-color:#37353d;color:#e8e6ec}
-.graph-retry{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);border:1px solid #e2b6b2;background:#fdf1f0;color:#b23a32;border-radius:8px;padding:8px 13px;font-size:12px;font-weight:600;cursor:pointer}
+/* Graph view styles moved to client/src/components/graph.css */
 
 /* Secure-vault and personalized note tokens. Research intentionally remains
    green in both themes; specialized notes intentionally remain blue. */
