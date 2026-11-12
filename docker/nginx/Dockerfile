@@ -23,4 +23,6 @@ RUN npm run build -w client
 FROM nginx:1.27-alpine
 
 COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY docker/nginx/public.conf /etc/nginx/conf.d/public.conf
+EXPOSE 8081
 COPY --from=client-build /app/client/dist /usr/share/nginx/html
