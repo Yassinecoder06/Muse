@@ -39,6 +39,10 @@ interface Session {
 
 type AuthedRequest = Request & { mcpIdentity?: McpIdentity; mcpToken?: string }
 
+function sameScopes(a: readonly string[], b: readonly string[]) {
+  return a.length === b.length && a.every(scope => b.includes(scope))
+}
+
 function bearer(req: Request): string | null {
   const header = req.get('authorization')
   return header?.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() || null : null
@@ -98,10 +102,24 @@ export class McpSessions {
     return { server, transport }
   }
 
+  /**
+   * A session is bound to the client that opened it and to the scopes it was
+   * built with. If the caller's current scopes differ (owner narrowed them, or
+   * another token of the same client), the session is closed and the client
+   * must start a new one with the right tool set.
+   */
   find(id: string, identity: McpIdentity): Session | undefined {
     const session = this.sessions.get(id)
-    // A session is bound to the client that opened it.
     if (!session || session.state.identity.userId !== identity.userId || session.state.identity.clientId !== identity.clientId) return undefined
+    if (!sameScopes(session.state.identity.scopes, identity.scopes)) {
+      void this.drop(id)
+      return undefined
+    }
+    if (session.state.mode !== identity.approvalMode) {
+      session.state.mode = identity.approvalMode
+      void session.server.sendToolListChanged().catch(() => {})
+    }
+    session.state.identity = identity
     session.lastSeen = Date.now()
     return session
   }

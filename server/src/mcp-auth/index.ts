@@ -98,7 +98,7 @@ async function executeApprovedApproval(id: string) {
   checked(
     await db
       .from('mcp_approvals')
-      .update({ status: 'executed', result, executed_at: new Date().toISOString() })
+      .update({ status: result.ok ? 'executed' : 'failed', result, executed_at: new Date().toISOString() })
       .eq('id', id)
       .eq('status', 'approved')
   )

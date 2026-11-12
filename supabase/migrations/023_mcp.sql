@@ -30,7 +30,7 @@ create table if not exists public.mcp_auth_codes (
 create table if not exists public.mcp_approvals (
   id uuid primary key default gen_random_uuid(), user_id uuid not null references auth.users(id) on delete cascade,
   client_id text not null, tool text not null, target text, args jsonb not null default '{}'::jsonb,
-  summary text not null, status text not null default 'pending' check (status in ('pending','approved','denied','executed','expired')),
+  summary text not null, status text not null default 'pending' check (status in ('pending','approved','denied','executed','failed','expired')),
   result jsonb, expires_at timestamptz not null default now() + interval '60 minutes', decided_at timestamptz,
   execution_started_at timestamptz, executed_at timestamptz,
   created_at timestamptz not null default now()
