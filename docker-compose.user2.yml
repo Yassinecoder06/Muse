@@ -117,6 +117,26 @@ services:
     volumes:
       - qdrant-data-user2:/qdrant/storage
 
+  cloudflared:
+    image: cloudflare/cloudflared:2026.11.0
+    restart: unless-stopped
+    profiles: ["named-tunnel"]
+    env_file: .env.user2
+    depends_on:
+      nginx: { condition: service_started }
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN}"]
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.11.0
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    env_file: .env.user2
+    depends_on:
+      nginx: { condition: service_started }
+    command: ["tunnel", "--no-autoupdate", "--url", "http://nginx:8081", "--metrics", "0.0.0.0:2000"]
+    ports:
+      - "127.0.0.1:2002:2000"
+
 volumes:
   postgres-data-user2:
   qdrant-data-user2:

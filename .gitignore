@@ -10,4 +10,5 @@ docker/pgsodium_root*.key
 backup/
 /music*/
 # Local helper scripts (build/install on phone, diagnostics, tests)
-scripts/
+scripts/*
+!scripts/test_mcp*.sh

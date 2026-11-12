@@ -24,6 +24,10 @@ const schema = z.object({
   WEBAUTHN_ORIGINS: z.string().optional(),
   MUSE_SESSION_SECRET: z.string().min(32).default('muse-development-session-secret-change-before-production'),
   VAULT_LEGACY_MIGRATION: z.enum(['enabled', 'disabled']).default('enabled'),
+  // Public HTTPS origin of muse-mcp (OAuth issuer, /mcp resource, approve links), e.g.
+  // https://muse-mcp.yassinejemmali.me. Separate from PUBLIC_URL so the local web app,
+  // its cookies and passkeys keep their own origin. Defaults to PUBLIC_URL.
+  MCP_PUBLIC_URL: z.string().url().optional(),
   // muse-mcp: extra Host headers / browser origins accepted on /mcp besides PUBLIC_URL (comma separated).
   MCP_ALLOWED_HOSTS: z.string().default('localhost:3002,127.0.0.1:3002,server:3002,localhost:8080'),
   MCP_ALLOWED_ORIGINS: z.string().default('')
@@ -33,6 +37,9 @@ export const env = schema.parse(process.env)
 if (process.env.NODE_ENV === 'production' && env.MUSE_SESSION_SECRET === 'muse-development-session-secret-change-before-production') {
   throw new Error('MUSE_SESSION_SECRET must be set to a unique value in production.')
 }
+
+/** Base URL MCP clients see, without a trailing slash. */
+export const mcpPublicUrl = (env.MCP_PUBLIC_URL || env.PUBLIC_URL).replace(/\/+$/, '')
 
 export const webauthn = {
   rpID: env.WEBAUTHN_RP_ID || new URL(env.PUBLIC_URL).hostname,
