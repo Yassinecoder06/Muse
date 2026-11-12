@@ -115,14 +115,15 @@ test('snippet builders generate valid instructions and configurations', () => {
   // Claude Desktop JSON
   const desktopSnippet = buildClaudeDesktopSnippet(SAMPLE_URL, 'token_xyz')
   const desktopParsed = JSON.parse(desktopSnippet)
-  assert.equal(desktopParsed.mcpServers.muse.url, SAMPLE_URL)
-  assert.equal(desktopParsed.mcpServers.muse.headers.Authorization, 'Bearer token_xyz')
+  assert.equal(desktopParsed.mcpServers.muse.command, 'npx')
+  assert.deepEqual(desktopParsed.mcpServers.muse.args, ['-y', 'mcp-remote', SAMPLE_URL, '--header', 'Authorization:${MUSE_AUTH}'])
+  assert.equal(desktopParsed.mcpServers.muse.env.MUSE_AUTH, 'Bearer token_xyz')
 
   // Cursor JSON
   const cursorSnippet = buildCursorSnippet(SAMPLE_URL, 'token_xyz')
   const cursorParsed = JSON.parse(cursorSnippet)
-  assert.equal(cursorParsed.url, SAMPLE_URL)
-  assert.equal(cursorParsed.headers.Authorization, 'Bearer token_xyz')
+  assert.equal(cursorParsed.mcpServers.muse.url, SAMPLE_URL)
+  assert.equal(cursorParsed.mcpServers.muse.headers.Authorization, 'Bearer token_xyz')
 
   // Gemini CLI JSON
   const geminiSnippet = buildGeminiCliSnippet(SAMPLE_URL, 'token_xyz')

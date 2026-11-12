@@ -106,7 +106,7 @@ export interface McpApprovalRow {
   client_id: string
   tool: string
   summary: string
-  status: 'pending' | 'approved' | 'denied'
+  status: 'pending' | 'approved' | 'denied' | 'executed' | 'failed' | 'expired'
   args: Record<string, unknown>
   created_at: string
   expires_at: string
@@ -295,13 +295,14 @@ export function buildClaudeCodeSnippet(mcpUrl: string, pat?: string): string {
 }
 
 export function buildClaudeDesktopSnippet(mcpUrl: string, pat = 'muse_mcp_YOUR_TOKEN'): string {
+  // Claude Desktop's config file launches local commands; mcp-remote bridges to
+  // the remote server. (Pro/Max plans can instead add the URL under Connectors.)
   const config = {
     mcpServers: {
       muse: {
-        url: mcpUrl,
-        headers: {
-          Authorization: `Bearer ${pat}`
-        }
+        command: 'npx',
+        args: ['-y', 'mcp-remote', mcpUrl, '--header', 'Authorization:${MUSE_AUTH}'],
+        env: { MUSE_AUTH: `Bearer ${pat}` }
       }
     }
   }
@@ -309,13 +310,8 @@ export function buildClaudeDesktopSnippet(mcpUrl: string, pat = 'muse_mcp_YOUR_T
 }
 
 export function buildCursorSnippet(mcpUrl: string, pat = 'muse_mcp_YOUR_TOKEN'): string {
-  const config = {
-    name: 'muse',
-    url: mcpUrl,
-    headers: {
-      Authorization: `Bearer ${pat}`
-    }
-  }
+  // ~/.cursor/mcp.json
+  const config = { mcpServers: { muse: { url: mcpUrl, headers: { Authorization: `Bearer ${pat}` } } } }
   return JSON.stringify(config, null, 2)
 }
 
