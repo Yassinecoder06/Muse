@@ -119,38 +119,33 @@ claude mcp add --transport http -H "Authorization: Bearer muse_mcp_YOUR_PAT" mus
 ```
 
 ### Claude Desktop
-Edit your `claude_desktop_config.json`:
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+On Pro/Max plans the simplest route is **Settings → Connectors → Add custom connector** with the URL `https://muse-mcp.yassinejemmali.me/mcp` (OAuth, like claude.ai).
 
-Add the server definition:
+To use a personal access token instead, edit `claude_desktop_config.json` (macOS `~/Library/Application Support/Claude/`, Linux `~/.config/Claude/`, Windows `%APPDATA%\Claude\`). The config file runs local commands, so `mcp-remote` bridges to the remote server:
 ```json
 {
   "mcpServers": {
     "muse": {
-      "url": "https://muse-mcp.yassinejemmali.me/mcp",
-      "headers": {
-        "Authorization": "Bearer muse_mcp_YOUR_PAT"
-      }
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://muse-mcp.yassinejemmali.me/mcp", "--header", "Authorization:${MUSE_AUTH}"],
+      "env": { "MUSE_AUTH": "Bearer muse_mcp_YOUR_PAT" }
     }
   }
 }
 ```
 
 ### Cursor
-1. Go to **Cursor Settings** &rarr; **Features** &rarr; **MCP**.
-2. Click **Add New MCP Server**.
-3. Set:
-   - **Name**: `muse`
-   - **Type**: `command` (via `@modelcontextprotocol/inspector` proxy) or `sse`/`http`
-   - **URL**: `https://muse-mcp.yassinejemmali.me/mcp`
-   - **Headers**:
-     ```json
-     {
-       "Authorization": "Bearer muse_mcp_YOUR_PAT"
-     }
-     ```
+Add to `~/.cursor/mcp.json` (or `.cursor/mcp.json` in a project):
+```json
+{
+  "mcpServers": {
+    "muse": {
+      "url": "https://muse-mcp.yassinejemmali.me/mcp",
+      "headers": { "Authorization": "Bearer muse_mcp_YOUR_PAT" }
+    }
+  }
+}
+```
 
 ### Gemini CLI
 In your `settings.json`:
