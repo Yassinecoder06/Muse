@@ -18,6 +18,7 @@ import { router } from './routes/index.js'
 import { startAiWorker } from './services/ai-job.service.js'
 import { requireAuth } from './middleware/auth.js'
 import { owner } from './services/owner.service.js'
+import { createMuseMcp } from './mcp/index.js'
 const app = express()
 const uploadsDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '../uploads')
 const imageTypes = new Map([
@@ -34,6 +35,8 @@ app.use(cors({ origin: allowedOrigins, credentials: true })); app.use(cookiePars
 // clients spoof X-Forwarded-For and dodge the IP-keyed rate limits.
 app.set('trust proxy', 1)
 app.get('/health', (_req, res) => res.json({ ok: true }))
+// muse-mcp: MCP clients (Claude, ChatGPT, Cursor, Gemini) authenticate with their own tokens.
+app.use('/mcp', createMuseMcp().router)
 app.post('/api/uploads', requireAuth, express.raw({ type: 'image/*', limit: '5mb' }), async (req, res, next) => {
   try {
     const extension = imageTypes.get(req.headers['content-type']?.split(';')[0].toLowerCase() || '')

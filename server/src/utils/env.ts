@@ -23,7 +23,10 @@ const schema = z.object({
   WEBAUTHN_RP_NAME: z.string().min(1).default('Muse'),
   WEBAUTHN_ORIGINS: z.string().optional(),
   MUSE_SESSION_SECRET: z.string().min(32).default('muse-development-session-secret-change-before-production'),
-  VAULT_LEGACY_MIGRATION: z.enum(['enabled', 'disabled']).default('enabled')
+  VAULT_LEGACY_MIGRATION: z.enum(['enabled', 'disabled']).default('enabled'),
+  // muse-mcp: extra Host headers / browser origins accepted on /mcp besides PUBLIC_URL (comma separated).
+  MCP_ALLOWED_HOSTS: z.string().default('localhost:3002,127.0.0.1:3002,server:3002,localhost:8080'),
+  MCP_ALLOWED_ORIGINS: z.string().default('')
 })
 export const env = schema.parse(process.env)
 
