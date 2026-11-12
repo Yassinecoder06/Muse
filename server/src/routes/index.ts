@@ -49,7 +49,7 @@ router.delete('/auth/passkeys/:id', vault.revokePasskey)
 
 // Graph & Notes
 router.get('/analytics/activity', analytics.activity)
-router.get('/graph', async (req, res, next) => { try { res.json(await graph(req.userId!)) } catch (error) { next(error) } })
+router.get('/graph', async (req, res, next) => { try { const raw = req.query.minSimilarity; const minSimilarity = raw !== undefined ? Number(raw) : undefined; res.json(await graph(req.userId!, minSimilarity)) } catch (error) { next(error) } })
 router.delete('/notes/bulk', notes.bulkDeleteNotes).post('/notes/bulk-restore', notes.bulkRestoreNotes).post('/notes/bulk-trash', notes.bulkTrashNotes)
 router.delete('/notes/trash', notes.emptyTrash)
 router.get('/notes/search', notes.searchNotes)

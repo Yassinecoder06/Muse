@@ -146,7 +146,17 @@ async function findSecureTask(id: string) {
 
 async function secureGraph(): Promise<GraphData> {
   const notes = await listSecureNotes('all')
-  const nodes: GraphData['nodes'] = notes.map(note => ({ id: note.id, title: note.title, kind: note.kind, tags: note.tags, updated_at: note.updated_at }))
+  const nodes: GraphData['nodes'] = notes.map(note => ({
+    id: note.id,
+    title: note.title,
+    kind: note.kind,
+    tags: note.tags,
+    updated_at: note.updated_at,
+    created_at: note.created_at,
+    favorite: note.favorite,
+    archived: note.archived,
+    word_count: note.content ? note.content.replace(/<[^>]*>/g, ' ').trim().split(/\s+/).filter(Boolean).length : 0
+  }))
   const edges: GraphData['edges'] = []
   for (let left = 0; left < notes.length; left += 1) {
     for (let right = left + 1; right < notes.length; right += 1) {
@@ -213,6 +223,7 @@ async function runSecureAi(input: { action: 'summary' | 'tasks' | 'title' | 'tag
 
 export const api = {
   listNotes: (scope = 'all') => activeVaultUser() ? listSecureNotes(scope) : request<Note[]>(`/notes?scope=${scope}`),
+  searchNotes: (query: string) => request<Note[]>(`/notes/search?q=${encodeURIComponent(query)}`),
   getNote: (id: string) => activeVaultUser() ? secureNote(id).then(value => value.note) : request<Note>(`/notes/${id}`),
   createNote: (data: NoteInput) => activeVaultUser() ? createSecureNote(data) : request<Note>('/notes', { method: 'POST', body: JSON.stringify(data) }),
   updateNote: (id: string, data: NoteInput) => activeVaultUser() ? updateSecureNote(id, data) : request<Note>(`/notes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
@@ -301,7 +312,7 @@ export const api = {
     return request<AiUsage>(`/ai/usage${qs ? `?${qs}` : ''}`)
   },
   getAiActive: () => request<{ running: boolean; type?: string }>('/ai/active'),
-  getGraph: () => activeVaultUser() ? secureGraph() : request<GraphData>('/graph'),
+  getGraph: (minSimilarity?: number) => activeVaultUser() ? secureGraph() : request<GraphData>(typeof minSimilarity === 'number' && !isNaN(minSimilarity) ? `/graph?minSimilarity=${minSimilarity}` : '/graph'),
 
   // Calendar
   listEvents: (from?: string, to?: string) => {

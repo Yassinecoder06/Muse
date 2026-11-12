@@ -2,7 +2,17 @@ import { qdrant } from '../qdrant/client.js'
 import { vectors } from './vector.service.js'
 import { notes } from './note.repository.js'
 
-export type GraphNode = { id: string; title: string; kind: string; tags: string[]; updated_at: string }
+export type GraphNode = {
+  id: string
+  title: string
+  kind: string
+  tags: string[]
+  updated_at: string
+  created_at: string
+  favorite: boolean
+  archived: boolean
+  word_count: number
+}
 export type GraphEdge = { source: string; target: string; strength: number; reason: 'similar' | 'tag' | 'both' }
 export type GraphData = { nodes: GraphNode[]; edges: GraphEdge[] }
 
@@ -43,12 +53,30 @@ async function userVectors(userId: string) {
   return found
 }
 
-export async function graph(userId: string): Promise<GraphData> {
-  const cached = cache.get(userId)
+export async function graph(userId: string, minSimilarity?: number): Promise<GraphData> {
+  // Clamped and rounded so arbitrary query values cannot grow the cache.
+  const requested = typeof minSimilarity === 'number' && Number.isFinite(minSimilarity) ? minSimilarity : SIMILARITY_THRESHOLD
+  const threshold = Math.round(Math.min(0.99, Math.max(0.55, requested)) * 100) / 100
+  const cacheKey = `${userId}:${threshold}`
+  const cached = cache.get(cacheKey)
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.data
   const list = await notes.list(userId, 'all')
   const selected = list.slice(0, MAX_NODES)
-  const nodes: GraphNode[] = selected.map(note => ({ id: note.id, title: note.title || 'Untitled note', kind: note.kind, tags: note.tags, updated_at: note.updated_at }))
+  const nodes: GraphNode[] = selected.map(note => {
+    const plain = note.content ? note.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : ''
+    const word_count = plain ? plain.split(/\s+/).filter(Boolean).length : 0
+    return {
+      id: note.id,
+      title: note.title || 'Untitled note',
+      kind: note.kind,
+      tags: note.tags || [],
+      updated_at: note.updated_at,
+      created_at: note.created_at || note.updated_at,
+      favorite: Boolean(note.favorite),
+      archived: Boolean(note.archived),
+      word_count
+    }
+  })
   const edges = new Map<string, GraphEdge>()
   if (nodes.length > 1) {
     const vectors = await userVectors(userId)
@@ -62,7 +90,7 @@ export async function graph(userId: string): Promise<GraphData> {
         const b = vectors.get(nodes[j].id)
         if (!b) continue
         const score = cosine(a, b)
-        if (score >= SIMILARITY_THRESHOLD) candidates.push({ other: nodes[j], score })
+        if (score >= threshold) candidates.push({ other: nodes[j], score })
       }
       candidates.sort((x, y) => y.score - x.score)
       for (const { other, score } of candidates.slice(0, MAX_SIMILAR_EDGES_PER_NODE)) {
@@ -85,6 +113,6 @@ export async function graph(userId: string): Promise<GraphData> {
     }
   }
   const data = { nodes, edges: [...edges.values()] }
-  cache.set(userId, { at: Date.now(), data })
+  cache.set(cacheKey, { at: Date.now(), data })
   return data
 }

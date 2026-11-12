@@ -1,4 +1,4 @@
-import { ArrowLeft, Bold, Calendar, CalendarCheck, Check, Code2, ExternalLink, FileText, Heading1, Heading2, Image, Italic, List, ListChecks, Mic, MicOff, MoreHorizontal, Plus, Quote, Sparkles, Square, Star, Trash2, Volume2, WandSparkles, X } from 'lucide-react'
+import { ArrowLeft, Bold, Calendar, CalendarCheck, Check, Code2, ExternalLink, FileText, Heading1, Heading2, Image, Italic, List, ListChecks, Mic, MicOff, MoreHorizontal, Plus, Quote, Sparkles, Square, Star, Trash2, Volume2, WandSparkles, Waypoints, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { marked } from 'marked'
@@ -18,7 +18,7 @@ const rewriteModes = ['improve', 'professional', 'friendly', 'shorter', 'longer'
 const allowedTags = new Set(['A', 'B', 'BR', 'BLOCKQUOTE', 'CODE', 'DEL', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'I', 'IMG', 'LI', 'OL', 'P', 'PRE', 'SECTION', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD', 'TR', 'UL'])
 const reportClasses = new Set(['muse-report', 'report-meta', 'research-key-findings', 'report-dashboard', 'report-kpi-grid', 'report-kpi', 'report-chart', 'report-chart-row', 'report-data-gap', ...Array.from({ length: 10 }, (_, index) => `report-fill-${index + 1}`)])
 
-function prepareContent(raw: string): { html: string; extractedTitle?: string } {
+export function prepareContent(raw: string): { html: string; extractedTitle?: string } {
   if (!raw) return { html: '' }
 
   let extractedTitle: string | undefined
@@ -58,7 +58,7 @@ function inert(html: string) {
   return template
 }
 
-function sanitizeHtml(value: string) {
+export function sanitizeHtml(value: string) {
   const container = inert(DOMPurify.sanitize(value))
   for (const element of [...container.content.querySelectorAll('*')]) {
       if (!allowedTags.has(element.tagName)) {
@@ -521,6 +521,13 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
       <button className="back-button" onClick={() => void finishNote()}><ArrowLeft size={18}/> All notes</button>
       <div className="editor-status">{working ? <><i className="pulse"/> Muse is thinking</> : <><Check size={14}/> Saved</>}</div>
       <button
+        className="header-icon"
+        title="Show in graph"
+        onClick={() => navigate('/graph?focus=' + note.id)}
+      >
+        <Waypoints size={18}/>
+      </button>
+      <button
         className={`header-icon favorite-toggle-btn ${note.favorite ? 'is-favorite' : ''}`}
         title={note.favorite ? 'Remove from favorites' : 'Add to favorites'}
         onClick={() => void save({ favorite: !note.favorite })}
@@ -531,7 +538,7 @@ export function Editor({ note, onBack, save, refresh, trash, restore, permanentl
           fill={note.favorite ? 'currentColor' : 'none'}
         />
       </button>
-      <div className="note-menu-wrap"><button className="header-icon" title="Note actions" onClick={() => setMenu(!menu)}><MoreHorizontal size={19}/></button>{menu && <div className="note-menu">{note.deleted_at ? <><button onClick={() => void manage(restore, 'Note restored.')}>Restore note</button><button className="danger" onClick={() => { setMenu(false); setDeletePermanentlyConfirm(true) }}>Delete permanently</button></> : <><button onClick={() => void manage(async () => { await save({ archived: !note.archived }) }, note.archived ? 'Note unarchived.' : 'Note archived.')}>{note.archived ? 'Unarchive note' : 'Archive note'}</button><button className="danger" onClick={() => void manage(trash, 'Note moved to trash.')}>Move to trash</button></>}</div>}</div>
+      <div className="note-menu-wrap"><button className="header-icon" title="Note actions" onClick={() => setMenu(!menu)}><MoreHorizontal size={19}/></button>{menu && <div className="note-menu">{note.deleted_at ? <><button onClick={() => void manage(restore, 'Note restored.')}>Restore note</button><button className="danger" onClick={() => { setMenu(false); setDeletePermanentlyConfirm(true) }}>Delete permanently</button></> : <><button onClick={() => { setMenu(false); navigate('/graph?focus=' + note.id) }}>Show in graph</button><button onClick={() => void manage(async () => { await save({ archived: !note.archived }) }, note.archived ? 'Note unarchived.' : 'Note archived.')}>{note.archived ? 'Unarchive note' : 'Archive note'}</button><button className="danger" onClick={() => void manage(trash, 'Note moved to trash.')}>Move to trash</button></>}</div>}</div>
     </header>
     <div className={`editor-canvas${isResearch ? ' research-canvas' : ''}${isSpecialized ? ` specialized-canvas specialized-color-${specializedNote?.color || (isResearch ? 'emerald' : 'blue')}` : ''}`}>
       {isResearch && <aside className="research-toc" aria-label="Research report table of contents"><strong>In this report</strong><nav>{researchHeadings.map((heading, index) => <button key={`${heading}-${index}`} onClick={() => scrollToResearchSection(index)}>{heading}</button>)}</nav></aside>}
