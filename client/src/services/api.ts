@@ -8,7 +8,7 @@ import { activeVaultUser, decryptNote, encryptNote, encryptRecord, newSecureNote
 import type { VaultRecord, SecureNote } from './vault'
 import type { PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser'
 
-const root = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '/api'
+export const root = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || '/api'
 function apiOrigin() { return /^https?:\/\//.test(root) ? new URL(root).origin : window.location.origin }
 export function resolveApiImageSrc(src: string) { return src.startsWith('/api/images/') ? `${apiOrigin()}${src}` : src }
 export function relativizeApiImageSrc(src: string) {
@@ -28,7 +28,7 @@ async function failure(response: Response, fallback: string): Promise<never> {
   throw new Error(body.error || fallback)
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const userName = localStorage.getItem('muse-user-name') || 'Local User'
   const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }))
   const response = await fetch(`${root}${path}`, {
