@@ -146,6 +146,22 @@ services:
     restart: unless-stopped
     ports: ["127.0.0.1:6333:6333", "127.0.0.1:6334:6334"]
     volumes: ["qdrant-data:/qdrant/storage"]
+  cloudflared:
+    image: cloudflare/cloudflared:2026.11.0
+    restart: unless-stopped
+    profiles: ["named-tunnel"]
+    depends_on:
+      nginx: { condition: service_started }
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN}"]
+  tunnel:
+    image: cloudflare/cloudflared:2026.11.0
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    depends_on:
+      nginx: { condition: service_started }
+    command: ["tunnel", "--no-autoupdate", "--url", "http://nginx:8081", "--metrics", "0.0.0.0:2000"]
+    ports:
+      - "127.0.0.1:2000:2000"
 volumes:
   postgres-data:
   qdrant-data:
