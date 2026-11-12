@@ -54,7 +54,9 @@ async function userVectors(userId: string) {
 }
 
 export async function graph(userId: string, minSimilarity?: number): Promise<GraphData> {
-  const threshold = Math.max(0.55, typeof minSimilarity === 'number' && !isNaN(minSimilarity) ? minSimilarity : SIMILARITY_THRESHOLD)
+  // Clamped and rounded so arbitrary query values cannot grow the cache.
+  const requested = typeof minSimilarity === 'number' && Number.isFinite(minSimilarity) ? minSimilarity : SIMILARITY_THRESHOLD
+  const threshold = Math.round(Math.min(0.99, Math.max(0.55, requested)) * 100) / 100
   const cacheKey = `${userId}:${threshold}`
   const cached = cache.get(cacheKey)
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.data
