@@ -469,17 +469,6 @@ export const api = {
       assistantMessage: ChatMessage
       sessionTitle?: string
     }>(`/chat/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify(data) }),
-  directChatMessage: (data: { message: string; sessionId?: string; model?: string; images?: Array<{ mimeType: string; data?: string; url?: string }> }) =>
-    request<{
-      reply: string
-      response: string
-      sessionId: string
-      sessionTitle?: string
-      actionCards?: any[]
-      toolCalls?: any[]
-      userMessage?: ChatMessage
-      assistantMessage: ChatMessage
-    }>('/ai/chat', { method: 'POST', body: JSON.stringify(data) }),
   updateChatMessage: (id: string, data: { content: string }) =>
     request<ChatMessage>(`/chat/messages/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteChatMessage: (id: string) => request<void>(`/chat/messages/${id}`, { method: 'DELETE' }),
@@ -534,15 +523,6 @@ export const api = {
     return response.blob()
   },
 
-  // Remote Mobile Companion
-  getNetworkInfo: () => request<NetworkInfo>('/remote/network-info'),
-  createPairingSession: (serverUrl?: string) =>
-    request<PairingSession>('/remote/pairing/create', { method: 'POST', body: JSON.stringify({ serverUrl }) }),
-  checkPairingStatus: (token: string) =>
-    request<{ claimed: boolean; device?: { name: string; model: string; platform: string } }>(`/remote/pairing/status?token=${encodeURIComponent(token)}`),
-  listRemoteDevices: () => request<RemoteDevice[]>('/remote/devices'),
-  revokeRemoteDevice: (id: string) => request<{ success: boolean }>(`/remote/devices/${id}`, { method: 'DELETE' }),
-
   // Specialized Templates
   listTemplates: () => request<CustomTemplate[]>('/templates'),
   createTemplate: (data: Partial<CustomTemplate>) =>
@@ -550,44 +530,6 @@ export const api = {
   updateTemplate: (id: string, data: Partial<CustomTemplate>) =>
     request<CustomTemplate>(`/templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteTemplate: (id: string) => request<void>(`/templates/${id}`, { method: 'DELETE' }),
-
-  // Music & Downloader
-  listMusicSongs: () => request<{ songs: Array<{ filename: string; title: string; artist?: string; size: number; mtime: number; url: string; coverUrl?: string }> }>('/music/songs'),
-  searchMusicCovers: (query: string) =>
-    request<{ candidates: Array<{ trackId: number; title: string; artist: string; album: string; coverUrl: string; thumbnailUrl: string; releaseDate?: string }> }>(
-      `/music/cover/search?query=${encodeURIComponent(query)}`
-    ),
-  saveMusicCover: (filename: string, coverUrl: string) =>
-    request<{ success: boolean; message: string; coverUrl: string }>(
-      `/music/cover/${encodeURIComponent(filename)}`,
-      { method: 'POST', body: JSON.stringify({ coverUrl }) }
-    ),
-  downloadMusicBatch: (items: Array<{ query: string; artist?: string; title?: string; filename?: string }>) =>
-    request<{ tasks: any[] }>('/music/download', { method: 'POST', body: JSON.stringify({ items }) }),
-  getMusicTasks: () => request<{ tasks: any[] }>('/music/tasks'),
-  deleteMusicTask: (id: string) => request<{ success: boolean }>(`/music/tasks/${id}`, { method: 'DELETE' }),
-  deleteMusicSong: (filename: string) => request<{ success: boolean; message: string }>(`/music/songs/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
-  deleteMusicSongsBatch: (filenames: string[]) =>
-    request<{ success: boolean; deletedCount: number; message: string }>('/music/songs/batch-delete', {
-      method: 'POST',
-      body: JSON.stringify({ filenames })
-    }),
-  getMusicAnalytics: () => request<{
-    totalSongs: number
-    totalBytes: number
-    totalMb: number
-    topArtists: Array<{ name: string; count: number }>
-    recentSongs: Array<{ filename: string; title: string; artist?: string; size: number; mtime: number; url: string }>
-  }>('/music/analytics'),
-
-  // Music Playlists
-  listMusicPlaylists: () => request<{ playlists: Array<{ id: string; name: string; description?: string; tracks: any[]; created_at: string; updated_at: string }> }>('/music/playlists'),
-  createMusicPlaylist: (data: { name: string; description?: string; tracks?: any[] }) =>
-    request<any>('/music/playlists', { method: 'POST', body: JSON.stringify(data) }),
-  getMusicPlaylist: (id: string) => request<any>(`/music/playlists/${id}`),
-  updateMusicPlaylist: (id: string, data: { name?: string; description?: string; tracks?: any[] }) =>
-    request<any>(`/music/playlists/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteMusicPlaylist: (id: string) => request<{ success: boolean }>(`/music/playlists/${id}`, { method: 'DELETE' })
 }
 
 export type AiCapability = 'chat' | 'embedding' | 'tts' | 'stt'
@@ -635,30 +577,6 @@ export type VaultStatus = { userId: string; email: string | null; configured: bo
 export type Passkey = { id: string; name: string; device_type: string | null; backed_up: boolean; created_at: string; last_used_at: string | null; revoked_at: string | null }
 export type LegacyVaultExport = { notes: Note[]; documents: Record<string, unknown>[]; artifacts: Record<string, unknown>[]; reports: Record<string, unknown>[]; attachments: Record<string, unknown>[] }
 
-export type NetworkInfo = {
-  localIp: string
-  tailscaleIp: string | null
-  port: number
-  localUrl: string
-  tailscaleUrl: string | null
-  currentOriginUrl: string
-  hostname: string
-}
 
-export type PairingSession = {
-  token: string
-  pinCode: string
-  serverUrl: string
-  expiresAt: string
-  qrData: string
-}
 
-export type RemoteDevice = {
-  id: string
-  device_name: string
-  device_model?: string | null
-  platform: 'android' | 'ios'
-  last_seen_at: string
-  created_at: string
-}
 

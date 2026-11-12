@@ -30,7 +30,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { api } from '../services/api'
 import { chatModel } from '../services/settings'
 import { robotAudio, loadVoiceSettings } from '../services/robot-audio.service'
-import { robotMusic } from '../services/robot-music.service'
 import { tts } from '../services/tts.service'
 import { stt } from '../services/stt.service'
 import { FormattedMessage } from './FormattedMessage'
@@ -345,27 +344,6 @@ export function AssistantWorkspace({
         setTimeout(() => {
           handleSpeakMessage(res.assistantMessage.id, res.assistantMessage.content)
         }, 150)
-      }
-
-      // If action_cards contains a music card, play it
-      const musicCard = res.assistantMessage.action_cards?.find((c: any) => c.type === 'music' || c.data?.type === 'music')
-      if (musicCard) {
-        const d = (musicCard as any).data || musicCard
-        void robotMusic.playSong({
-          title: d.title,
-          filename: d.filename,
-          url: d.url
-        })
-      }
-
-      // If action_cards contains a playlist card, play it
-      const playlistCard = res.assistantMessage.action_cards?.find((c: any) => c.type === 'playlist' || c.data?.type === 'playlist')
-      if (playlistCard) {
-        const d = (playlistCard as any).data || playlistCard
-        const tracks = Array.isArray(d.tracks) ? d.tracks : (playlistCard as any).tracks || []
-        if (tracks.length > 0) {
-          void robotMusic.playPlaylist(d.name || d.title || (playlistCard as any).title, tracks, 0)
-        }
       }
 
       // Refresh memory count if tool saved or deleted memory

@@ -9,19 +9,17 @@ import * as tasks from '../controllers/tasks.controller.js'
 import * as detection from '../controllers/detection.controller.js'
 import * as chat from '../controllers/chat.controller.js'
 import * as voice from '../controllers/voice.controller.js'
-import * as remote from '../controllers/remote.controller.js'
 import * as templates from '../controllers/templates.controller.js'
 import * as providers from '../controllers/ai-providers.controller.js'
 import * as ownerAuth from '../controllers/owner.controller.js'
 import * as analytics from '../controllers/analytics.controller.js'
-import * as music from '../controllers/music.controller.js'
 import { requireAuth } from '../middleware/auth.js'
-import { apiLimiter, loginLimiter, pairingLimiter } from '../middleware/rate-limit.js'
+import { apiLimiter, loginLimiter } from '../middleware/rate-limit.js'
 import { graph } from '../services/graph.service.js'
 
 export const router = Router()
 
-// Public: owner unlock, passkey sign-in, logout, claiming a pairing code, and music streaming
+// Public: owner unlock, passkey sign-in, logout
 router.get('/auth/owner', ownerAuth.ownerStatus)
 router.post('/auth/owner/setup', loginLimiter, ownerAuth.setupOwner)
 router.post('/auth/owner/login', loginLimiter, ownerAuth.loginOwner)
@@ -31,12 +29,6 @@ router.post('/auth/owner/request-reset', loginLimiter, ownerAuth.requestResetCod
 router.post('/auth/passkeys/authentication/options', loginLimiter, vault.authenticationOptions)
 router.post('/auth/passkeys/authentication/verify', loginLimiter, vault.verifyAuthentication)
 router.delete('/auth/session', vault.logout)
-router.post('/remote/pairing/claim', pairingLimiter, remote.claimPairingSession)
-router.get('/music/stream/:filename', music.streamSong)
-router.get('/music/songs', music.listSongs)
-router.get('/music/cover/search', music.searchCoverArt)
-router.get('/music/cover/:filename', music.getCoverArt)
-router.post('/music/cover/:filename', music.saveCoverArt)
 
 router.use(requireAuth)
 router.use(apiLimiter)
@@ -108,7 +100,6 @@ router.delete('/chat/sessions/:id', chat.deleteSession)
 router.post('/chat/sessions/:id/messages', chat.sendMessage)
 router.patch('/chat/messages/:id', chat.updateMessage)
 router.delete('/chat/messages/:id', chat.deleteMessage)
-router.post('/ai/chat', chat.directChat)
 router.post('/agent/confirm', chat.confirmAgentAction)
 
 // Voice Transcribe Fallback & Neural Speech Synthesis
@@ -120,34 +111,10 @@ router.get('/chat/memories', chat.listMemories)
 router.post('/chat/memories', chat.createMemory)
 router.delete('/chat/memories/:id', chat.deleteMemory)
 
-// Remote Mobile Companion
-router.get('/remote/network-info', remote.getNetworkInfo)
-router.post('/remote/pairing/create', remote.createPairingSession)
-router.get('/remote/pairing/status', remote.checkPairingStatus)
-router.get('/remote/devices', remote.listDevices)
-router.delete('/remote/devices/:id', remote.revokeDevice)
-
 // Specialized Templates
 router.get('/templates', templates.listTemplates)
 router.get('/templates/:id', templates.getTemplate)
 router.post('/templates', templates.createTemplate)
 router.put('/templates/:id', templates.updateTemplate)
 router.delete('/templates/:id', templates.deleteTemplate)
-
-// Music Downloader & Management
-router.post('/music/download', music.downloadBatch)
-router.get('/music/tasks', music.getTasks)
-router.get('/music/tasks/:id', music.getTask)
-router.delete('/music/tasks/:id', music.deleteTask)
-router.get('/music/analytics', music.getAnalytics)
-router.delete('/music/songs/:filename', music.deleteSong)
-router.post('/music/songs/batch-delete', music.deleteSongsBatch)
-
-// Music Playlists
-router.get('/music/playlists', music.listPlaylists)
-router.post('/music/playlists', music.createPlaylist)
-router.get('/music/playlists/:id', music.getPlaylist)
-router.put('/music/playlists/:id', music.updatePlaylist)
-router.delete('/music/playlists/:id', music.deletePlaylist)
-
 

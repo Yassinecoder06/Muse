@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Loader2, Maximize2, Mic, MicOff, Music, Pencil, Plus, RotateCcw, Sparkles, Square, Trash2, Volume2, VolumeX, X, ImagePlus } from 'lucide-react'
+import { ArrowUp, Calendar, CheckSquare, FileText, Lightbulb, Loader2, Maximize2, Mic, MicOff, Pencil, Plus, RotateCcw, Sparkles, Square, Trash2, Volume2, VolumeX, X, ImagePlus } from 'lucide-react'
 import { BipFigure, type BipMood } from './BipFigure'
 import { FormattedMessage } from '../FormattedMessage'
 import { ActionCards } from '../ActionCards'
 import { api } from '../../services/api'
 import { chatModel } from '../../services/settings'
 import { robotAudio, loadVoiceSettings, saveVoiceSettings } from '../../services/robot-audio.service'
-import { robotMusic, type MusicPlayerState } from '../../services/robot-music.service'
 import { tts } from '../../services/tts.service'
 import { stt } from '../../services/stt.service'
 import { useQueryClient } from '@tanstack/react-query'
@@ -110,7 +109,6 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
   const shakeHistoryRef = useRef<Array<{ x: number; y: number; time: number }>>([])
   const dizzyTimeoutRef = useRef<number | null>(null)
   const lastShakeSoundRef = useRef<number>(0)
-  const [musicState, setMusicState] = useState<MusicPlayerState>(() => robotMusic.getState())
   const [sessionId, setSessionId] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem('muse-bip-session-id')
@@ -234,7 +232,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       // Reset sleep state on movement
       if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current)
       idleTimerRef.current = window.setTimeout(() => {
-        if (!isOpen && !loading && mood !== 'dizzy' && mood !== 'singing') {
+        if (!isOpen && !loading && mood !== 'dizzy') {
           setMood('sleeping')
         }
       }, 75000) // Sleep after 75s of idle
@@ -276,22 +274,6 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     }
   }, [])
 
-  // Sync Bip with music playback
-  useEffect(() => {
-    return robotMusic.subscribe(state => {
-      setMusicState(state)
-      if (state.isPlaying) {
-        setMood('singing')
-        if (state.currentTrack?.title) {
-          setHint(`🎵 Singing: ${state.currentTrack.title}`)
-        }
-      } else {
-        setMood(prev => (prev === 'singing' ? 'happy' : prev))
-        setHint(prev => (prev?.startsWith('🎵') ? null : prev))
-      }
-    })
-  }, [])
-
   // Scroll to bottom of chat
   useEffect(() => {
     if (isOpen) {
@@ -308,7 +290,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       'Always ready to help! 🤖'
     ]
     const hintInterval = window.setInterval(() => {
-      if (!isOpen && mood !== 'sleeping' && mood !== 'dizzy' && mood !== 'singing' && Math.random() > 0.6) {
+      if (!isOpen && mood !== 'sleeping' && mood !== 'dizzy' && Math.random() > 0.6) {
         const picked = hints[Math.floor(Math.random() * hints.length)]
         setHint(picked)
         window.setTimeout(() => setHint(null), 4500)
@@ -542,11 +524,6 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     setMood('thinking')
     robotAudio.startThinkingLoop()
 
-    const isSongRequest = /\b(sing(\s+(a\s+)?song)?|play\s+(a\s+)?song|play\s+music)\b/i.test(query)
-    if (isSongRequest) {
-      void robotMusic.playSong({})
-    }
-
     try {
       const activeId = await ensureSession()
       const res = await api.sendChatMessage(activeId, {
@@ -561,27 +538,6 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       robotAudio.stopThinkingLoop()
       const hasActions = (res.assistantMessage.action_cards?.length || 0) > 0
       robotAudio.play(hasActions ? 'excited' : 'success')
-
-      // If action_cards contains a music card, play it
-      const musicCard = res.assistantMessage.action_cards?.find((c: any) => c.type === 'music' || c.data?.type === 'music')
-      if (musicCard) {
-        const d = (musicCard as any).data || musicCard
-        void robotMusic.playSong({
-          title: d.title,
-          filename: d.filename,
-          url: d.url
-        })
-      }
-
-      // If action_cards contains a playlist card, play it
-      const playlistCard = res.assistantMessage.action_cards?.find((c: any) => c.type === 'playlist' || c.data?.type === 'playlist')
-      if (playlistCard) {
-        const d = (playlistCard as any).data || playlistCard
-        const tracks = Array.isArray(d.tracks) ? d.tracks : (playlistCard as any).tracks || []
-        if (tracks.length > 0) {
-          void robotMusic.playPlaylist(d.name || d.title || (playlistCard as any).title, tracks, 0)
-        }
-      }
 
       const newMsg: Message = {
         id: res.assistantMessage.id,
@@ -611,14 +567,8 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
         queryClient.invalidateQueries({ queryKey: ['specialized-templates'] })
       }
 
-      if (!robotMusic.getState().isPlaying) {
-        setMood(hasActions ? 'excited' : 'happy')
-        window.setTimeout(() => {
-          if (!robotMusic.getState().isPlaying) {
-            setMood('idle')
-          }
-        }, 3500)
-      }
+      setMood(hasActions ? 'excited' : 'happy')
+      window.setTimeout(() => setMood('idle'), 3500)
     } catch (err) {
       robotAudio.stopThinkingLoop()
       robotAudio.play('error')
@@ -640,9 +590,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
           text: `*Beep* ⚠️ ${cleanMsg}`
         }
       ])
-      if (!robotMusic.getState().isPlaying) {
-        setMood('curious')
-      }
+      setMood('curious')
     } finally {
       setLoading(false)
     }
@@ -716,7 +664,7 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     handleNewChat()
   }
 
-  function handleQuickAction(action: 'new-note' | 'tasks' | 'calendar' | 'idea' | 'sing') {
+  function handleQuickAction(action: 'new-note' | 'tasks' | 'calendar' | 'idea') {
     robotAudio.play('blip')
     if (action === 'new-note') {
       onCreateNote?.()
@@ -731,8 +679,6 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
       setMood('happy')
     } else if (action === 'idea') {
       void handleSend('Give me a creative prompt or thought spark to write about today!')
-    } else if (action === 'sing') {
-      void handleSend('Please sing a song for me!')
     }
   }
 
@@ -747,29 +693,9 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
     >
       {/* Speech Hint Bubble */}
       {hint && !isOpen && (
-        <div className={`bip-hint-bubble ${musicState.isPlaying ? 'singing' : ''}`}>
-          {musicState.isPlaying ? (
-            <>
-              <Music size={13} style={{ color: '#db2777' }} />
-              <span>{hint}</span>
-              <button
-                type="button"
-                className="bip-hint-stop-btn"
-                onClick={e => {
-                  e.stopPropagation()
-                  robotMusic.stop()
-                }}
-                title="Stop singing"
-              >
-                <Square size={9} fill="currentColor" />
-              </button>
-            </>
-          ) : (
-            <>
-              <Sparkles size={13} color="#9333ea" />
-              <span>{hint}</span>
-            </>
-          )}
+        <div className="bip-hint-bubble">
+          <Sparkles size={13} color="#9333ea" />
+          <span>{hint}</span>
         </div>
       )}
 
@@ -824,9 +750,6 @@ export function RobotCompanion({ onCreateNote, onNavigate }: RobotCompanionProps
 
           {/* Quick Action Chips */}
           <div className="bip-chips">
-            <button className="bip-chip" onClick={() => handleQuickAction('sing')}>
-              <Music size={12} /> Sing Song 🎤
-            </button>
             <button className="bip-chip" onClick={() => handleQuickAction('new-note')}>
               <FileText size={12} /> New Note
             </button>

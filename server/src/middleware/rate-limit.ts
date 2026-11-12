@@ -24,14 +24,9 @@ export const imageLimiter = rateLimit({
   keyGenerator, message: { error: 'Too many requests, slow down.' }
 })
 
-// Brute-force protection for the owner passphrase and the 6-digit pairing PIN.
+// Brute-force protection for the owner passphrase.
 // Keyed by IP only: these run before authentication.
 export const loginLimiter = rateLimit({
   windowMs: 15 * 60_000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false,
   keyGenerator: ipKey, message: { error: 'Too many attempts. Try again in a few minutes.' }
-})
-
-export const pairingLimiter = rateLimit({
-  windowMs: 15 * 60_000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false,
-  keyGenerator: ipKey, message: { error: 'Too many pairing attempts. Try again in a few minutes.' }
 })

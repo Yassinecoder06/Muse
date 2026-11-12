@@ -84,81 +84,6 @@ export interface ConfirmRequiredActionCard {
   token: string
 }
 
-export interface MusicActionCard {
-  type: 'music'
-  id?: string
-  title: string
-  filename?: string
-  url?: string
-  status?: string
-}
-
-export interface MusicDownloadPlanItem {
-  id: string
-  query: string
-  artist?: string
-  title: string
-  filename: string
-}
-
-export interface MusicDownloadPlanActionCard {
-  type: 'music_download_plan'
-  id?: string
-  title: string
-  items: MusicDownloadPlanItem[]
-  count: number
-}
-
-export interface MusicDownloadProgressActionCard {
-  type: 'music_download_progress'
-  id?: string
-  title: string
-  tasks: Array<{
-    task_id: string
-    title?: string
-    artist?: string
-    filename?: string
-    status: string
-    progress_percent: number
-    speed_str?: string
-    eta_str?: string
-    error?: string
-  }>
-}
-
-export interface MusicPlaylist {
-  id: string
-  user_id: string
-  name: string
-  description?: string
-  tracks: Array<{
-    filename: string
-    title: string
-    artist?: string
-    url: string
-    size?: number
-  }>
-  created_at: string
-  updated_at: string
-}
-
-export interface PlaylistActionCard {
-  type: 'playlist'
-  id?: string
-  title: string
-  name?: string
-  description?: string
-  count?: number
-  tracks?: Array<{
-    filename: string
-    title: string
-    artist?: string
-    url: string
-    size?: number
-  }>
-  status?: string
-}
-
 export interface GeneratedImageActionCard {
   type: 'generated_image'
   id: string
@@ -182,10 +107,6 @@ export type ActionCard =
   | TemplateActionCard
   | SpecializedNoteActionCard
   | DeletedItemActionCard
-  | MusicActionCard
-  | MusicDownloadPlanActionCard
-  | MusicDownloadProgressActionCard
-  | PlaylistActionCard
   | GeneratedImageActionCard
 
 export interface ChatMessage {

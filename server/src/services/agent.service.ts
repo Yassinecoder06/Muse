@@ -83,7 +83,7 @@ function buildSystemInstruction(
 
   const memorySection = memories.length > 0
     ? `\n### Known Facts & Preferences about ${userName} (Shared Long-Term Memory):\n- The following facts are extracted and remembered across all conversations. Use them to personalize your responses:\n${memories.map(m => `- [${m.category}] ${m.fact}`).join('\n')}\n`
-    : `\n### Known Facts & Preferences about ${userName} (Shared Long-Term Memory):\n- No lasting memories saved yet. When the user shares personal preferences, favorite genres/artists, goals, or facts, call save_memory so they persist across all conversations!\n`
+    : `\n### Known Facts & Preferences about ${userName} (Shared Long-Term Memory):\n- No lasting memories saved yet. When the user shares personal preferences, goals, or facts, call save_memory so they persist across all conversations!\n`
 
   const userTemplatesList = userTemplates.length > 0
     ? userTemplates.map(t => `- "${t.title}" (${t.fields.map(f => f.name).join(', ')})${t.sync_with_calendar ? ' [Calendar Sync Enabled]' : ''}${t.description ? ` - ${t.description}` : ''}`).join('\n')
@@ -156,12 +156,6 @@ ${userTemplatesList}
    - \`delete_memory\`: Delete a stored memory or preference so you forget it.
    - \`delete_specialized_template\`: Delete a user-created custom specialized template. Built-in templates cannot be deleted.
    - \`delete_chat_session\`: Delete a chat conversation session.
-   - \`play_music\`: Play a song from the music folder and have Bip hold a microphone and sing along to the music. Call this whenever the user asks you to play music, play a song, or sing a song for them.
-   - \`plan_music_download\`: Download one or multiple songs. Whenever the user asks to download, fetch, or get songs/music (e.g. "download Imagine Dragons songs", "download blinding lights and believer"), call \`plan_music_download\` with \`songs: [{ title: '...', artist: '...' }]\`! ALWAYS separate and provide BOTH the song title and author/artist for each song so the author's name is saved and clearly displayed ("Artist - Title.mp3"). The tool checks for duplicates in the library so songs are never downloaded twice.
-   - \`get_music_download_tasks\`: Check the progress and status of active or completed song downloads.
-   - \`create_playlist\`: Create a new music playlist with a name and an optional list of songs (e.g. "Make a playlist called Workout with Dua Lipa").
-   - \`list_playlists\`: View all music playlists created by the user.
-   - \`play_playlist\`: Play a music playlist from the beginning and sing along with Bip (e.g. "play playlist", "play my playlist", "play workout playlist"). Call this whenever the user asks to play a playlist.
 
 4. **Deletion Rules & Capabilities**:
    When the user asks you to delete, trash, remove, cancel, or forget ANYTHING in their workspace:
@@ -184,20 +178,9 @@ ${userTemplatesList}
 7. **Conversation Scope, Context Isolation & Shared Memory**:
    - **Conversation Isolation**: Every conversation session is completely independent and has its own isolated context. What was discussed in previous conversations is NOT part of this chat unless the user mentions it here.
    - **Shared Long-Term Memory**: The ONLY knowledge shared across all conversations is the "Known Facts & Preferences" section above.
-   - **Proactive Memory Extraction**: When the user explicitly shares lasting personal preferences, habits, favorite genres/artists, goals, or identity facts (e.g. "I love Japanese pop music", "My favorite singer is Dua Lipa", "I prefer darker themes", "I work as an engineer"), proactively call \`save_memory\` to store it in user memories. That way, this knowledge automatically carries over to all future conversations!
+   - **Proactive Memory Extraction**: When the user explicitly shares lasting personal preferences, habits, goals, or identity facts (e.g. "I prefer darker themes", "I work as an engineer"), proactively call \`save_memory\` to store it in user memories. That way, this knowledge automatically carries over to all future conversations!
 
-8. **Music, Playlists & Auto-Downloading Missing Songs**:
-   - **Playing a Song that Doesn't Exist in Library**:
-     - When the user asks to play or sing a song (e.g. "play Bohemian Rhapsody", "sing Shape of You", "play Dua Lipa"):
-     - If the song is NOT in the library: **DO NOT** pick an unrelated song! Call \`plan_music_download\` with \`songs: [{ title, artist }]\` so it can be downloaded first! Tell the user: *"I don't have that song in our library yet, so I've prepared the download plan for it below. As soon as you confirm, I will download it and sing it for you! 🎤🎶"*
-   - **Creating a Playlist with Songs that Aren't Downloaded**:
-     - When the user asks to create or make a playlist (e.g. "create a playlist containing the best japanese song top 10", "create a playlist with song A and song B", "make a 90s rock mix"):
-     - **DO NOT** execute repetitive \`search_web\` queries in a loop! You already possess rich knowledge of worldwide songs, famous hits, and artists.
-     - Call \`create_playlist\` with the playlist name and the curated songs array.
-     - Any songs in the playlist that do not exist in the library will automatically generate a download plan card! Both the playlist card and the download confirmation card will be generated in one step so the user can download them in one click.
-     - Never execute more than 1-2 web searches per turn.
-
-9. **Format & Tone**:
+8. **Format & Tone**:
    - After tools finish executing, provide a clean, helpful summary of the actions taken.
    - Highlight the created or deleted items with clear bullet points.
    - Format cleanly in Markdown with bold titles and neat lists.

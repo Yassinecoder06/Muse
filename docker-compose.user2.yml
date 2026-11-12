@@ -61,39 +61,18 @@ services:
       SUPABASE_URL: http://nginx:80
       QDRANT_URL: http://qdrant:6333
       OLLAMA_EMBEDDING_BASE_URL: ${OLLAMA_EMBEDDING_BASE_URL_DOCKER:-http://host.docker.internal:11434}
-      MUSIC_DOWNLOADER_URL: http://music-downloader:8001
-    volumes:
-      - ./music-user2:/app/music:rw
     depends_on:
       migrate: { condition: service_completed_successfully }
       nginx: { condition: service_started }
       rest: { condition: service_started }
       auth: { condition: service_started }
       qdrant: { condition: service_started }
-      music-downloader: { condition: service_started }
     extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3002/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 6
-
-  music-downloader:
-    image: muse-music-downloader:latest
-    build:
-      context: .
-      dockerfile: docker/music-downloader/Dockerfile
-    restart: unless-stopped
-    environment:
-      PORT: 8001
-      MUSIC_DIR: /music
-    volumes:
-      - ./music-user2:/music:rw
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')\" || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
 
   auth:
     image: supabase/gotrue:v2.158.1

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom'
-import { Bot, Cpu, Mic, Moon, RefreshCw, Settings, Smartphone, Sparkles, Sun, User, Volume2, X } from 'lucide-react'
+import { Bot, Cpu, Mic, Moon, RefreshCw, Settings, Sparkles, Sun, User, Volume2, X } from 'lucide-react'
 import { api, type AiUsage, type SettingsResponse } from './services/api'
 import { chatModel, setChatModel } from './services/settings'
 import { robotAudio, loadVoiceSettings, saveVoiceSettings } from './services/robot-audio.service'
@@ -13,7 +13,6 @@ import { Editor } from './components/Editor'
 import { CalendarView } from './components/CalendarView'
 import { TasksView } from './components/TasksView'
 import { AnalyticsView } from './components/AnalyticsView'
-import { MusicView } from './components/music/MusicView'
 import { CommandPalette } from './components/CommandPalette'
 import { ChatPanel } from './components/ChatPanel'
 import { AssistantWorkspace } from './components/AssistantWorkspace'
@@ -22,7 +21,6 @@ import { GraphView } from './components/GraphView'
 import { Toast, type ToastAction } from './components/Toast'
 import { SpecializedNotePanel } from './components/SpecializedNotePanel'
 import { RobotCompanion } from './components/RobotCompanion/RobotCompanion'
-import { RemotePairingModal } from './components/RemotePairingModal'
 import { OwnerGate } from './components/OwnerGate'
 import { AiProvidersPanel } from './components/AiProvidersPanel'
 import { PassphraseSettings } from './components/PassphraseSettings'
@@ -42,7 +40,6 @@ function MuseApp() {
   const [specialized, setSpecialized] = useState(false)
   const [collections, setCollections] = useState(false)
   const [settings, setSettings] = useState(false)
-  const [remoteModalOpen, setRemoteModalOpen] = useState(false)
   const [toastState, setToastState] = useState<{ message: string; action?: ToastAction } | null>(null)
   const setToast = (msg: string | { message: string; action?: ToastAction } | null) => {
     if (!msg) setToastState(null)
@@ -299,9 +296,7 @@ function MuseApp() {
     calendar={() => navigate('/calendar')}
     tasks={() => navigate('/tasks')}
     analytics={() => navigate('/analytics')}
-    music={() => navigate('/music')}
     settings={() => setSettings(true)}
-    linkPhone={() => setRemoteModalOpen(true)}
     userEmail=""
     userName={userName || 'Local User'}
     emptyTrash={() => emptyTrash.mutate()}
@@ -320,7 +315,6 @@ function MuseApp() {
         <Route path="/calendar" element={<CalendarView onBack={() => navigate('/')}/>}/>
         <Route path="/tasks" element={<TasksView onBack={() => navigate('/')}/>}/>
         <Route path="/analytics" element={<AnalyticsView onBack={() => navigate('/')} onOpenNote={id => navigate(`/note/${id}`)} onOpenTasks={() => navigate('/tasks')}/>}/>
-        <Route path="/music" element={<MusicView onBack={() => navigate('/')} onNavigate={path => navigate(path)}/>}/>
         <Route path="/assistant" element={<AssistantWorkspace onBack={() => navigate('/')} onCreateNote={input => create.mutate(input)} onNavigate={path => navigate(path)}/>}/>
         <Route path="*" element={dashboard}/>
       </Routes>
@@ -644,30 +638,6 @@ function MuseApp() {
             </button>
           </div>
 
-          {/* Mobile Companion */}
-          <div className="setting-section-header">
-            <span><Smartphone size={16}/> Mobile Companion</span>
-          </div>
-
-          <div className="setting-row">
-            <span>
-              <Smartphone size={17}/>
-              <span>
-                <strong>Pair Phone & Devices</strong>
-                <small>Pair your Android phone to access notes, tasks, and talk with Bip remotely.</small>
-              </span>
-            </span>
-            <button
-              className="setting-toggle"
-              onClick={() => {
-                setSettings(false)
-                setRemoteModalOpen(true)
-              }}
-            >
-              Pair Phone / Devices
-            </button>
-          </div>
-
           <PassphraseSettings onToast={setToast}/>
 
           <button className="sign-out" onClick={() => {
@@ -679,7 +649,6 @@ function MuseApp() {
         </section>
       </div>
     )}
-    <RemotePairingModal isOpen={remoteModalOpen} onClose={() => setRemoteModalOpen(false)}/>
     <BipAlarmCenter/>
     {showBip && (
       <RobotCompanion

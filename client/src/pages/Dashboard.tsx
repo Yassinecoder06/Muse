@@ -1,4 +1,4 @@
-import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, Music, PanelLeft, Plus, RotateCcw, Search, Settings, Smartphone, Sparkles, Star, Sun, Trash2, Waypoints, X } from 'lucide-react'
+import { Archive, BarChart3, Bot, Calendar, Check, CheckSquare, FileText, FolderOpen, Globe, Layers3, Moon, PanelLeft, Plus, RotateCcw, Search, Settings, Sparkles, Star, Sun, Trash2, Waypoints, X } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import type { Note, NoteInput } from '../types'
@@ -26,9 +26,7 @@ export function Dashboard({
   calendar,
   tasks,
   analytics,
-  music,
   settings,
-  linkPhone,
   userEmail,
   userName,
   emptyTrash,
@@ -56,9 +54,7 @@ export function Dashboard({
   calendar: () => void
   tasks: () => void
   analytics: () => void
-  music?: () => void
   settings: () => void
-  linkPhone?: () => void
   userEmail: string
   userName: string
   emptyTrash: () => void
@@ -179,16 +175,10 @@ export function Dashboard({
           <button title="Calendar" onClick={calendar}><Calendar size={17}/><span> Calendar</span></button>
           <button title="Tasks" onClick={tasks}><CheckSquare size={17}/><span> Tasks</span></button>
           <button title="Analytics" onClick={analytics}><BarChart3 size={17}/><span> Analytics</span></button>
-          {music && <button title="Music" onClick={music}><Music size={17}/><span> Music</span></button>}
         </div>
         <div className="sidebar-footer">
           <button title="Collections" onClick={collections}><FolderOpen size={17}/><span> Collections</span></button>
           <button title="Graph" onClick={graph}><Waypoints size={17}/><span> Graph</span></button>
-          {linkPhone && (
-            <button title="Link Phone Companion" onClick={linkPhone} className="link-phone-btn">
-              <Smartphone size={17}/><span> Link Phone</span>
-            </button>
-          )}
           <button title="Settings" onClick={settings}><Settings size={17}/><span> Settings</span></button>
           <div className="user">
             <div>{initials}</div>
@@ -214,11 +204,6 @@ export function Dashboard({
             </span>
           ) : null}
           <div className="topbar-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {linkPhone && (
-              <button className="theme" style={{ margin: 0 }} onClick={linkPhone} title="Link Phone Companion">
-                <Smartphone size={18}/>
-              </button>
-            )}
             <button className="theme" style={{ margin: 0 }} onClick={toggleTheme} title={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
               {dark ? <Sun size={18}/> : <Moon size={18}/>}
             </button>

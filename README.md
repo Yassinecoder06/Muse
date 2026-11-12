@@ -1,15 +1,15 @@
 # Muse
 
-Muse is a self-hosted AI note application built around one principle: **capture first, organize later**. Write or dictate a thought, and Muse titles, tags, summarizes and links it for you, while **Bip**, its robot assistant, can create notes, tasks, events and reminders from a single sentence. It runs on your own machine, works with the AI providers *you* choose (Gemini, OpenAI, Claude, Ollama or any compatible API), and comes with a phone companion app.
+Muse is a self-hosted AI note application built around one principle: **capture first, organize later**. Write or dictate a thought, and Muse titles, tags, summarizes and links it for you, while **Bip**, its robot assistant, can create notes, tasks, events and reminders from a single sentence. It runs on your own machine, works with the AI providers *you* choose (Gemini, OpenAI, Claude, Ollama or any compatible API), and plugs into any AI app through its MCP server, muse-mcp.
 
-The browser and the phone talk only to an Express API; that API owns Postgres access, AI calls, and semantic search.
+The browser and MCP clients talk only to an Express API; that API owns Postgres access, AI calls, and semantic search.
 
 ## Architecture
 
 ```text
 React + Vite (web) ──┐
                      ├─HTTPS─> Nginx ─> Express API ──> Supabase PostgreSQL (source of truth, Vault for keys)
-Flutter (phone) ─────┘                      ├──> Your AI providers: Gemini · OpenAI · Anthropic (Claude) ·
+MCP clients ─────────┘                     ├──> Your AI providers: Gemini · OpenAI · Anthropic (Claude) ·
                                             │    Ollama Cloud · Ollama (Local) · any OpenAI/Anthropic-compatible API
                                             ├──> Qdrant (note embeddings, one collection per embedding model)
                                             └──> Edge neural voices (built-in read-aloud)
@@ -37,34 +37,32 @@ For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](.
 - **Works on any chat model** you configure: tool calls are normalized across Gemini, OpenAI-style, Anthropic and Ollama APIs, with your fallback models tried in order.
 - **Safe by design**: deletions that can't be undone (empty trash, delete forever, delete tasks/events/memories) are only *proposed*; you confirm them on a card. Text from notes, documents and web pages is treated as data, never as instructions.
 - **Remembers you**: long-term memories of your preferences and goals, and persistent conversations you can rename, search, edit and resend.
-- **Understands your time**: "tomorrow at 8pm" resolves in your own timezone, on the web and on the phone.
+- **Understands your time**: "tomorrow at 8pm" resolves in your own timezone.
 - **A real companion**: a draggable animated robot with moods and synthesized sound effects.
 
 ### Tasks, calendar & reminders
 - **Tasks** with due dates, times, priorities and links to notes; **calendar** with month view and natural-language quick add ("Gym tomorrow at 20h").
 - **Schedule detector**: finds dates, appointments and to-dos in a note and adds them in one click.
-- **Reminders with Bip alarms**: ring at the due time, N minutes before, or at an exact time. On the web: an animated Bip alert with a live countdown, alarm sound and browser notification. On the phone: a real alarm (alarm sound until handled, over the lock screen, live countdown, Done / Snooze). Snoozing on one device updates the other.
+- **Reminders with Bip alarms**: ring at the due time, N minutes before, or at an exact time. On the web: an animated Bip alert with a live countdown, alarm sound and browser notification.
 
 ### Bring your own AI
 - **Any provider, any number of keys**: Google Gemini, OpenAI, Anthropic (Claude), Ollama Cloud, Ollama (Local), and any OpenAI- or Anthropic-compatible API (Groq, Mistral, DeepSeek, OpenRouter, LM Studio, …). Keys are encrypted in Supabase Vault.
-- **Fetch models**: one click lists every model your keys can use, sorted into chat, embeddings, text-to-speech and speech-to-text, next to built-in options (Edge neural voices, browser/phone speech, local-Ollama embeddings).
+- **Fetch models**: one click lists every model your keys can use, sorted into chat, embeddings, text-to-speech and speech-to-text, next to built-in options (Edge neural voices, browser speech, local-Ollama embeddings).
 - **Pick a model per job**: chat model with ordered fallbacks, embedding model (your notes are re-indexed automatically), read-aloud model and voice, dictation model, each with a **Test** button.
 - **Quota resilient**: models that hit their quota are skipped for a while, so answers stay fast.
 
 ### Voice
-- **Dictation** that keeps listening until you stop (browser, server model of your choice, or on-device on the phone).
+- **Dictation** that keeps listening until you stop (browser speech or a server model of your choice).
 - **Read aloud** with Edge neural voices, OpenAI or Gemini voices, or the browser voice; emojis and symbols are skipped for natural speech.
 
-### Phone companion (Flutter, Android)
-- **Pairing in seconds** with a QR code or 6-digit PIN; the device key is stored in the Android Keystore and can be revoked from the desktop at any time.
-- **Bip on the go** with voice, history, tappable action cards and delete confirmations.
-- **Notes that work offline**: read, edit and create without a connection; changes sync automatically when Muse is reachable, and conflicting desktop edits are kept as a separate copy, never overwritten.
-- **Share to Muse** from any app (text, links, screenshots), **home-screen shortcuts** (Voice note, Quick note, Ask Bip), **swipe actions with Undo**, semantic search, and responsive layouts tested on real phone sizes.
+### Use Muse from any AI app (muse-mcp)
+- **Everything Bip can do, from Claude, ChatGPT, Cursor or Gemini CLI**: Muse exposes its tools as an MCP server at `https://muse-mcp.yassinejemmali.me/mcp` (see [documentation/MCP.md](documentation/MCP.md)).
+- **Three approval modes** (Trust, Minimal, Standard) decide when the AI client or Muse asks before acting; deletions keep an undo snapshot.
 
 ### Security & privacy
-- **Self-hosted, single-owner**: the API requires the owner's passphrase session (or a paired device token); first-run setup needs a one-time code printed in the server log.
+- **Self-hosted, single-owner**: the API requires the owner's passphrase session (MCP clients use scoped, revocable tokens); first-run setup needs a one-time code printed in the server log.
 - **Encryption at rest** (AES-256-GCM) for note titles, content, summaries and research text; API keys live in Supabase Vault; an optional zero-knowledge **Secure Vault** encrypts notes in the browser with passkey support.
-- **Hardened by default**: row-level security on every table, rate-limited login and pairing, sanitized HTML (DOMPurify), hashed device tokens, and private read-aloud audio.
+- **Hardened by default**: row-level security on every table, rate-limited login, sanitized HTML (DOMPurify), hashed access tokens, and private read-aloud audio.
 - **Automatic database migrations**: `docker compose up` applies new schema changes safely, one transaction per migration.
 
 ## Prerequisites
@@ -419,9 +417,9 @@ Optional AI tuning variables in `.env`:
 | Images | `POST /api/uploads` (raw body, ≤5 MB, optional `?noteId`), `GET /api/images/:id` (owner-authenticated) |
 | Secure Vault | `GET /api/vault`, `PUT /api/vault`, `GET /api/vault/records`, `POST /api/vault/records`, WebAuthn passkey endpoints |
 | AI providers | `GET /api/ai/providers`, `POST /api/ai/providers`, `PATCH /api/ai/providers/:id`, `DELETE /api/ai/providers/:id`, `POST /api/ai/providers/fetch`, `PUT /api/ai/preferences`, `POST /api/ai/test`, `GET /api/ai/reindex` |
-| Bip | `POST /api/chat/sessions/:id/messages`, `POST /api/ai/chat` (phone), `POST /api/agent/confirm` (run a deletion Bip proposed), sessions and memories CRUD |
+| Bip | `POST /api/chat/sessions/:id/messages`, `POST /api/agent/confirm` (run a deletion Bip proposed), sessions and memories CRUD |
 | Search | `GET /api/notes/search?q=` (keyword + semantic) |
-| Owner & devices | `GET /api/auth/owner`, `POST /api/auth/owner/setup`, `POST /api/auth/owner/login`, `POST /api/remote/pairing/create`, `POST /api/remote/pairing/claim`, `GET /api/remote/devices`, `DELETE /api/remote/devices/:id` |
+| Owner | `GET /api/auth/owner`, `POST /api/auth/owner/setup`, `POST /api/auth/owner/login` |
 | Templates | `GET/POST /api/templates`, `GET/PUT/DELETE /api/templates/:id` |
 | Voice | `POST /api/voice/transcribe`, `POST /api/voice/speak` (use your chosen speech models) |
 
@@ -565,63 +563,3 @@ docker compose logs auth --tail 20
 ```
 
 ---
-
-## Remote Mobile Companion (Flutter App)
-
-Muse includes a cross-platform mobile companion located in the `mobile/` directory, allowing you to access your notes, tasks, and talk directly with **Bip AI Assistant** from your phone.
-
-### Features
-* **Pairing in seconds:** a one-time QR code or 6-digit PIN links the phone. The device key is stored in the Android Keystore, kept only as a hash on the server, and revocable from the desktop at any time; a revoked phone returns to the pairing screen.
-* **Bip on mobile:** talk or type; conversations are kept across launches ("New chat" starts a fresh one), with tappable action cards and Confirm cards for deletions.
-* **Continuous dictation:** on-device speech recognition keeps listening until you tap stop, even through pauses.
-* **Notes that work offline:** read, edit and create notes without a connection; changes sync on their own when Muse is reachable, and if the desktop changed the same note meanwhile, your phone version is saved as a copy instead of overwriting it. Images display inside notes.
-* **Search by words and meaning**, **swipe actions with Undo** (complete, favorite, trash, restore), and pull to refresh.
-* **Tasks & schedule** with reminders: real alarms with alarm sound, lock-screen display, a live countdown, and Done / Snooze. **Settings → Alarm setup** checks every permission (including Xiaomi/HyperOS Autostart) and has a **Test alarm** button.
-* **Share to Muse** from any app (text, links, images) and **home-screen shortcuts**: Voice note, Quick note, Ask Bip.
-* **Responsive layouts** verified at real phone sizes and larger text by an automated layout test.
-
-### Voice & Speech Synthesis (TTS & STT)
-* **Web STT:** Dual-engine architecture with Google Gemini Multimodal Audio (`gemini-3.5-flash` / `gemini-3.7-flash` via `/api/voice/transcribe`) for complex prompts, and Web Speech API (`webkitSpeechRecognition`) for local browser transcription.
-* **Mobile STT:** On-device recognition with Android's `RecognitionService`, restarted automatically after the system's pauses so dictation continues until you stop it.
-* **Your choice of models:** the web read-aloud and dictation use the models chosen in Settings → AI providers (Edge, OpenAI, Gemini or browser speech).
-* **Conversational TTS:** Browser Speech Synthesis with automatic Unicode emoji and symbol filtering (`EMOJI_REGEX`), stripping emoji descriptions (e.g. "robot face sparkles") and normalizing whitespace/punctuation for clean, natural speech playback.
-
-### How to Pair Your Phone
-1. On your computer, open Muse in your browser (`http://localhost:8080`) and click **Link Phone** in the sidebar or top navigation bar.
-2. An interactive pairing modal will display an animated QR code and a 6-digit PIN (valid for 5 minutes).
-3. On your mobile phone, open the Muse companion app.
-4. Point the camera at the QR code. The app automatically claims the session, links your device, and redirects to your workspace dashboard.
-5. Alternatively, tap **Enter PIN Manually**, enter your computer's IP address (e.g., `http://192.168.100.136:8080`), and type the 6-digit PIN.
-
-### Connecting Over the Internet
-When away from your home Wi-Fi network, you can connect your phone to Muse over the internet using one of two secure methods:
-
-#### Method A: Tailscale Mesh VPN (Recommended)
-If Tailscale is running on your host machine and your mobile phone:
-1. Note your host's Tailscale IP (e.g. `100.84.254.110`).
-2. In the desktop **Link Phone** modal, select the **Tailscale (100.84.254.110:8080)** endpoint option before scanning the QR code, or enter `http://100.84.254.110:8080` in the mobile app.
-3. Your phone securely connects over your private encrypted Tailscale mesh without opening any router ports.
-
-#### Method B: Cloudflare Quick Tunnel
-1. On your host computer, start a quick ephemeral tunnel:
-   ```bash
-   cloudflared tunnel --url http://localhost:8080
-   ```
-2. Cloudflare outputs a public HTTPS address (e.g. `https://random-subdomain.trycloudflare.com`).
-3. Click the pencil icon next to the server address in the desktop **Link Phone** modal, paste your tunnel URL, and scan the regenerated QR code on your phone.
-
-### Building & Running Mobile App
-```bash
-cd mobile
-flutter pub get
-flutter analyze
-flutter test          # includes the layout test at phone sizes
-
-# Build and install on a connected Android phone (USB debugging on)
-flutter build apk --debug
-adb install -r build/app/outputs/flutter-apk/app-debug.apk
-```
-
-Gradle needs JDK 17–21. If Flutter picks a newer JDK (for example the one
-bundled with Android Studio), point it at JDK 21 once:
-`flutter config --jdk-dir /usr/lib/jvm/java-21-openjdk-amd64`.
