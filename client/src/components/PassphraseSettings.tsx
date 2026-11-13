@@ -89,7 +89,7 @@ export function PassphraseSettings({ onToast }: { onToast: (message: string) => 
   return (
     <SettingsCard
       title="Owner passphrase"
-      description="Manage the master passphrase used to unlock Muse and decrypt your settings."
+      description="The owner passphrase unlocks Muse on this server and confirms connected-app access."
       icon={<KeyRound size={16}/>}
     >
       <div className="vs-tabs-bar">
@@ -146,12 +146,12 @@ export function PassphraseSettings({ onToast }: { onToast: (message: string) => 
           <SettingsRow
             label="Recovery code"
             description={
-              <div>
+              <span>
                 One-time code generated in your server logs.
-                <div className="vs-terminal-hint">
+                <span className="vs-terminal-hint">
                   <Terminal size={12}/> Run <code>docker compose logs server</code> or <code>docker logs muse-server-1</code>.
-                </div>
-              </div>
+                </span>
+              </span>
             }
             icon={<Terminal size={15}/>}
           >
@@ -271,7 +271,7 @@ export function PassphraseSettings({ onToast }: { onToast: (message: string) => 
         <div className="vs-form-footer">
           <span className="vs-form-footer-hint">
             {activeTab === 'change'
-              ? 'Passphrase protects your private notes, models, and server keys.'
+              ? 'You will need the new passphrase the next time you unlock Muse.'
               : 'Submitting a valid setup code overwrites the owner passphrase.'}
           </span>
           <button
