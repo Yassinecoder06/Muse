@@ -7,17 +7,19 @@ The browser and MCP clients talk only to an Express API; that API owns Postgres 
 ## Architecture
 
 ```text
-React + Vite (web) ──┐
-                     ├─HTTPS─> Nginx ─> Express API ──> Supabase PostgreSQL (source of truth, Vault for keys)
-MCP clients ─────────┘                     ├──> Your AI providers: Gemini · OpenAI · Anthropic (Claude) ·
-                                            │    Ollama Cloud · Ollama (Local) · any OpenAI/Anthropic-compatible API
-                                            ├──> Qdrant (note embeddings, one collection per embedding model)
-                                            └──> Edge neural voices (built-in read-aloud)
+React + Vite (web) ─────> Nginx :8080 (loopback only) ──┐
+                                                         ├─> Express API + AI worker ──> Supabase PostgreSQL (source of truth, Vault for keys)
+MCP clients ─> Cloudflare Tunnel ─> Nginx :8081 ─────────┘        ├──> Your AI providers: Gemini · OpenAI · Anthropic (Claude) ·
+              (muse-mcp, only /mcp, /oauth, /approve)              │    Ollama Cloud · Ollama (Local) · any OpenAI/Anthropic-compatible API
+                                                                   ├──> Qdrant (note embeddings, one collection per embedding model)
+                                                                   └──> Edge neural voices (built-in read-aloud)
 ```
+
+The web app is served only on `127.0.0.1:8080`. The public tunnel reaches a separate Nginx listener (`:8081`, `docker/nginx/public.conf`) that exposes the MCP endpoint and its OAuth/approval pages, and returns 404 for everything else.
 
 The API returns note saves immediately. A background processor generates missing titles, tags, summaries, and vectors after the response. Qdrant stores only embeddings and compact metadata; full note text always remains in Supabase.
 
-For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](./ENDPOINTS.md).
+For a full technical list of all API endpoints and schemas, see [documentation/ENDPOINTS.md](documentation/ENDPOINTS.md).
 
 ## Included capabilities
 
@@ -57,7 +59,11 @@ For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](.
 
 ### Use Muse from any AI app (muse-mcp)
 - **Everything Bip can do, from Claude, ChatGPT, Cursor or Gemini CLI**: Muse exposes its tools as an MCP server at `https://muse-mcp.yassinejemmali.me/mcp` (see [documentation/MCP.md](documentation/MCP.md)).
-- **Three approval modes** (Trust, Minimal, Standard) decide when the AI client or Muse asks before acting; deletions keep an undo snapshot.
+- **Standard OAuth sign-in**: clients register themselves and send you to a Muse consent page, where you pick the permissions (notes, tasks, calendar, memory, web, code) and confirm with your passphrase. Personal access tokens are available for clients without OAuth.
+- **Three approval modes** (Trust, Minimal, Standard) decide when the AI client or Muse asks before acting. Muse-side approvals show up in **Settings → Connected apps** and on a phone-friendly approval page; deletions keep an undo snapshot.
+
+### Settings
+- **A full page at `/settings`**, not a popup, with five sections: **General** (name, theme, Bip), **AI providers**, **Voice & sound**, **Security** (passphrase, lock), and **Connected apps** (MCP connections, approvals, tokens, activity with undo). Each section groups related options into cards; on phones the menu becomes a dropdown. `Esc` returns to your notes.
 
 ### Security & privacy
 - **Self-hosted, single-owner**: the API requires the owner's passphrase session (MCP clients use scoped, revocable tokens); first-run setup needs a one-time code printed in the server log.
@@ -102,15 +108,13 @@ For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](.
    docker compose up -d --build
    ```
 
-   This starts Postgres, Kong, GoTrue Auth, PostgREST, Realtime, Storage,
-   Meta, Studio, Qdrant, the private mail-template server, the Express/AI
-   worker, and the Docker Nginx gateway. This builds the server image and the
-   Nginx image containing the bundled React client. Nginx
-   is available at `http://localhost:8080`; Qdrant is available at
-   `http://localhost:6333`; Kong/Supabase stays on `http://localhost:8000`.
-   (*Edge Runtime is intentionally not included:* Muse never uses edge
-   functions.) The one-shot `migrate` service applies the database schema
-   before the API starts.
+   This starts Postgres, GoTrue Auth, PostgREST, Qdrant, the Express/AI
+   worker, and the Nginx gateway (which also bundles the React client and
+   proxies `/auth/v1` and `/rest/v1` directly; there is no Kong). Nginx is
+   available at `http://localhost:8080` and Qdrant at `http://localhost:6333`,
+   both bound to loopback only. The one-shot `migrate` service applies the
+   database schema before the API starts. The Cloudflare connectors are
+   opt-in Compose profiles; see "Connect AI apps over a Cloudflare Tunnel".
 
    **First run:** open `http://localhost:8080`. Muse asks for a one-time setup
    code and a passphrase. The code is printed in the server log:
@@ -119,8 +123,9 @@ For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](.
    docker compose logs server | grep "setup code"
    ```
 
-   Then open **Settings → AI providers**, add your keys (or just local Ollama),
-   click **Fetch models**, and pick a model for each job.
+   Then open **Settings → AI providers** (`http://localhost:8080/settings/ai`),
+   add your keys (or just local Ollama), click **Fetch models**, and pick a
+   model for each job.
 
 4. Install and run Muse for hot-reload development:
 
@@ -166,12 +171,15 @@ For a full technical list of all API endpoints and schemas, see [ENDPOINTS.md](.
 `.env.example` ships with the public Supabase demo keys. For a real deployment:
 
 - Set `JWT_SECRET` to a random value **at least 32 characters** long.
-- Generate `ANON_KEY` and `SERVICE_ROLE_KEY` as JWTs **signed with that same `JWT_SECRET`**, with `"role": "anon"` / `"role": "service_role"` claims. Kong accepts them as `apikey` credentials; GoTrue issues session tokens signed with `JWT_SECRET`, so all three components must agree.
+- Generate `ANON_KEY` and `SERVICE_ROLE_KEY` as JWTs **signed with that same `JWT_SECRET`**, with `"role": "anon"` / `"role": "service_role"` claims. PostgREST and GoTrue verify them with `JWT_SECRET`, so all three must agree.
 - Set `DATA_ENCRYPTION_KEY` to 64 hex characters (32 random bytes) — see "Encryption at rest" below. **Back it up; it cannot be recovered.**
 - Never put `POSTGRES_PASSWORD`, `JWT_SECRET`, `SERVICE_ROLE_KEY`, SMTP,
   or Ollama credentials in a `VITE_*` variable. Vite embeds those variables in
   browser JavaScript at build time. The Nginx image receives only
   `VITE_SUPABASE_ANON_KEY`, which is intentionally public.
+- For remote AI apps, set `MCP_PUBLIC_URL` (the public MCP hostname) and
+  `CLOUDFLARE_TUNNEL_TOKEN`. Both are optional; without them muse-mcp is simply
+  not reachable from outside.
 
 ### Encryption at rest
 
@@ -237,17 +245,14 @@ the old and new addresses.
    The same reminder appears in Muse and in the email templates.
 
 The mailer uses the provider-neutral SMTP values from the root `.env`. The
-`supabase/templates` directory is mounted by the private `mailer-templates` service, which serves
-the five templates only to GoTrue on the Docker network; it has no public port.
+`supabase/templates` directory is mounted into the Nginx container, which serves
+the five templates to GoTrue on the Docker network.
 
-### Updating account information
+### Changing your name and passphrase
 
-Signed-in users can open **Settings** and update their name, email address, or
-password. A name change saves immediately. An email change must be confirmed
-from both the current and replacement email address before it takes effect. A
-password change sends a security notice to the account's email address.
-Signed-out users can select **Forgot your password?** from sign-in; the emailed
-recovery link opens a dedicated new-password form before returning to Muse.
+Your display name is under **Settings → General**. The owner passphrase is
+changed under **Settings → Security**, which also has **Lock now** to sign the
+current browser out.
 
 ## Database and migration
 
@@ -335,11 +340,9 @@ Leaving a choice empty keeps Muse's automatic behavior (Gemini cascade, then Oll
 
 ### Secure Vault, passkeys, and recovery keys
 
-Muse now supports a **Secure Vault** with optional passkeys. Email/password
-sign-in remains available; after sign-in, each account must set up its vault
-before opening Muse. Setup stores an Ollama API key in Supabase Vault and
-generates or imports a required 32-byte Base64URL AES recovery key. The user
-can choose to add a device passkey during setup or later in Devices & Security.
+Muse supports an optional **Secure Vault** with passkeys. Setup generates or
+imports a required 32-byte Base64URL AES recovery key; a device passkey can be
+added during setup or later. Vault notes are never exposed through MCP.
 
 - A passkey authenticates a device. Muse stores its public credential, ID,
   counter, and transport metadata; the authenticator keeps the private key.
@@ -374,27 +377,15 @@ or be a registrable suffix of the browser origin. Keep `DATA_ENCRYPTION_KEY`
 while legacy data exists; it decrypts only retained legacy rows and is not used
 for new vault envelopes.
 
-AI is **cloud-only and per-user**: every feature (chat, research, organize, rewrite, …) calls `https://ollama.com` directly with **the signed-in user's own Ollama API key** — no local Ollama, no sign-in queue. Each user adds their key once in the app (Settings → Ollama API key; create it at `https://ollama.com/settings/keys`). The key is validated before it is stored, encrypted at rest in the database via the Supabase **Vault** (`vault.create_secret` / pgsodium, root key seeded by `003_api_keys.sql`), is only ever decrypted server-side for the AI call, and is never returned by any endpoint (`GET /api/settings` returns just `{ "hasApiKey": true }`). A missing or revoked key is reported per request ("Add your Ollama API key in Settings…"); the server never logs it.
+Provider keys are encrypted at rest with Supabase **Vault** (pgsodium), decrypted only server-side for the AI call, and never returned by any endpoint. A missing or revoked key is reported on that provider's card; the server never logs it.
 
-The available models are a curated set (Settings → Chat model):
+**Usage**: the **Quota & usage** card under Settings → AI providers shows Gemini's daily free-tier requests and token volume, or Ollama Cloud's session (5-hour) and weekly (7-day) limits, with per-model counts.
 
-- `gpt-oss:120b-cloud`
-- `nemotron-3-super:cloud`
-- `gemma4:31b-cloud` (default)
+Each embedding model gets its own Qdrant collection, sized to that model, so changing the embedding model in Settings re-indexes in the background without breaking search.
 
-The `-cloud`/`:cloud` naming is display-only — the server strips it when calling Ollama Cloud, which expects the plain name (`gpt-oss:120b`, `nemotron-3-super`, `gemma4:31b`). The picker choice is stored per-browser and sent with every AI job. The **embedding** model stays local (`OLLAMA_EMBEDDING_BASE_URL`, default `http://localhost:11434`) so vector search never burns cloud quota — it must remain `nomic-embed-text:latest` (768-dim) or the Qdrant collection breaks.
+Optional AI tuning variables in `.env` (used when no choice is saved in Settings):
 
-**Usage dashboard**: Settings → Ollama Cloud usage shows your plan and the session (5-hour) and weekly (7-day) limits from `GET https://ollama.com/api/usage`, with per-model request counts.
-
-The Qdrant `notes` collection is created at API startup with cosine distance and a 768-dimension vector size. If your Ollama embedding provider emits another size, drop the collection so the API recreates it (or create it yourself with that model's dimension) before starting the API:
-
-```bash
-curl -X DELETE http://localhost:6333/collections/notes
-```
-
-Optional AI tuning variables in `.env`:
-
-- `OLLAMA_CHAT_MODEL` — the default chat model used when the app does not send one (default `gemma4:31b-cloud`).
+- `OLLAMA_CHAT_MODEL` — the fallback chat model when the app does not send one (default `gemma4:31b-cloud`).
 - `OLLAMA_NUM_CTX` — the context window in tokens passed to the chat model (default `32768`). It also sets the character budget used to assemble retrieved context for "Ask my notes", so longer windows allow more notes per answer.
 - `RAG_TOP_K` — how many Qdrant matches "Ask my notes" retrieves per question (default `10`).
 - `OLLAMA_EMBEDDING_BASE_URL` / `OLLAMA_EMBEDDING_MODEL` — the local Ollama used for host-run development and embeddings only.
@@ -422,6 +413,7 @@ Optional AI tuning variables in `.env`:
 | Owner | `GET /api/auth/owner`, `POST /api/auth/owner/setup`, `POST /api/auth/owner/login` |
 | Templates | `GET/POST /api/templates`, `GET/PUT/DELETE /api/templates/:id` |
 | Voice | `POST /api/voice/transcribe`, `POST /api/voice/speak` (use your chosen speech models) |
+| MCP | `POST/GET/DELETE /mcp` (Streamable HTTP), `/oauth/*` and `/.well-known/oauth-*` (OAuth 2.1 with PKCE and dynamic client registration), `/approve/:id`; owner-side management under `/api/mcp/*` (status, clients, tokens, approvals, activity, undo) |
 
 Muse has no synchronous AI endpoints — every AI call is a job in `ai_jobs` that a background worker processes, and the client polls `GET /api/ai/jobs/:id`.
 Provider API keys are stored in Supabase Vault and are never returned by the API.
@@ -429,137 +421,65 @@ Provider API keys are stored in Supabase Vault and are never returned by the API
 See `documentation/ENDPOINTS.md` for the full API reference, and
 `documentation/TROUBLESHOOTING.md` for a symptom-by-symptom operations guide.
 
-## Deploy with Docker Nginx and Cloudflare Tunnel
+## Connect AI apps over a Cloudflare Tunnel
 
-This setup exposes one HTTPS hostname while keeping Postgres, Qdrant, Ollama,
-Kong, and Express private. Cloudflare Tunnel provides the public HTTPS entry
-point; the Compose-managed Nginx service builds and serves the React client,
-then proxies internal paths.
+Only the MCP gateway is ever public. The web app stays on `127.0.0.1:8080`;
+the tunnel points at Nginx's second listener (`nginx:8081`, configured in
+`docker/nginx/public.conf`), which serves `/mcp`, `/oauth/*`,
+`/.well-known/oauth-*` and `/approve/*` and returns 404 for every other path.
 
 ```text
-Browser -> https://notes.example.com -> Cloudflare Tunnel -> Docker Nginx (127.0.0.1:8080)
-                                                                   |- /api/* -> Express + AI worker (Compose)
-                                                                   |- /uploads/* -> Express + AI worker (Compose)
-                                                                   `- Supabase paths -> Kong (Compose network)
+AI app -> https://muse-mcp.example.com -> Cloudflare Tunnel -> nginx:8081 -> Express (/mcp, /oauth, /approve)
+Browser -> http://localhost:8080 (loopback only) -> nginx:80 -> Express /api, GoTrue /auth/v1, PostgREST /rest/v1
 ```
 
-1. Create a production `.env` with unique secrets. The values built into the
-   Nginx image use the public domain. Compose gives the Express API private
-   service-name access to Supabase and Qdrant, so do not override those URLs
-   in production:
+1. Create a named tunnel and route your hostname to it (with `cloudflared`
+   logged in via `cloudflared tunnel login`):
+
+   ```bash
+   cloudflared tunnel create muse-mcp
+   # --config /dev/null keeps ~/.cloudflared/config.yml from routing DNS to another tunnel
+   cloudflared --config /dev/null tunnel route dns --overwrite-dns muse-mcp muse-mcp.example.com
+   cloudflared --config /dev/null tunnel token muse-mcp
+   ```
+
+2. Put the hostname and token in `.env`:
 
    ```dotenv
-   PUBLIC_URL=https://notes.example.com
-   # The Compose server defaults to host.docker.internal:11434 for local Ollama.
-   # Set only when embeddings are provided somewhere else.
-   OLLAMA_EMBEDDING_BASE_URL_DOCKER=https://embeddings.example.com
+   MCP_PUBLIC_URL=https://muse-mcp.example.com
+   CLOUDFLARE_TUNNEL_TOKEN=<token from the last command>
    ```
 
-2. Add `https://notes.example.com` to the CORS origins in `docker/supabase/kong.yml`
-   (`plugins` → `cors` → `config.origins`).
-
-   `PUBLIC_URL` is passed to the browser build, GoTrue, and Express CORS when
-   Compose starts. Therefore set it before running the build command; changing
-   it later requires `docker compose up -d --build nginx` and recreating Auth:
+3. Start the connector. It passes `--url http://nginx:8081` itself, so a
+   CLI-created tunnel needs no dashboard ingress rule:
 
    ```bash
-   docker compose up -d --build nginx
-   docker compose up -d --force-recreate auth
+   docker compose --profile named-tunnel up -d
    ```
 
-3. Keep host port mappings private. Express, the AI worker, Kong, and Qdrant
-   communicate on the Compose network; only Nginx needs a web port:
+   For a throwaway `*.trycloudflare.com` URL instead, use
+   `docker compose --profile tunnel up -d`.
 
-   ```yaml
-   # docker-compose.yml
-   nginx:
-     ports: ["127.0.0.1:8080:80"]
-   ```
+4. In your AI app, add the connector URL `https://muse-mcp.example.com/mcp`.
+   Settings → Connected apps shows copy-ready snippets for Claude, ChatGPT,
+   Claude Code, Cursor and Gemini CLI.
 
-   Do not map Studio, Postgres, Qdrant, or Kong to public interfaces. The
-   Docker Nginx service has the only web port (`127.0.0.1:8080`) and accesses
-   Kong by its Compose service name.
+Do not open inbound ports `80`, `443`, `3002`, `5432`, `6333` or `8080` for
+Muse. See [documentation/MCP.md](documentation/MCP.md) for the dashboard-based
+setup, client configs and troubleshooting.
 
-4. Build and start the Docker stack. The Nginx build injects only the public
-   anon key and browser URLs; it does not include the service-role key or any
-   other server secret:
-
-   ```bash
-   docker compose up -d --build
-   ```
-
-   The reverse-proxy configuration is committed at
-   `docker/nginx/default.conf`: `/api` and `/uploads` reach the internal
-   Express service, while `/auth/v1`, `/rest/v1`, `/storage/v1`, and
-   `/realtime/v1` reach Kong on the Compose network. The Nginx host binding is
-   deliberately loopback-only (`127.0.0.1:8080:80`).
-
-5. The `server` Compose service owns both Express and the AI worker. Rebuild
-   it after server changes, or rebuild the complete application after shared
-   dependency changes:
-
-   ```bash
-   docker compose up -d --build server nginx
-   ```
-
-6. In Cloudflare, create a Tunnel and add a **Published application** route:
-
-   ```text
-   Hostname: notes.example.com
-   Service URL: http://127.0.0.1:8080
-   ```
-
-   If the connector runs in Docker, give it host networking so it can reach
-   this loopback-only listener. The Cloudflare dashboard supplies the private
-   tunnel token.
-
-Only Cloudflare is public in this design. Do not open inbound ports `80`,
-`443`, `3002`, `8000`, `5432`, or `6333` for Muse.
-
-For a local setup, the tunnel ingress must point to `http://localhost:8080`.
-The Nginx container forwards `/api` to Express on port `3002`; do not point a
-tunnel directly to Express.
-
-## Verify a production deployment
-
-After the full stack is up, confirm every layer end to end:
+## Verify a deployment
 
 ```bash
 docker compose ps --format "table {{.Name}}\t{{.Status}}"   # db, server & nginx healthy
-docker compose exec server node -e "fetch('http://127.0.0.1:3002/health').then(r => r.json()).then(console.log)"
-curl -s http://localhost:8080/health                         # same health check through Nginx
-curl -sI https://notes.example.com/ | head -n 1             # 200 or 30x
+curl -s http://localhost:8080/health                         # {"ok":true} through Nginx
+npm test                                                     # server + client test suites
+scripts/test_mcp_public.sh https://muse-mcp.example.com      # public gateway exposes only MCP routes
 ```
 
-Then exercise auth and notes against the public host. The commands below reuse
-the anon key from `.env` so no secret appears in your shell history:
-
-```bash
-# Sign up. Your SMTP provider delivers an email-confirmation link; open it before running
-# the sign-in command below.
-ANON=$(grep -m1 '^ANON_KEY=' .env | cut -d= -f2-)
-curl -s -X POST https://notes.example.com/auth/v1/signup \
-  -H "apikey: $ANON" -H "Content-Type: application/json" \
-  -d '{"email":"you@example.com","password":"Password123!"}'
-
-# After opening the confirmation link, sign in and capture the access token.
-TOKEN=$(curl -s -X POST https://notes.example.com/auth/v1/token?grant_type=password \
-  -H "apikey: $ANON" -H "Content-Type: application/json" \
-  -d '{"email":"you@example.com","password":"Password123!"}' \
-  | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>console.log(JSON.parse(d).access_token||''))")
-
-# Create and list a note through Nginx -> Express -> Supabase.
-curl -s -X POST https://notes.example.com/api/notes \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"title":"Hello","content":"World"}' | head -c 200
-curl -s https://notes.example.com/api/notes -H "Authorization: Bearer $TOKEN" | head -c 300
-```
-
-An empty `TOKEN` after confirming the email means sign-in failed; check the
-GoTrue container:
-
-```bash
-docker compose logs auth --tail 20
-```
+`test_mcp_public.sh` checks that the public hostname answers `/mcp` with a 401
+and an OAuth challenge, serves the OAuth metadata, and blocks the web app,
+`/api`, `/auth/v1`, `/rest/v1` and `/uploads`. `scripts/test_mcp_e2e.sh` runs a
+full MCP session against a token.
 
 ---
