@@ -152,7 +152,7 @@ services:
     profiles: ["named-tunnel"]
     depends_on:
       nginx: { condition: service_started }
-    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN}"]
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "run", "--url", "http://nginx:8081", "--token", "${CLOUDFLARE_TUNNEL_TOKEN}"]
   tunnel:
     image: cloudflare/cloudflared:2026.11.0
     restart: unless-stopped

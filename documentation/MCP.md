@@ -36,6 +36,16 @@ https://muse-mcp.yassinejemmali.me/mcp
 
 A Cloudflare Named Tunnel securely bridges public MCP clients to your local Docker Compose network over an outbound-only encrypted tunnel without opening firewall ports or port-forwarding your router.
 
+### Quick setup from the CLI (what this machine uses)
+With `cloudflared` logged in (`cloudflared tunnel login`):
+```bash
+cloudflared tunnel create muse-mcp
+# --config /dev/null stops ~/.cloudflared/config.yml from routing DNS to another tunnel
+cloudflared --config /dev/null tunnel route dns --overwrite-dns muse-mcp muse-mcp.yassinejemmali.me
+cloudflared --config /dev/null tunnel token muse-mcp   # paste into CLOUDFLARE_TUNNEL_TOKEN
+```
+A CLI-created tunnel has no dashboard ingress; the compose service passes `--url http://nginx:8081`, so no further configuration is needed. The first connection attempt right after creating the tunnel can fail once; the container restarts and registers. Steps 1–3 below are the equivalent dashboard route.
+
 ### Step 1: DNS & Zero Trust
 1. Ensure your domain (`yassinejemmali.me`) DNS is managed in your Cloudflare dashboard.
 2. In Cloudflare, navigate to **Zero Trust** &rarr; **Networks** &rarr; **Tunnels**.

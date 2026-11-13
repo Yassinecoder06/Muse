@@ -111,36 +111,40 @@ oauthRouter.post('/oauth/register', oauthLimiter, async (req, res, next) => {
   }
 })
 
-oauthRouter.get('/oauth/authorize', async (req, res) => {
-  const clientId = String(req.query.client_id || ''),
-    redirect = String(req.query.redirect_uri || ''),
-    challenge = String(req.query.code_challenge || ''),
-    method = String(req.query.code_challenge_method || ''),
-    responseType = String(req.query.response_type || ''),
-    state = String(req.query.state || '')
-  if (!clientId || !redirect || !/^[-_A-Za-z0-9]{43}$/.test(challenge) || method !== 'S256' || responseType !== 'code')
-    return res.status(400).send('Invalid OAuth authorization request.')
-  const client = done(
-    await db
-      .from('mcp_clients')
-      .select('client_id,name,redirect_uris,scopes,approval_mode,remembered')
-      .eq('client_id', clientId)
-      .maybeSingle()
-  )
-  if (!client || !(client.redirect_uris as string[]).includes(redirect)) return res.status(400).send('Unknown client or redirect URI.')
-  const token = csrf(req, res)
-  // Offer exactly what this request asks for (or the safe defaults), never more
-  // than the client registered for.
-  const registered = scopesFrom(client.scopes)
-  const asked = typeof req.query.scope === 'string' && req.query.scope.trim() ? scopesFrom(req.query.scope.trim().split(/\s+/)) : DEFAULT_SCOPES
-  const requested = asked.filter(scope => registered.includes(scope))
-  if (!requested.length) return res.status(400).send('This app did not request any scope Muse can grant.')
-  const options = requested.map(scope => `<label><input type="checkbox" name="scope" value="${scope}" checked> ${scope}</label>`).join('')
-  page(
-    res,
-    'Connect an app',
-    `<p><strong>${escapeHtml(client.name)}</strong> requests access to Muse.</p><form method="post" action="/oauth/authorize"><input type="hidden" name="csrf" value="${token}"><input type="hidden" name="client_id" value="${escapeHtml(clientId)}"><input type="hidden" name="redirect_uri" value="${escapeHtml(redirect)}"><input type="hidden" name="challenge" value="${escapeHtml(challenge)}"><input type="hidden" name="state" value="${escapeHtml(state)}">${options}<label>Approval mode <select name="mode"><option value="minimal" selected>Minimal: the app asks before deleting</option><option value="standard">Standard: deletions also need approval in Muse</option><option value="trust">Trust: never asks (deletions keep a 7-day undo)</option></select></label><p><small>You can change the mode and scopes any time in Muse → Settings → Connected apps.</small></p><label><input type="checkbox" name="remember" value="yes" ${client.remembered ? 'checked' : ''}> Remember this client</label><label>Muse passphrase <input type="password" name="passphrase" required autocomplete="current-password"></label><button>Authorize</button></form>`
-  )
+oauthRouter.get('/oauth/authorize', async (req, res, next) => {
+  try {
+    const clientId = String(req.query.client_id || ''),
+      redirect = String(req.query.redirect_uri || ''),
+      challenge = String(req.query.code_challenge || ''),
+      method = String(req.query.code_challenge_method || ''),
+      responseType = String(req.query.response_type || ''),
+      state = String(req.query.state || '')
+    if (!clientId || !redirect || !/^[-_A-Za-z0-9]{43}$/.test(challenge) || method !== 'S256' || responseType !== 'code')
+      return res.status(400).send('Invalid OAuth authorization request.')
+    const client = done(
+      await db
+        .from('mcp_clients')
+        .select('client_id,name,redirect_uris,scopes,approval_mode,remembered')
+        .eq('client_id', clientId)
+        .maybeSingle()
+    )
+    if (!client || !(client.redirect_uris as string[]).includes(redirect)) return res.status(400).send('Unknown client or redirect URI.')
+    const token = csrf(req, res)
+    // Offer exactly what this request asks for (or the safe defaults), never more
+    // than the client registered for.
+    const registered = scopesFrom(client.scopes)
+    const asked = typeof req.query.scope === 'string' && req.query.scope.trim() ? scopesFrom(req.query.scope.trim().split(/\s+/)) : DEFAULT_SCOPES
+    const requested = asked.filter(scope => registered.includes(scope))
+    if (!requested.length) return res.status(400).send('This app did not request any scope Muse can grant.')
+    const options = requested.map(scope => `<label><input type="checkbox" name="scope" value="${scope}" checked> ${scope}</label>`).join('')
+    page(
+      res,
+      'Connect an app',
+      `<p><strong>${escapeHtml(client.name)}</strong> requests access to Muse.</p><form method="post" action="/oauth/authorize"><input type="hidden" name="csrf" value="${token}"><input type="hidden" name="client_id" value="${escapeHtml(clientId)}"><input type="hidden" name="redirect_uri" value="${escapeHtml(redirect)}"><input type="hidden" name="challenge" value="${escapeHtml(challenge)}"><input type="hidden" name="state" value="${escapeHtml(state)}">${options}<label>Approval mode <select name="mode"><option value="minimal" selected>Minimal: the app asks before deleting</option><option value="standard">Standard: deletions also need approval in Muse</option><option value="trust">Trust: never asks (deletions keep a 7-day undo)</option></select></label><p><small>You can change the mode and scopes any time in Muse → Settings → Connected apps.</small></p><label><input type="checkbox" name="remember" value="yes" ${client.remembered ? 'checked' : ''}> Remember this client</label><label>Muse passphrase <input type="password" name="passphrase" required autocomplete="current-password"></label><button>Authorize</button></form>`
+    )
+  } catch (e) {
+    next(e)
+  }
 })
 oauthRouter.post('/oauth/authorize', loginLimiter, async (req, res, next) => {
   try {
@@ -308,16 +312,20 @@ oauthRouter.post('/oauth/revoke', oauthLimiter, async (req, res, next) => {
   }
 })
 
-oauthRouter.get('/approve/:id', async (req, res) => {
-  const row = await getApproval(String(req.params.id))
-  if (!row || row.status !== 'pending') return res.status(404).send('Approval link expired or already used.')
-  const target = String(row.args.target || row.args.note_id || row.args.id || 'Not specified')
-  const token = csrf(req, res)
-  page(
-    res,
-    'Approve this action',
-    `<p><strong>Tool:</strong> ${escapeHtml(row.tool)}</p><p><strong>Target:</strong> ${escapeHtml(target)}</p><p>${escapeHtml(row.summary)}</p><form method="post" action="/approve/${escapeHtml(row.id)}"><input type="hidden" name="csrf" value="${token}"><label>Muse passphrase <input type="password" name="passphrase" required autocomplete="current-password"></label><button name="decision" value="approve">Approve</button> <button name="decision" value="deny">Deny</button></form>`
-  )
+oauthRouter.get('/approve/:id', async (req, res, next) => {
+  try {
+    const row = await getApproval(String(req.params.id))
+    if (!row || row.status !== 'pending') return res.status(404).send('Approval link expired or already used.')
+    const target = String(row.args.target || row.args.note_id || row.args.id || 'Not specified')
+    const token = csrf(req, res)
+    page(
+      res,
+      'Approve this action',
+      `<p><strong>Tool:</strong> ${escapeHtml(row.tool)}</p><p><strong>Target:</strong> ${escapeHtml(target)}</p><p>${escapeHtml(row.summary)}</p><form method="post" action="/approve/${escapeHtml(row.id)}"><input type="hidden" name="csrf" value="${token}"><label>Muse passphrase <input type="password" name="passphrase" required autocomplete="current-password"></label><button name="decision" value="approve">Approve</button> <button name="decision" value="deny">Deny</button></form>`
+    )
+  } catch (e) {
+    next(e)
+  }
 })
 oauthRouter.post('/approve/:id', loginLimiter, async (req, res, next) => {
   try {
@@ -548,7 +556,9 @@ mcpApiRouter.get('/events', async (req, res) => {
     ])
     res.write(`event: snapshot\ndata: ${JSON.stringify({ activity: activity.data || [], approvals: approvals.data || [] })}\n\n`)
   }
-  await send()
-  const timer = setInterval(() => void send(), 15000)
+  // A failed poll must never become an unhandled rejection (that would crash the server).
+  const safeSend = () => send().catch(() => {})
+  await safeSend()
+  const timer = setInterval(() => void safeSend(), 15000)
   req.on('close', () => clearInterval(timer))
 })

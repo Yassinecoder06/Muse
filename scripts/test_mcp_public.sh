@@ -65,10 +65,13 @@ assert_public_route() {
   local path="$1"
   local url="${BASE_URL}${path}"
   local status
-  status=$(curl -s -o /dev/null -w "%{http_code}" "$url" || echo "000")
+  local body
+  body=$(curl -s -w $'\n%{http_code}' "$url" || printf '\n000')
+  status="${body##*$'\n'}"
 
-  if [[ "$status" == "404" ]]; then
-    echo "  [FAIL] ${path} returned 404 (should be proxied to upstream)" >&2
+  # nginx's own 404 page means the gateway blocked it; a 404 from Muse is fine.
+  if [[ "$status" == "404" && "$body" == *"<center>nginx"* ]]; then
+    echo "  [FAIL] ${path} was blocked by the gateway (should be proxied to upstream)" >&2
     FAILED=$((FAILED + 1))
   elif [[ "$status" == "000" ]]; then
     echo "  [FAIL] ${path} failed to connect to ${url}" >&2
@@ -120,8 +123,8 @@ echo "--- 2. Asserting public routes respond (not 404) ---"
 assert_public_route "/health"
 assert_public_route "/.well-known/oauth-protected-resource"
 assert_public_route "/.well-known/oauth-authorization-server"
-assert_public_route "/oauth/"
-assert_public_route "/approve/"
+assert_public_route "/oauth/authorize"
+assert_public_route "/approve/not-a-real-id-check"
 
 echo ""
 echo "--- 3. Asserting /mcp authentication challenge ---"

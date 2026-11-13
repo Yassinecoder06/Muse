@@ -104,7 +104,10 @@ async function executeApprovedApproval(id: string) {
   )
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function getApproval(id: string): Promise<Approval | null> {
+  if (!UUID.test(id)) return null
   const row = checked(
     await db.from('mcp_approvals').select('id,user_id,client_id,tool,args,summary,status,result,expires_at').eq('id', id).maybeSingle()
   )
@@ -129,6 +132,7 @@ export async function listPendingApprovals(userId: string, clientId?: string): P
 }
 
 export async function decideApproval(id: string, decision: 'approve' | 'deny'): Promise<boolean> {
+  if (!UUID.test(id)) return false
   const row = checked(
     await db.from('mcp_approvals').select('id,user_id,client_id,tool,args,summary,status,result,expires_at').eq('id', id).maybeSingle()
   )
