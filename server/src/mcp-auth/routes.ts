@@ -4,14 +4,14 @@ import { z } from 'zod'
 import { owner } from '../services/owner.service.js'
 import { loginLimiter, oauthLimiter } from '../middleware/rate-limit.js'
 import { requireAuth } from '../middleware/auth.js'
-import { escapeHtml } from '../utils/html.js'
 import { mcpPublicUrl } from '../utils/env.js'
 import { supabase } from '../supabase/client.js'
 // The project does not yet generate Supabase Database types for app tables.
 const db = supabase as unknown as { from: (table: string) => any }
 import { decideApproval, getApproval, getMcpSettings } from './index.js'
-import { DEFAULT_SCOPES, LOCAL_USER_ID, SCOPES, createOpaqueToken, newFamilyId } from './internal.js'
+import { DEFAULT_SCOPES, LOCAL_USER_ID, SCOPES, createOpaqueToken, newFamilyId, type McpScope } from './internal.js'
 import { constantTimeEqual, notifyModeChange, tokenHash } from './internal-crypto.js'
+import { approvePage, consentPage, messagePage } from './pages.js'
 import { codeCanBeConsumed, downgradedScopes, refreshAction, validDcr, validDcrRedirect, verifyPkce } from './oauth-logic.js'
 
 export const oauthRouter = Router()
@@ -28,13 +28,16 @@ const setPageHeaders = (res: Response) =>
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer'
   })
-function page(res: Response, title: string, body: string) {
+function send(res: Response, html: string, status = 200) {
   setPageHeaders(res)
-  res
-    .type('html')
-    .send(
-      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(title)} · Muse</title><style>body{font:16px system-ui;max-width:38rem;margin:3rem auto;padding:0 1rem;background:#f7f6f2;color:#202321}main{background:white;padding:2rem;border:1px solid #ddd;border-radius:12px}label{display:block;margin:1rem 0}input,select,button{font:inherit;padding:.6rem}button{cursor:pointer} .error{color:#a21}</style><main><h1>${escapeHtml(title)}</h1>${body}</main></html>`
-    )
+  res.status(status).type('html').send(html)
+}
+const fail = (res: Response, status: number, title: string, message: string) => send(res, messagePage('error', title, message), status)
+function denyUrl(redirect: string, state: string) {
+  const url = new URL(redirect)
+  url.searchParams.set('error', 'access_denied')
+  if (state) url.searchParams.set('state', state)
+  return url.toString()
 }
 function csrf(req: Request, res: Response) {
   const value = randomBytes(24).toString('base64url')
@@ -56,7 +59,7 @@ const done = (r: { data: any; error: { message: string } | null }): any => {
   return r.data
 }
 const scopesFrom = (value: unknown) =>
-  Array.isArray(value) ? value.filter((s): s is string => typeof s === 'string' && (SCOPES as string[]).includes(s)) : []
+  Array.isArray(value) ? value.filter((s): s is McpScope => typeof s === 'string' && (SCOPES as string[]).includes(s)) : []
 
 oauthRouter.get('/.well-known/oauth-protected-resource', (_req, res) =>
   res.json({ resource: `${mcpPublicUrl}/mcp`, authorization_servers: [mcpPublicUrl], scopes_supported: SCOPES, bearer_methods_supported: ['header'] })
@@ -120,7 +123,7 @@ oauthRouter.get('/oauth/authorize', async (req, res, next) => {
       responseType = String(req.query.response_type || ''),
       state = String(req.query.state || '')
     if (!clientId || !redirect || !/^[-_A-Za-z0-9]{43}$/.test(challenge) || method !== 'S256' || responseType !== 'code')
-      return res.status(400).send('Invalid OAuth authorization request.')
+      return fail(res, 400, 'This link is not valid', 'The app sent an incomplete authorization request. Start connecting again from the app.')
     const client = done(
       await db
         .from('mcp_clients')
@@ -128,19 +131,29 @@ oauthRouter.get('/oauth/authorize', async (req, res, next) => {
         .eq('client_id', clientId)
         .maybeSingle()
     )
-    if (!client || !(client.redirect_uris as string[]).includes(redirect)) return res.status(400).send('Unknown client or redirect URI.')
-    const token = csrf(req, res)
+    if (!client || !(client.redirect_uris as string[]).includes(redirect))
+      return fail(res, 400, 'Unknown app', 'Muse does not recognise this app or its return address. Remove the connector in the app and add it again.')
     // Offer exactly what this request asks for (or the safe defaults), never more
     // than the client registered for.
     const registered = scopesFrom(client.scopes)
     const asked = typeof req.query.scope === 'string' && req.query.scope.trim() ? scopesFrom(req.query.scope.trim().split(/\s+/)) : DEFAULT_SCOPES
     const requested = asked.filter(scope => registered.includes(scope))
-    if (!requested.length) return res.status(400).send('This app did not request any scope Muse can grant.')
-    const options = requested.map(scope => `<label><input type="checkbox" name="scope" value="${scope}" checked> ${scope}</label>`).join('')
-    page(
+    if (!requested.length) return fail(res, 400, 'Nothing to grant', 'This app did not request any permission Muse can grant.')
+    send(
       res,
-      'Connect an app',
-      `<p><strong>${escapeHtml(client.name)}</strong> requests access to Muse.</p><form method="post" action="/oauth/authorize"><input type="hidden" name="csrf" value="${token}"><input type="hidden" name="client_id" value="${escapeHtml(clientId)}"><input type="hidden" name="redirect_uri" value="${escapeHtml(redirect)}"><input type="hidden" name="challenge" value="${escapeHtml(challenge)}"><input type="hidden" name="state" value="${escapeHtml(state)}">${options}<label>Approval mode <select name="mode"><option value="minimal" selected>Minimal: the app asks before deleting</option><option value="standard">Standard: deletions also need approval in Muse</option><option value="trust">Trust: never asks (deletions keep a 7-day undo)</option></select></label><p><small>You can change the mode and scopes any time in Muse → Settings → Connected apps.</small></p><label><input type="checkbox" name="remember" value="yes" ${client.remembered ? 'checked' : ''}> Remember this client</label><label>Muse passphrase <input type="password" name="passphrase" required autocomplete="current-password"></label><button>Authorize</button></form>`
+      consentPage({
+        csrf: csrf(req, res),
+        clientId,
+        clientName: client.name,
+        redirectUri: redirect,
+        challenge,
+        state,
+        offered: requested,
+        checked: requested,
+        mode: modeSchema.catch('minimal').parse(client.approval_mode),
+        remembered: !!client.remembered,
+        denyUrl: denyUrl(redirect, state)
+      })
     )
   } catch (e) {
     next(e)
@@ -148,18 +161,38 @@ oauthRouter.get('/oauth/authorize', async (req, res, next) => {
 })
 oauthRouter.post('/oauth/authorize', loginLimiter, async (req, res, next) => {
   try {
-    if (!csrfValid(req)) return res.status(403).send('Form expired. Reload and try again.')
+    if (!csrfValid(req)) return fail(res, 403, 'This page expired', 'Start connecting again from the app.')
     const clientId = String(req.body.client_id || ''),
       redirect = String(req.body.redirect_uri || ''),
       challenge = String(req.body.challenge || ''),
       state = String(req.body.state || '')
-    const client = done(await db.from('mcp_clients').select('client_id,redirect_uris,scopes').eq('client_id', clientId).maybeSingle())
+    const client = done(await db.from('mcp_clients').select('client_id,name,redirect_uris,scopes').eq('client_id', clientId).maybeSingle())
     if (!client || !(client.redirect_uris as string[]).includes(redirect) || !/^[-_A-Za-z0-9]{43}$/.test(challenge))
-      return res.status(400).send('Invalid authorization request.')
-    if (!(await owner.verify(String(req.body.passphrase || ''))))
-      return res.status(401).send('Passphrase is not correct. Go back and try again.')
+      return fail(res, 400, 'This link is not valid', 'Start connecting again from the app.')
+    const mode = modeSchema.catch('minimal').parse(req.body.mode)
+    if (!(await owner.verify(String(req.body.passphrase || '')))) {
+      const ticked = scopesFrom(Array.isArray(req.body.scope) ? req.body.scope : req.body.scope ? [req.body.scope] : [])
+      const registered = scopesFrom(client.scopes)
+      return send(
+        res,
+        consentPage({
+          csrf: csrf(req, res),
+          clientId,
+          clientName: client.name,
+          redirectUri: redirect,
+          challenge,
+          state,
+          offered: registered.filter(scope => ticked.includes(scope) || DEFAULT_SCOPES.includes(scope)),
+          checked: ticked,
+          mode,
+          remembered: req.body.remember === 'yes',
+          denyUrl: denyUrl(redirect, state),
+          error: 'That passphrase is not correct. Try again.'
+        }),
+        401
+      )
+    }
     const scopes = downgradedScopes(req.body.scope, client.scopes)
-    const mode = modeSchema.parse(req.body.mode)
     done(
       await db
         .from('mcp_clients')
@@ -312,16 +345,20 @@ oauthRouter.post('/oauth/revoke', oauthLimiter, async (req, res, next) => {
   }
 })
 
+async function clientName(clientId: string): Promise<string | undefined> {
+  const row = done(await db.from('mcp_clients').select('name').eq('client_id', clientId).maybeSingle())
+  return row?.name || undefined
+}
+const approvalTarget = (args: Record<string, unknown>) => String(args.target || args.note_id || args.id || 'Not specified')
+
 oauthRouter.get('/approve/:id', async (req, res, next) => {
   try {
     const row = await getApproval(String(req.params.id))
-    if (!row || row.status !== 'pending') return res.status(404).send('Approval link expired or already used.')
-    const target = String(row.args.target || row.args.note_id || row.args.id || 'Not specified')
-    const token = csrf(req, res)
-    page(
+    if (!row || row.status !== 'pending')
+      return send(res, messagePage('info', 'Link expired', 'This approval link has expired or was already used. You can close this page.'), 404)
+    send(
       res,
-      'Approve this action',
-      `<p><strong>Tool:</strong> ${escapeHtml(row.tool)}</p><p><strong>Target:</strong> ${escapeHtml(target)}</p><p>${escapeHtml(row.summary)}</p><form method="post" action="/approve/${escapeHtml(row.id)}"><input type="hidden" name="csrf" value="${token}"><label>Muse passphrase <input type="password" name="passphrase" required autocomplete="current-password"></label><button name="decision" value="approve">Approve</button> <button name="decision" value="deny">Deny</button></form>`
+      approvePage({ id: row.id, csrf: csrf(req, res), tool: row.tool, target: approvalTarget(row.args), summary: row.summary, clientName: await clientName(row.clientId) })
     )
   } catch (e) {
     next(e)
@@ -329,12 +366,35 @@ oauthRouter.get('/approve/:id', async (req, res, next) => {
 })
 oauthRouter.post('/approve/:id', loginLimiter, async (req, res, next) => {
   try {
-    if (!csrfValid(req)) return res.status(403).send('Form expired. Reload and try again.')
-    if (!(await owner.verify(String(req.body.passphrase || '')))) return res.status(401).send('Passphrase is not correct.')
+    if (!csrfValid(req)) return fail(res, 403, 'This page expired', 'Reload the approval link and try again.')
+    const id = String(req.params.id)
+    if (!(await owner.verify(String(req.body.passphrase || '')))) {
+      const row = await getApproval(id)
+      if (!row || row.status !== 'pending')
+        return send(res, messagePage('info', 'Link expired', 'This approval link has expired or was already used. You can close this page.'), 404)
+      return send(
+        res,
+        approvePage({
+          id: row.id,
+          csrf: csrf(req, res),
+          tool: row.tool,
+          target: approvalTarget(row.args),
+          summary: row.summary,
+          clientName: await clientName(row.clientId),
+          error: 'That passphrase is not correct. Try again.'
+        }),
+        401
+      )
+    }
     const decision = req.body.decision === 'approve' ? 'approve' : 'deny'
-    const changed = await decideApproval(String(req.params.id), decision)
+    const changed = await decideApproval(id, decision)
     res.clearCookie(csrfCookie)
-    page(res, changed ? 'Decision recorded' : 'Link expired', '<p>You can close this page.</p>')
+    send(
+      res,
+      changed
+        ? messagePage('ok', decision === 'approve' ? 'Approved' : 'Denied', decision === 'approve' ? 'Muse will run the action now. You can close this page.' : 'Nothing was changed. You can close this page.')
+        : messagePage('info', 'Link expired', 'This approval link has expired or was already used. You can close this page.')
+    )
   } catch (e) {
     next(e)
   }
