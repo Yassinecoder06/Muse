@@ -240,7 +240,7 @@ export function AiProvidersPanel({ onToast }: { onToast: (message: string) => vo
       </SettingsCard>
 
       <SettingsCard title="Dictation" description="Select the speech recognition model used by microphone dictation on the web." icon={<Mic size={16}/> }>
-        <SettingsRow label="Speech-to-text model" description="The phone app always uses on-device dictation.">
+        <SettingsRow label="Speech-to-text model">
           {modelSelect('stt', prefs.stt, ref => setPrefs({ ...prefs, stt: ref }), 'Muse automatic (Gemini)')}
         </SettingsRow>
       </SettingsCard>
