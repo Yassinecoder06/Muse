@@ -4,6 +4,7 @@ import { api, type AiUsage, type SettingsResponse } from '../../../services/api'
 import { chatModel } from '../../../services/settings'
 import { AiProvidersPanel } from '../../../components/AiProvidersPanel'
 import { SettingsCard, SettingsSection } from '../ui'
+import './ai.css'
 
 type ProviderTab = 'auto' | 'gemini' | 'ollama'
 
@@ -55,7 +56,7 @@ function UsageCard() {
     >
       <div className="usage-card">
         {apiKeyState?.hasGeminiKey && apiKeyState?.hasOllamaKey ? (
-          <div className="usage-provider-tabs">
+          <div className="usage-provider-tabs" role="group" aria-label="Usage provider">
             <button type="button" className={`usage-provider-tab ${tab === 'auto' ? 'active' : ''}`} onClick={() => setTab('auto')} title="Show quota for the active chat model">
               Auto ({activeModel ? (activeModel.startsWith('gemini') ? 'Gemini' : 'Ollama') : 'Gemini'})
             </button>
@@ -111,7 +112,7 @@ function UsageBar({ label, value, sublabel, models }: {
         <span>{label}</span>
         <strong>{sublabel || `${pct.toFixed(1)}%`}</strong>
       </div>
-      <div className="usage-track"><i style={{ width: `${pct}%` }}/></div>
+      <div className="usage-track" role="progressbar" aria-label={`${label} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><i style={{ width: `${pct}%` }}/></div>
       {list.length ? (
         <ul className="usage-models">
           {list.map(item => (
