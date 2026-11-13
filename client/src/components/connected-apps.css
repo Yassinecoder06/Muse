@@ -9,7 +9,9 @@
 .connected-apps-grid-item { min-width: 0; }
 .connected-apps-grid-item > .settings-card { height: 100%; padding: 4px 18px; }
 .connect-card, .approval-mode-card, .approvals-card, .clients-card { grid-column: 1 / -1; }
-.tokens-card, .activity-card { grid-column: span 1; }
+.tokens-card, .activity-card { grid-column: 1 / -1; }
+/* Long feeds scroll inside their card instead of stretching the page. */
+.activity-card .activity-list { max-height: 460px; overflow-y: auto; padding-right: 4px; }
 .connected-apps-grid-item .settings-card-body { min-width: 0; }
 
 .connector-card, .mode-section, .approvals-inbox, .clients-section, .tokens-section, .activity-section {

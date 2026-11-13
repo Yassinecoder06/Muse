@@ -1367,6 +1367,13 @@
 
   .settings-card-head {
     padding: 16px 0 12px;
+    flex-wrap: wrap;
+  }
+
+  /* Header actions drop under the title instead of squeezing it. */
+  .settings-card-head .settings-card-actions {
+    flex-basis: 100%;
+    margin-left: 0;
   }
 
   .settings-row {

@@ -160,8 +160,11 @@
   .settings-page .ai-provider-top { flex-direction: column; }
   .settings-page .usage-provider-tabs { display: grid; grid-template-columns: 1fr; width: 100%; }
   .settings-page .usage-provider-tab { white-space: normal; text-align: left; }
-  .settings-page .ai-default-control { align-items: stretch; }
-  .settings-page .ai-default-control .setting-toggle { flex: none; }
+  /* Grid, not flex: the select takes the room and the Test button stays its natural size. */
+  .settings-page .ai-default-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; }
+  .settings-page .ai-default-control .setting-select,
+  .settings-page .ai-default-control .setting-input { width: 100%; }
+  .settings-page .ai-default-control .setting-toggle { width: auto; flex: none; }
   .settings-page .usage-models li { flex-direction: column; gap: 3px; }
   .settings-page .usage-models li em { text-align: left; }
 }

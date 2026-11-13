@@ -58,7 +58,7 @@ export const MODE_EXPLANATIONS: Record<McpApprovalMode, { title: string; desc: s
     warning: 'Text in notes or web pages could make the AI delete things without asking; deletions keep a 7-day undo.'
   },
   minimal: {
-    title: 'Minimal (Default)',
+    title: 'Minimal (Recommended)',
     desc: 'Reads run freely; writes ask one-time "Always allow"; destructive actions prompt every time with 7-day undo.'
   },
   standard: {
