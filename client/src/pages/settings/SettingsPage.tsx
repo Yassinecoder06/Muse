@@ -39,24 +39,68 @@ export function SettingsPage({ onBack, onToast, ...general }: SettingsPageProps)
 
   if (!active) return <Navigate to="/settings/general" replace/>
 
+  const displayName = general.userName?.trim() || 'Local User'
+  const initials = general.userName?.trim().split(/\s+/).filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase() || 'MU'
+
   return (
     <div className="settings-page">
       <aside className="settings-nav" aria-label="Settings sections">
-        <button type="button" className="settings-back" onClick={onBack}><ArrowLeft size={16}/> Back to notes</button>
-        <h1>Settings</h1>
-        <nav>
+        <div className="settings-nav-top">
+          <button type="button" className="settings-back" onClick={onBack} title="Return to your notes (Esc)">
+            <ArrowLeft size={16}/>
+            <span>Back to notes</span>
+          </button>
+          <div className="settings-nav-title-row">
+            <h1>Settings</h1>
+          </div>
+        </div>
+
+        <nav className="settings-nav-links">
           {SECTIONS.map(({ id, label, hint, icon: Icon }) => (
-            <NavLink key={id} to={`/settings/${id}`} replace className={({ isActive }) => `settings-nav-item${isActive ? ' active' : ''}`}>
-              <Icon size={17}/>
-              <span><strong>{label}</strong><small>{hint}</small></span>
+            <NavLink
+              key={id}
+              to={`/settings/${id}`}
+              replace
+              className={({ isActive }) => `settings-nav-item${isActive ? ' active' : ''}`}
+            >
+              <span className="settings-nav-item-icon" aria-hidden="true">
+                <Icon size={17}/>
+              </span>
+              <span className="settings-nav-item-text">
+                <strong>{label}</strong>
+                <small>{hint}</small>
+              </span>
             </NavLink>
           ))}
         </nav>
+
         {/* Compact switcher for narrow screens, where the nav collapses. */}
-        <select className="settings-nav-select" value={active} onChange={e => navigate(`/settings/${e.target.value}`, { replace: true })} aria-label="Settings section">
-          {SECTIONS.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
-        </select>
+        <div className="settings-nav-mobile-bar">
+          <select
+            className="settings-nav-select"
+            value={active}
+            onChange={e => navigate(`/settings/${e.target.value}`, { replace: true })}
+            aria-label="Settings section"
+          >
+            {SECTIONS.map(({ id, label }) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <footer className="settings-nav-footer">
+          <div className="settings-nav-user-badge">
+            <div className="settings-nav-avatar" aria-hidden="true">{initials}</div>
+            <div className="settings-nav-user-meta">
+              <span className="settings-nav-user-name" title={displayName}>{displayName}</span>
+              <span className="settings-nav-app-version">Muse v1.0</span>
+            </div>
+          </div>
+        </footer>
       </aside>
+
       <main className="settings-content">
         {active === 'general' && <GeneralSection {...general}/>}
         {active === 'ai' && <AiSection onToast={onToast}/>}
