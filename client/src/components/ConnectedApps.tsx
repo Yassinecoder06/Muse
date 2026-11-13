@@ -41,6 +41,7 @@ import {
   type McpTokenRow
 } from '../services/mcp'
 import { ConfirmModal } from './ConfirmModal'
+import { SettingsCard } from '../pages/settings/ui'
 import './connected-apps.css'
 
 export interface ConnectedAppsProps {
@@ -325,43 +326,24 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
 
   if (loading) {
     return (
-      <section className="account-card connected-apps-root">
-        <header>
-          <span>
-            <strong>
-              <Radio size={16} /> Connected apps (muse-mcp)
-            </strong>
-            <small>Loading MCP connector status…</small>
-          </span>
-        </header>
-      </section>
+      <div className="connected-apps-root">
+        <SettingsCard title="Connect" icon={<Radio size={16}/>}>Loading MCP connector status…</SettingsCard>
+      </div>
     )
   }
 
   return (
-    <section className="account-card connected-apps-root" aria-label="Connected apps management">
-      {/* Header */}
-      <header className="connected-apps-header">
-        <div className="connected-apps-header-left">
-          <h3>
-            <Radio size={17} style={{ color: '#8660f1' }} />
-            Connected apps (muse-mcp)
-          </h3>
-          {pendingApprovalsCount > 0 && (
-            <span className="connected-apps-badge" title={`${pendingApprovalsCount} pending approvals`}>
-              {pendingApprovalsCount}
-            </span>
-          )}
-        </div>
-      </header>
+    <div className="connected-apps-root" aria-label="Connected apps management">
 
       {/* 1. Connector Card */}
+      <div className="connected-apps-grid-item connect-card">
+      <SettingsCard title="Connect" description="Set up Muse in an AI app with the public MCP endpoint and a ready-to-copy configuration." icon={<Radio size={16}/> }>
       <div className="connector-card">
         <div>
-          <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#2a2833', display: 'block', marginBottom: 4 }}>
+          <span style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--st-text)', display: 'block', marginBottom: 4 }}>
             Streamable HTTP Endpoint
           </span>
-          <small style={{ color: '#8a8791', fontSize: '11px', display: 'block', marginBottom: 8 }}>
+          <small style={{ color: 'var(--st-muted)', fontSize: '11px', display: 'block', marginBottom: 8 }}>
             Public connector endpoint for claude.ai, ChatGPT, Claude Code, Cursor, and Gemini CLI.
           </small>
         </div>
@@ -374,14 +356,14 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
             onClick={() => copyToClipboard(mcpUrl, 'url')}
             title="Copy connector URL"
           >
-            {copiedKey === 'url' ? <Check size={13} style={{ color: '#059669' }} /> : <Copy size={13} />}
+            {copiedKey === 'url' ? <Check size={13} style={{ color: 'var(--st-accent)' }} /> : <Copy size={13} />}
             <span>{copiedKey === 'url' ? 'Copied' : 'Copy URL'}</span>
           </button>
         </div>
 
         {/* Snippet Tabs */}
         <div>
-          <span style={{ fontSize: '11px', fontWeight: 600, color: '#65626f', display: 'block', marginBottom: 6 }}>
+          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--st-muted)', display: 'block', marginBottom: 6 }}>
             Quick Setup Snippets:
           </span>
           <div className="snippet-tabs">
@@ -416,7 +398,7 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
               title="Copy snippet"
             >
               {copiedKey === activeSnippetTab ? (
-                <Check size={12} style={{ color: '#059669' }} />
+                <Check size={12} style={{ color: 'var(--st-accent)' }} />
               ) : (
                 <Copy size={12} />
               )}
@@ -426,18 +408,13 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
           <code>{snippetCode[activeSnippetTab]}</code>
         </div>
       </div>
+      </SettingsCard>
+      </div>
 
       {/* 2. Approval Mode & Timezone */}
+      <div className="connected-apps-grid-item approval-mode-card">
+      <SettingsCard title="Approval mode" description="Choose how connected apps request permission to use Muse." icon={<ShieldAlert size={16}/> }>
       <div className="mode-section">
-        <div>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#2a2833', display: 'block', marginBottom: 4 }}>
-            Default Approval Mode
-          </span>
-          <small style={{ color: '#8a8791', fontSize: '11.5px' }}>
-            Determines how tool permissions are authorized for connected MCP clients.
-          </small>
-        </div>
-
         <div className="mode-segmented-control">
           {(['minimal', 'standard', 'trust'] as McpApprovalMode[]).map(m => (
             <button
@@ -448,7 +425,8 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
               }`}
               onClick={() => void selectMode(m)}
             >
-              {MODE_EXPLANATIONS[m].title}
+              <strong>{MODE_EXPLANATIONS[m].title}</strong>
+              <small>{MODE_EXPLANATIONS[m].desc}</small>
             </button>
           ))}
         </div>
@@ -492,16 +470,13 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
           </div>
         </div>
       </div>
+      </SettingsCard>
+      </div>
 
       {/* 3. Approvals Inbox */}
+      <div className="connected-apps-grid-item approvals-card">
+      <SettingsCard title={`Approvals inbox${pendingApprovalsCount ? ` (${pendingApprovalsCount})` : ''}`} description="Review sensitive operations requested by connected apps." icon={<CheckCircle size={16}/> }>
       <div className="approvals-inbox">
-        <div className="inbox-title-row">
-          <h4>
-            <CheckCircle size={15} style={{ color: '#8660f1' }} />
-            Pending Approvals ({approvals.length})
-          </h4>
-        </div>
-
         {approvals.length > 0 ? (
           <div className="approvals-list">
             {approvals.map(app => (
@@ -509,7 +484,7 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
                 <div className="approval-card-top">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span className="approval-tool-badge">{app.tool}</span>
-                    <span style={{ fontSize: '11px', color: '#8c8a94' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--st-muted)' }}>
                       via {resolveClientName(app.client_id, clients)}
                     </span>
                   </div>
@@ -541,18 +516,13 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
           </div>
         )}
       </div>
+      </SettingsCard>
+      </div>
 
       {/* 4. Connected Clients */}
+      <div className="connected-apps-grid-item clients-card">
+      <SettingsCard title={`Connected clients (${clients.length})`} description="Apps authorized through OAuth 2.1 or personal access tokens." icon={<Layers size={16}/> }>
       <div className="clients-section">
-        <div>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#2a2833', display: 'block', marginBottom: 4 }}>
-            Connected Clients ({clients.length})
-          </span>
-          <small style={{ color: '#8a8791', fontSize: '11.5px' }}>
-            Apps authorized via OAuth 2.1 or Personal Access Tokens.
-          </small>
-        </div>
-
         {clients.length > 0 ? (
           <div className="clients-list">
             {clients.map(cli => {
@@ -585,7 +555,7 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
                   {/* Mode override control */}
                   <div className="client-controls-row">
                     <div className="client-mode-select-wrap">
-                      <span style={{ color: '#65626f' }}>Mode override:</span>
+                      <span style={{ color: 'var(--st-muted)' }}>Mode override:</span>
                       <select
                         className="client-mode-select"
                         value={cli.approval_mode || ''}
@@ -608,7 +578,7 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
 
                   {/* Scope checkboxes */}
                   <div>
-                    <span style={{ fontSize: '10.5px', fontWeight: 600, color: '#8a8791', display: 'block' }}>
+                    <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--st-muted)', display: 'block' }}>
                       Allowed Scopes (click to toggle):
                     </span>
                     <div className="client-scopes-wrap">
@@ -642,28 +612,17 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
           <div className="empty-text">No apps currently connected.</div>
         )}
       </div>
+      </SettingsCard>
+      </div>
 
       {/* 5. Personal Access Tokens */}
+      <div className="connected-apps-grid-item tokens-card">
+      <SettingsCard title={`Personal tokens (${patTokens.length})`} description="Bearer tokens beginning with muse_mcp_ for CLI tools and local scripts." icon={<KeyRound size={16}/> } actions={
+        <button type="button" className="connector-copy-btn" onClick={() => setShowCreateToken(!showCreateToken)}>
+          <KeyRound size={13}/><span>{showCreateToken ? 'Cancel' : 'Generate token'}</span>
+        </button>
+      }>
       <div className="tokens-section">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: '#2a2833', display: 'block', marginBottom: 4 }}>
-              Personal Access Tokens ({patTokens.length})
-            </span>
-            <small style={{ color: '#8a8791', fontSize: '11.5px' }}>
-              Bearer tokens starting with <code>muse_mcp_</code> for CLI tools and local scripts.
-            </small>
-          </div>
-          <button
-            type="button"
-            className="connector-copy-btn"
-            onClick={() => setShowCreateToken(!showCreateToken)}
-          >
-            <KeyRound size={13} />
-            <span>{showCreateToken ? 'Cancel' : 'Generate Token'}</span>
-          </button>
-        </div>
-
         {/* Show Token Once Banner */}
         {createdTokenResult && (
           <div className="token-once-banner">
@@ -679,7 +638,7 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
                 onClick={() => copyToClipboard(createdTokenResult.token, 'new_token')}
               >
                 {copiedKey === 'new_token' ? (
-                  <Check size={13} style={{ color: '#059669' }} />
+                  <Check size={13} style={{ color: 'var(--st-accent)' }} />
                 ) : (
                   <Copy size={13} />
                 )}
@@ -700,7 +659,7 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
         {/* Token Creation Form */}
         {showCreateToken && (
           <form className="token-create-form" onSubmit={handleCreateToken}>
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#2a2833' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--st-text)' }}>
               Create Personal Access Token
             </span>
             <div className="token-form-row">
@@ -729,7 +688,7 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
             </div>
 
             <div>
-              <span style={{ fontSize: '11px', fontWeight: 600, color: '#65626f', display: 'block', marginBottom: 6 }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--st-muted)', display: 'block', marginBottom: 6 }}>
                 Scopes:
               </span>
               <div className="client-scopes-wrap">
@@ -785,28 +744,27 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
             {patTokens.map(tok => (
               <div
                 key={tok.id}
+                className="token-row"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '9px 12px',
                   borderRadius: 8,
-                  border: '1px solid #eeedf1',
-                  background: '#faf9fb',
                   fontSize: '12px',
                   flexWrap: 'wrap',
                   gap: 8
                 }}
               >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <strong style={{ color: '#2a2833' }}>{tok.label || 'Unnamed token'}</strong>
-                  <span style={{ fontSize: '10.5px', color: '#8c8a94' }}>
+                  <strong style={{ color: 'var(--st-text)' }}>{tok.label || 'Unnamed token'}</strong>
+                  <span style={{ fontSize: '10.5px', color: 'var(--st-muted)' }}>
                     Created {formatRelativeTime(tok.created_at)} · Expires:{' '}
                     {tok.expires_at ? new Date(tok.expires_at).toLocaleDateString() : 'Never'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: '11px', color: '#8c8a94' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--st-muted)' }}>
                     Last used: {formatRelativeTime(tok.last_used_at)}
                   </span>
                   <button
@@ -825,17 +783,13 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
           <div className="empty-text">No active personal access tokens.</div>
         )}
       </div>
+      </SettingsCard>
+      </div>
 
       {/* 6. Activity Feed & Undo */}
+      <div className="connected-apps-grid-item activity-card">
+      <SettingsCard title={`Activity (${activity.length})`} description="Recent MCP tool actions, with one-click rollback when a snapshot is available." icon={<History size={16}/> }>
       <div className="activity-section">
-        <div>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#2a2833', display: 'block', marginBottom: 4 }}>
-            Activity Feed ({activity.length})
-          </span>
-          <small style={{ color: '#8a8791', fontSize: '11.5px' }}>
-            Live stream of MCP tool executions with 1-click rollback snapshots.
-          </small>
-        </div>
 
         {activity.length > 0 ? (
           <div className="activity-list">
@@ -848,13 +802,13 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
                   </span>
                 </div>
                 <div className="activity-right">
-                  <span style={{ fontSize: '11px', color: '#8c8a94' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--st-muted)' }}>
                     {resolveClientName(act.client_id, clients)}
                   </span>
                   <span className={`outcome-pill ${act.outcome}`}>
                     {act.outcome === 'ok' ? 'Success' : act.outcome === 'error' ? 'Error' : 'Pending'}
                   </span>
-                  <span style={{ fontSize: '11px', color: '#8c8a94' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--st-muted)' }}>
                     {formatRelativeTime(act.created_at)}
                   </span>
                   {act.undo_id && (
@@ -875,6 +829,8 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
         ) : (
           <div className="empty-text">No activity recorded yet.</div>
         )}
+      </div>
+      </SettingsCard>
       </div>
 
       {/* Confirm Modal: Trust Mode Warning */}
@@ -928,6 +884,6 @@ export function ConnectedApps({ onToast }: ConnectedAppsProps) {
         onConfirm={() => void handleUndoActivity()}
         onCancel={() => setActivityToUndo(null)}
       />
-    </section>
+    </div>
   )
 }
