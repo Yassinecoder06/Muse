@@ -1,0 +1,500 @@
+/* Voice & Sound and Security sections styling.
+   Uses Settings page CSS variables:
+   --st-bg, --st-surface, --st-border, --st-text, --st-muted,
+   --st-accent, --st-accent-soft, --st-danger
+*/
+
+/* --------------------------------------------------------------------------
+   Segmented Controls / Tabs
+   -------------------------------------------------------------------------- */
+.vs-tabs-bar {
+  display: flex;
+  align-items: center;
+  padding: 10px 0 14px;
+  border-bottom: 1px solid var(--st-border);
+  margin-bottom: 4px;
+}
+
+.vs-segmented {
+  display: inline-flex;
+  background: var(--st-bg);
+  border: 1px solid var(--st-border);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 3px;
+  max-width: 100%;
+}
+
+.vs-segmented-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--st-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.vs-segmented-btn:hover {
+  color: var(--st-text);
+}
+
+.vs-segmented-btn.active {
+  background: var(--st-surface);
+  color: var(--st-text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme=dark] .vs-segmented-btn.active {
+  background: var(--st-surface);
+  color: var(--st-text);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+/* --------------------------------------------------------------------------
+   Form Controls (Select, Input, Eye toggle, Code row)
+   -------------------------------------------------------------------------- */
+.vs-select {
+  width: 280px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--st-border);
+  background: var(--st-bg);
+  color: var(--st-text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.vs-select:focus {
+  border-color: var(--st-accent);
+  box-shadow: 0 0 0 2px var(--st-accent-soft);
+}
+
+.vs-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 280px;
+  max-width: 100%;
+}
+
+.vs-input {
+  width: 100%;
+  padding: 8px 38px 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--st-border);
+  background: var(--st-bg);
+  color: var(--st-text);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.vs-input:focus {
+  border-color: var(--st-accent);
+  box-shadow: 0 0 0 2px var(--st-accent-soft);
+}
+
+.vs-input-eye {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--st-muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.vs-input-eye:hover {
+  color: var(--st-text);
+  background: var(--st-accent-soft);
+}
+
+.vs-code-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 280px;
+  max-width: 100%;
+}
+
+.vs-code-row .vs-input-wrap {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.vs-code-input {
+  padding-right: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12.5px;
+  letter-spacing: 0.5px;
+}
+
+.vs-terminal-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 11.5px;
+  color: var(--st-muted);
+  line-height: 1.4;
+}
+
+.vs-terminal-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--st-bg);
+  border: 1px solid var(--st-border);
+  color: var(--st-text);
+}
+
+/* --------------------------------------------------------------------------
+   Sliders & Badges
+   -------------------------------------------------------------------------- */
+.vs-slider-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 280px;
+  max-width: 100%;
+}
+
+.vs-range {
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--st-border);
+  outline: none;
+  cursor: pointer;
+  accent-color: var(--st-accent);
+}
+
+.vs-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--st-accent-soft);
+  color: var(--st-accent);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid color-mix(in srgb, var(--st-accent) 25%, transparent);
+  user-select: none;
+}
+
+.vs-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--st-muted);
+  padding: 3px 6px;
+  font-size: 11.5px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.vs-btn-ghost:hover {
+  color: var(--st-text);
+  background: var(--st-accent-soft);
+}
+
+/* --------------------------------------------------------------------------
+   Sound Preview Chips
+   -------------------------------------------------------------------------- */
+.vs-sound-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border: 1px solid var(--st-border);
+  background: var(--st-bg);
+  color: var(--st-text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.vs-chip:hover {
+  background: var(--st-accent-soft);
+  color: var(--st-accent);
+  border-color: color-mix(in srgb, var(--st-accent) 40%, transparent);
+}
+
+/* --------------------------------------------------------------------------
+   Buttons (Primary, Secondary, Danger)
+   -------------------------------------------------------------------------- */
+.vs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.vs-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.vs-btn-primary {
+  background: var(--st-accent);
+  color: #ffffff;
+}
+
+.vs-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+[data-theme=dark] .vs-btn-primary {
+  background: var(--st-accent);
+  color: #17161b;
+  font-weight: 600;
+}
+
+[data-theme=dark] .vs-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.vs-btn-secondary {
+  background: var(--st-bg);
+  border-color: var(--st-border);
+  color: var(--st-text);
+}
+
+.vs-btn-secondary:hover:not(:disabled) {
+  background: var(--st-accent-soft);
+  color: var(--st-accent);
+  border-color: color-mix(in srgb, var(--st-accent) 30%, var(--st-border));
+}
+
+.vs-btn-danger {
+  background: var(--st-danger);
+  color: #ffffff;
+}
+
+.vs-btn-danger:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+[data-theme=dark] .vs-btn-danger {
+  background: color-mix(in srgb, var(--st-danger) 22%, var(--st-surface));
+  color: var(--st-danger);
+  border-color: color-mix(in srgb, var(--st-danger) 45%, var(--st-border));
+}
+
+[data-theme=dark] .vs-btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--st-danger) 32%, var(--st-surface));
+}
+
+/* --------------------------------------------------------------------------
+   Status Pills & Inline Validation
+   -------------------------------------------------------------------------- */
+.vs-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border: 1px solid var(--st-border);
+  background: var(--st-bg);
+  color: var(--st-muted);
+}
+
+.vs-status-pill.success {
+  background: color-mix(in srgb, #10b981 12%, var(--st-surface));
+  border-color: color-mix(in srgb, #10b981 30%, var(--st-border));
+  color: #059669;
+}
+
+[data-theme=dark] .vs-status-pill.success {
+  background: color-mix(in srgb, #10b981 18%, var(--st-surface));
+  border-color: color-mix(in srgb, #10b981 35%, var(--st-border));
+  color: #34d399;
+}
+
+.vs-validation-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  margin-left: 6px;
+}
+
+.vs-validation-inline.valid {
+  color: #059669;
+}
+
+[data-theme=dark] .vs-validation-inline.valid {
+  color: #34d399;
+}
+
+.vs-validation-inline.invalid {
+  color: var(--st-danger);
+}
+
+/* --------------------------------------------------------------------------
+   Alerts & Feedback
+   -------------------------------------------------------------------------- */
+.vs-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin-top: 14px;
+}
+
+.vs-alert svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.vs-alert-error {
+  background: color-mix(in srgb, var(--st-danger) 10%, var(--st-surface));
+  border: 1px solid color-mix(in srgb, var(--st-danger) 30%, var(--st-border));
+  color: var(--st-danger);
+}
+
+[data-theme=dark] .vs-alert-error {
+  background: color-mix(in srgb, var(--st-danger) 15%, var(--st-surface));
+  border-color: color-mix(in srgb, var(--st-danger) 40%, var(--st-border));
+}
+
+.vs-alert-success {
+  background: color-mix(in srgb, #10b981 10%, var(--st-surface));
+  border: 1px solid color-mix(in srgb, #10b981 30%, var(--st-border));
+  color: #059669;
+}
+
+[data-theme=dark] .vs-alert-success {
+  background: color-mix(in srgb, #10b981 16%, var(--st-surface));
+  border-color: color-mix(in srgb, #10b981 35%, var(--st-border));
+  color: #34d399;
+}
+
+/* --------------------------------------------------------------------------
+   Form Footer
+   -------------------------------------------------------------------------- */
+.vs-form-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0 6px;
+  margin-top: 4px;
+  border-top: 1px solid var(--st-border);
+}
+
+.vs-form-footer-hint {
+  font-size: 12px;
+  color: var(--st-muted);
+  line-height: 1.4;
+}
+
+/* --------------------------------------------------------------------------
+   Danger Card Refinements
+   -------------------------------------------------------------------------- */
+.settings-card.danger {
+  border-color: color-mix(in srgb, var(--st-danger) 35%, var(--st-border));
+}
+
+.settings-card.danger .settings-card-icon {
+  background: color-mix(in srgb, var(--st-danger) 15%, transparent);
+  color: var(--st-danger);
+}
+
+/* --------------------------------------------------------------------------
+   Mobile & Responsive Adaptations (max-width: 860px)
+   -------------------------------------------------------------------------- */
+@media (max-width: 860px) {
+  .vs-select,
+  .vs-input-wrap,
+  .vs-input,
+  .vs-code-row,
+  .vs-slider-group {
+    width: 100%;
+    max-width: none;
+  }
+
+  .vs-code-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vs-code-row .vs-btn {
+    width: 100%;
+  }
+
+  .vs-tabs-bar {
+    padding-top: 6px;
+  }
+
+  .vs-segmented {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .vs-segmented-btn {
+    justify-content: center;
+    padding: 7px 8px;
+    font-size: 12px;
+  }
+
+  .vs-form-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .vs-form-footer .vs-btn {
+    width: 100%;
+  }
+}
