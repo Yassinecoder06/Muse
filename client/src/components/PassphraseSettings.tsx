@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { KeyRound, LockKeyhole, Terminal, Check } from 'lucide-react'
+import { AlertCircle, Check, CheckCircle2, Eye, EyeOff, KeyRound, Lock, Terminal } from 'lucide-react'
 import { api } from '../services/api'
+import { SettingsCard, SettingsRow } from '../pages/settings/ui'
 
 export function PassphraseSettings({ onToast }: { onToast: (message: string) => void }) {
   const [activeTab, setActiveTab] = useState<'change' | 'reset'>('change')
@@ -8,10 +9,21 @@ export function PassphraseSettings({ onToast }: { onToast: (message: string) => 
   const [newPassphrase, setNewPassphrase] = useState('')
   const [confirmPassphrase, setConfirmPassphrase] = useState('')
   const [setupCode, setSetupCode] = useState('')
+
+  const [showCurrent, setShowCurrent] = useState(false)
+  const [showNew, setShowNew] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+
   const [working, setWorking] = useState(false)
   const [codeWorking, setCodeWorking] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  const switchTab = (tab: 'change' | 'reset') => {
+    setActiveTab(tab)
+    setError('')
+    setSuccess('')
+  }
 
   async function handlePrintCode() {
     setCodeWorking(true)
@@ -19,7 +31,7 @@ export function PassphraseSettings({ onToast }: { onToast: (message: string) => 
     setSuccess('')
     try {
       await api.requestOwnerResetCode()
-      setSuccess('Code printed to server logs! Check "docker logs muse-server-1" or "docker compose logs server".')
+      setSuccess('Code printed to server logs! Check "docker compose logs server" or "docker logs muse-server-1".')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not request setup code.')
     } finally {
@@ -49,15 +61,17 @@ export function PassphraseSettings({ onToast }: { onToast: (message: string) => 
         setCurrentPassphrase('')
         setNewPassphrase('')
         setConfirmPassphrase('')
-        setSuccess(res.message || 'Passphrase changed successfully.')
-        onToast('Passphrase changed successfully.')
+        const msg = res.message || 'Passphrase changed successfully.'
+        setSuccess(msg)
+        onToast(msg)
       } else {
         const res = await api.resetOwnerPassphrase(setupCode, newPassphrase)
         setSetupCode('')
         setNewPassphrase('')
         setConfirmPassphrase('')
-        setSuccess(res.message || 'Passphrase reset successfully.')
-        onToast('Passphrase reset successfully.')
+        const msg = res.message || 'Passphrase reset successfully.'
+        setSuccess(msg)
+        onToast(msg)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Operation failed.')
@@ -66,125 +80,210 @@ export function PassphraseSettings({ onToast }: { onToast: (message: string) => 
     }
   }
 
-  return (
-    <section className="account-card passphrase-settings">
-      <header>
-        <span>
-          <strong><LockKeyhole size={16}/> Owner Passphrase</strong>
-          <small>Manage the master passphrase used to unlock Muse on this server.</small>
-        </span>
-      </header>
+  const isMinLength = newPassphrase.length >= 10
+  const hasTypedNew = newPassphrase.length > 0
+  const hasTypedConfirm = confirmPassphrase.length > 0
+  const passwordsMatch = hasTypedConfirm && newPassphrase === confirmPassphrase
+  const passwordsMismatch = hasTypedConfirm && newPassphrase !== confirmPassphrase
 
-      <div className="usage-provider-tabs" style={{ marginTop: '12px' }}>
-        <button
-          type="button"
-          className={`usage-provider-tab ${activeTab === 'change' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('change'); setError(''); setSuccess('') }}
-        >
-          Change Passphrase
-        </button>
-        <button
-          type="button"
-          className={`usage-provider-tab ${activeTab === 'reset' ? 'active' : ''}`}
-          onClick={() => { setActiveTab('reset'); setError(''); setSuccess('') }}
-        >
-          Reset with Setup Code
-        </button>
+  return (
+    <SettingsCard
+      title="Owner passphrase"
+      description="The owner passphrase unlocks Muse on this server and confirms connected-app access."
+      icon={<KeyRound size={16}/>}
+    >
+      <div className="vs-tabs-bar">
+        <div className="vs-segmented" role="tablist" aria-label="Passphrase actions">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'change'}
+            className={`vs-segmented-btn ${activeTab === 'change' ? 'active' : ''}`}
+            onClick={() => switchTab('change')}
+          >
+            <KeyRound size={13}/> Change passphrase
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'reset'}
+            className={`vs-segmented-btn ${activeTab === 'reset' ? 'active' : ''}`}
+            onClick={() => switchTab('reset')}
+          >
+            <Terminal size={13}/> Reset with recovery code
+          </button>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} style={{ marginTop: '14px', display: 'grid', gap: '10px' }}>
+      <form onSubmit={handleSubmit} noValidate={false}>
         {activeTab === 'change' ? (
-          <div>
-            <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, marginBottom: '5px', color: '#66626e' }}>
-              Current Passphrase
-            </label>
-            <input
-              type="password"
-              className="setting-input"
-              style={{ width: '100%' }}
-              value={currentPassphrase}
-              onChange={e => setCurrentPassphrase(e.target.value)}
-              placeholder="Enter current passphrase"
-              required
-            />
-          </div>
-        ) : (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-              <label style={{ fontSize: '11.5px', fontWeight: 600, color: '#66626e' }}>
-                Setup Code (from server logs)
-              </label>
+          <SettingsRow
+            label="Current passphrase"
+            description="Enter your existing owner passphrase to verify ownership."
+            icon={<Lock size={15}/>}
+          >
+            <div className="vs-input-wrap">
+              <input
+                type={showCurrent ? 'text' : 'password'}
+                className="vs-input"
+                value={currentPassphrase}
+                onChange={e => { setCurrentPassphrase(e.target.value); setError('') }}
+                placeholder="Current passphrase"
+                autoComplete="current-password"
+                required
+              />
               <button
                 type="button"
-                className="setting-toggle"
-                style={{ padding: '3px 8px', fontSize: '11px' }}
-                onClick={handlePrintCode}
-                disabled={codeWorking}
+                className="vs-input-eye"
+                onClick={() => setShowCurrent(!showCurrent)}
+                aria-label={showCurrent ? 'Hide current passphrase' : 'Show current passphrase'}
               >
-                <Terminal size={12}/> {codeWorking ? 'Logging…' : 'Print code in server log'}
+                {showCurrent ? <EyeOff size={14}/> : <Eye size={14}/>}
               </button>
             </div>
-            <div className="auth-code-row">
-              <span className="auth-input" style={{ width: '100%' }}>
-                <KeyRound size={15}/>
+          </SettingsRow>
+        ) : (
+          <SettingsRow
+            label="Recovery code"
+            description={
+              <span>
+                One-time code generated in your server logs.
+                <span className="vs-terminal-hint">
+                  <Terminal size={12}/> Run <code>docker compose logs server</code> or <code>docker logs muse-server-1</code>.
+                </span>
+              </span>
+            }
+            icon={<Terminal size={15}/>}
+          >
+            <div className="vs-code-row">
+              <div className="vs-input-wrap">
                 <input
                   type="text"
+                  className="vs-input vs-code-input"
                   value={setupCode}
-                  onChange={e => setSetupCode(e.target.value)}
+                  onChange={e => { setSetupCode(e.target.value); setError('') }}
                   placeholder="XXXX-XXXX"
                   autoComplete="off"
                   spellCheck={false}
                   required
                 />
-              </span>
+              </div>
+              <button
+                type="button"
+                className="vs-btn vs-btn-secondary"
+                onClick={handlePrintCode}
+                disabled={codeWorking}
+                title="Print a fresh setup code into your server container logs"
+              >
+                <Terminal size={14}/>
+                {codeWorking ? 'Printing…' : 'Print code in log'}
+              </button>
             </div>
+          </SettingsRow>
+        )}
+
+        <SettingsRow
+          label="New passphrase"
+          description={
+            <span>
+              Must be at least 10 characters long.
+              {hasTypedNew && (
+                <span className={`vs-validation-inline ${isMinLength ? 'valid' : 'invalid'}`}>
+                  {isMinLength ? '✓ Length OK' : `(${newPassphrase.length}/10 chars)`}
+                </span>
+              )}
+            </span>
+          }
+          icon={<KeyRound size={15}/>}
+        >
+          <div className="vs-input-wrap">
+            <input
+              type={showNew ? 'text' : 'password'}
+              className="vs-input"
+              value={newPassphrase}
+              onChange={e => { setNewPassphrase(e.target.value); setError('') }}
+              placeholder="At least 10 characters"
+              minLength={10}
+              autoComplete="new-password"
+              required
+            />
+            <button
+              type="button"
+              className="vs-input-eye"
+              onClick={() => setShowNew(!showNew)}
+              aria-label={showNew ? 'Hide new passphrase' : 'Show new passphrase'}
+            >
+              {showNew ? <EyeOff size={14}/> : <Eye size={14}/>}
+            </button>
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          label="Confirm new passphrase"
+          description={
+            <span>
+              Re-type your new passphrase to ensure no typos.
+              {hasTypedConfirm && (
+                <span className={`vs-validation-inline ${passwordsMatch ? 'valid' : 'invalid'}`}>
+                  {passwordsMatch ? '✓ Passphrases match' : '✕ Passphrases do not match'}
+                </span>
+              )}
+            </span>
+          }
+          icon={<Check size={15}/>}
+        >
+          <div className="vs-input-wrap">
+            <input
+              type={showConfirm ? 'text' : 'password'}
+              className="vs-input"
+              value={confirmPassphrase}
+              onChange={e => { setConfirmPassphrase(e.target.value); setError('') }}
+              placeholder="Confirm new passphrase"
+              minLength={10}
+              autoComplete="new-password"
+              required
+            />
+            <button
+              type="button"
+              className="vs-input-eye"
+              onClick={() => setShowConfirm(!showConfirm)}
+              aria-label={showConfirm ? 'Hide confirm passphrase' : 'Show confirm passphrase'}
+            >
+              {showConfirm ? <EyeOff size={14}/> : <Eye size={14}/>}
+            </button>
+          </div>
+        </SettingsRow>
+
+        {error && (
+          <div className="vs-alert vs-alert-error" role="alert">
+            <AlertCircle size={15}/>
+            <span>{error}</span>
           </div>
         )}
 
-        <div>
-          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, marginBottom: '5px', color: '#66626e' }}>
-            New Passphrase (min 10 characters)
-          </label>
-          <input
-            type="password"
-            className="setting-input"
-            style={{ width: '100%' }}
-            value={newPassphrase}
-            onChange={e => setNewPassphrase(e.target.value)}
-            placeholder="At least 10 characters"
-            minLength={10}
-            required
-          />
+        {success && (
+          <div className="vs-alert vs-alert-success" role="status">
+            <CheckCircle2 size={15}/>
+            <span>{success}</span>
+          </div>
+        )}
+
+        <div className="vs-form-footer">
+          <span className="vs-form-footer-hint">
+            {activeTab === 'change'
+              ? 'You will need the new passphrase the next time you unlock Muse.'
+              : 'Submitting a valid setup code overwrites the owner passphrase.'}
+          </span>
+          <button
+            type="submit"
+            className="vs-btn vs-btn-primary"
+            disabled={working || (hasTypedConfirm && passwordsMismatch)}
+          >
+            <Check size={14}/>
+            {working ? 'Saving…' : activeTab === 'change' ? 'Update passphrase' : 'Reset passphrase'}
+          </button>
         </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, marginBottom: '5px', color: '#66626e' }}>
-            Confirm New Passphrase
-          </label>
-          <input
-            type="password"
-            className="setting-input"
-            style={{ width: '100%' }}
-            value={confirmPassphrase}
-            onChange={e => setConfirmPassphrase(e.target.value)}
-            placeholder="Re-type new passphrase"
-            minLength={10}
-            required
-          />
-        </div>
-
-        {error && <small className="auth-message" style={{ color: '#b91c1c', borderColor: '#fca5a5', background: '#fef2f2' }}>{error}</small>}
-        {success && <small className="auth-message-success">{success}</small>}
-
-        <button
-          type="submit"
-          className="setting-save"
-          style={{ width: '100%', marginTop: '4px', padding: '9px 12px', justifyContent: 'center' }}
-          disabled={working}
-        >
-          {working ? 'Processing…' : activeTab === 'change' ? 'Update Passphrase' : 'Reset Passphrase'}
-        </button>
       </form>
-    </section>
+    </SettingsCard>
   )
 }
